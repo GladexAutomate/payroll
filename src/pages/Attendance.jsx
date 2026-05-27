@@ -4,18 +4,43 @@ import { Search, Filter, Pencil, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { format } from 'date-fns';
+import { format, getDaysInMonth } from 'date-fns';
+import PeriodAttendanceView from '@/components/attendance/PeriodAttendanceView';
 
 export default function Attendance() {
+  const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'cutoff' | 'monthly'
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [periodMonth, setPeriodMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [cutoffHalf, setCutoffHalf] = useState('first'); // 'first' (1-15) | 'second' (16-end)
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingLog, setEditingLog] = useState(null);
 
-  useEffect(() => { loadData(); }, [filterDate]);
+  useEffect(() => { if (viewMode === 'daily') loadData(); }, [filterDate, viewMode]);
+
+  // Compute cut-off / monthly period
+  const [py, pm] = periodMonth.split('-').map(Number);
+  const lastDay = getDaysInMonth(new Date(py, pm - 1));
+  const monthLabel = format(new Date(py, pm - 1, 1), 'MMMM yyyy');
+  let periodStart, periodEnd, periodLabel;
+  if (viewMode === 'monthly') {
+    periodStart = `${periodMonth}-01`;
+    periodEnd = `${periodMonth}-${String(lastDay).padStart(2, '0')}`;
+    periodLabel = monthLabel;
+  } else {
+    if (cutoffHalf === 'first') {
+      periodStart = `${periodMonth}-01`;
+      periodEnd = `${periodMonth}-15`;
+      periodLabel = `${monthLabel} (1-15)`;
+    } else {
+      periodStart = `${periodMonth}-16`;
+      periodEnd = `${periodMonth}-${String(lastDay).padStart(2, '0')}`;
+      periodLabel = `${monthLabel} (16-${lastDay})`;
+    }
+  }
 
   const loadData = async () => {
     setLoading(true);
@@ -60,7 +85,29 @@ export default function Attendance() {
 
   return (
     <div className="space-y-5">
-      {/* Controls */}
+      {/* View Mode Tabs */}
+      <div className="flex items-center gap-1 bg-muted p-1 rounded-lg w-fit">
+        {[
+          { key: 'daily', label: 'Daily' },
+          { key: 'cutoff', label: 'Cut-off' },
+          { key: 'monthly', label: 'Monthly' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setViewMode(t.key)}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === t.key
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Daily controls */}
+      {viewMode === 'daily' && (
       <div className="flex flex-wrap items-center gap-3">
         <Input
           type="date"
@@ -88,6 +135,52 @@ export default function Attendance() {
           <Filter className="w-4 h-4 mr-1.5" /> Refresh
         </Button>
       </div>
+      )}
+
+      {/* Period controls (cutoff / monthly) */}
+      {viewMode !== 'daily' && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            type="month"
+            value={periodMonth}
+            onChange={e => setPeriodMonth(e.target.value)}
+            className="w-44"
+          />
+          {viewMode === 'cutoff' && (
+            <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
+              <button
+                onClick={() => setCutoffHalf('first')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  cutoffHalf === 'first' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+                }`}
+              >
+                1st Half (1-15)
+              </button>
+              <button
+                onClick={() => setCutoffHalf('second')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  cutoffHalf === 'second' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+                }`}
+              >
+                2nd Half (16-{lastDay})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Period view */}
+      {viewMode !== 'daily' && (
+        <PeriodAttendanceView
+          key={`${periodStart}-${periodEnd}`}
+          startDate={periodStart}
+          endDate={periodEnd}
+          periodLabel={periodLabel}
+        />
+      )}
+
+      {viewMode === 'daily' && <>
+
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -172,6 +265,7 @@ export default function Attendance() {
       {editingLog && (
         <EditLogModal log={editingLog} onSave={saveEdit} onClose={() => setEditingLog(null)} />
       )}
+      </>}
     </div>
   );
 }
