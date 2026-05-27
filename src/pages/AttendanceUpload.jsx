@@ -105,8 +105,12 @@ export default function AttendanceUpload() {
       ? format(new Date(parseInt(monthMatch[1]), parseInt(monthMatch[2]) - 1), 'MMMM yyyy')
       : `${year}`;
 
-    // Get employees
-    const employees = await base44.entities.Employee.filter({ status: 'active' });
+    // Get employees and existing logs upfront (avoid per-cell API calls)
+    const [employees, existingLogs] = await Promise.all([
+      base44.entities.Employee.filter({ status: 'active' }),
+      base44.entities.AttendanceLog.list('-date', 2000),
+    ]);
+
     const byBioId = {};
     const byName = {};
     for (const emp of employees) {
@@ -116,10 +120,20 @@ export default function AttendanceUpload() {
       byName[fullName] = emp;
     }
 
+    // Build a lookup map: "employeeId|date" -> existing log
+    const existingMap = {};
+    for (const log of existingLogs) {
+      existingMap[`${log.employee_id}|${log.date}`] = log;
+    }
+
     let saved = 0;
     let dataRowsFound = 0;
     let emptyCellsSkipped = 0;
     const skipped = [];
+
+    // Collect all creates/updates to batch
+    const toCreate = [];
+    const toUpdate = [];
 
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
@@ -136,7 +150,6 @@ export default function AttendanceUpload() {
         const cellVal = String(row[idx] || '').trim();
         if (!cellVal) { emptyCellsSkipped++; continue; }
 
-        // Expect format like "08:00 / 17:00" or "08:00" or "08:00/17:00"
         const parts = cellVal.split(/\s*[\/,]\s*/);
         const timeIn = parts[0]?.trim() || null;
         const timeOut = parts[1]?.trim() || null;
@@ -150,16 +163,16 @@ export default function AttendanceUpload() {
           ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
           : 0;
 
-        const existing = await base44.entities.AttendanceLog.filter({ employee_id: employeeId, date: dateStr });
-        if (existing.length > 0) {
-          await base44.entities.AttendanceLog.update(existing[0].id, {
-            time_in: timeInISO || existing[0].time_in,
-            time_out: timeOutISO || existing[0].time_out,
-            total_hours: totalHours || existing[0].total_hours,
+        const existing = existingMap[`${employeeId}|${dateStr}`];
+        if (existing) {
+          toUpdate.push({ id: existing.id, data: {
+            time_in: timeInISO || existing.time_in,
+            time_out: timeOutISO || existing.time_out,
+            total_hours: totalHours || existing.total_hours,
             status: 'present'
-          });
+          }});
         } else {
-          await base44.entities.AttendanceLog.create({
+          toCreate.push({
             employee_id: employeeId,
             biometric_id: biometricId,
             date: dateStr,
@@ -171,6 +184,15 @@ export default function AttendanceUpload() {
         }
         saved++;
       }
+    }
+
+    // Execute creates in batches of 50, updates sequentially
+    const BATCH = 50;
+    for (let i = 0; i < toCreate.length; i += BATCH) {
+      await base44.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + BATCH));
+    }
+    for (const u of toUpdate) {
+      await base44.entities.AttendanceLog.update(u.id, u.data);
     }
 
     // Upload file for record-keeping
