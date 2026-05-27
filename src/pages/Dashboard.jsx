@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 export default function Dashboard() {
   const [stats, setStats] = useState({ employees: 0, present: 0, absent: 0, onLeave: 0, pendingLeaves: 0, pendingOT: 0 });
   const [recentLogs, setRecentLogs] = useState([]);
+  const [employeeMap, setEmployeeMap] = useState({});
   const [loading, setLoading] = useState(true);
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -36,8 +37,25 @@ export default function Dashboard() {
       pendingLeaves: pendingLeaves.length,
       pendingOT: pendingOT.length,
     });
+    // Build a lookup map: try id, employee_id, biometric_id → full name
+    const map = {};
+    for (const emp of employees) {
+      const fullName = `${emp.first_name} ${emp.last_name}`.trim();
+      if (emp.id) map[emp.id] = fullName;
+      if (emp.employee_id) map[emp.employee_id] = fullName;
+      if (emp.biometric_id) map[emp.biometric_id] = fullName;
+    }
+    setEmployeeMap(map);
     setRecentLogs(todayLogs.slice(0, 8));
     setLoading(false);
+  };
+
+  const getEmployeeName = (log) => {
+    return log.employee_name
+      || employeeMap[log.employee_id]
+      || employeeMap[log.biometric_id]
+      || log.employee_id
+      || 'Unknown';
   };
 
   const attendanceData = [
@@ -112,14 +130,16 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="space-y-2">
-              {recentLogs.map(log => (
+              {recentLogs.map(log => {
+                const name = getEmployeeName(log);
+                return (
                 <div key={log.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="text-xs text-primary font-semibold">{(log.employee_id || 'E')[0]}</span>
+                      <span className="text-xs text-primary font-semibold">{(name || 'E')[0].toUpperCase()}</span>
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{log.employee_id}</p>
+                      <p className="text-sm font-medium">{name}</p>
                       <p className="text-xs text-muted-foreground">
                         {log.time_in ? (() => { try { const d = new Date(log.time_in); return isNaN(d) ? log.time_in : format(d, 'hh:mm a'); } catch { return log.time_in; } })() : '—'}
                       </p>
@@ -133,7 +153,8 @@ export default function Dashboard() {
                     {log.status}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
