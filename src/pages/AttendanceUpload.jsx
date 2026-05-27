@@ -246,7 +246,13 @@ export default function AttendanceUpload() {
     // Upload file for record-keeping
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
-    // Step 1: Create the upload record to get an uploadId
+    // Step 1: Check if existing attendance logs cover any of these dates
+    // If none exist, we can skip the duplicate-check phase entirely (much faster)
+    const sampleDate = records[0].date;
+    const existingForDate = await base44.entities.AttendanceLog.filter({ date: sampleDate }, '-date', 1);
+    const skipDuplicateCheck = existingForDate.length === 0;
+
+    // Step 2: Create the upload record to get an uploadId
     const createRes = await base44.functions.invoke('importAttendance', {
       action: 'createUpload',
       filename: file.name,
@@ -255,8 +261,8 @@ export default function AttendanceUpload() {
     });
     const uploadId = createRes.data?.uploadId;
 
-    // Step 2: Queue records in chunks of 100
-    const CHUNK_SIZE = 100;
+    // Step 3: Queue records in chunks of 300 (fewer round-trips)
+    const CHUNK_SIZE = 300;
     const chunks = [];
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
       chunks.push(records.slice(i, i + CHUNK_SIZE));
@@ -267,12 +273,13 @@ export default function AttendanceUpload() {
     let totalSaved = 0, totalCreated = 0, totalUpdated = 0;
     for (let i = 0; i < chunks.length; i++) {
       let attempts = 0;
-      while (attempts < 3) {
+      while (attempts < 5) {
         try {
           const res = await base44.functions.invoke('importAttendance', {
             action: 'importChunk',
             records: chunks[i],
             uploadId,
+            skipDuplicateCheck,
           });
           totalSaved += res.data?.saved || 0;
           totalCreated += res.data?.created || 0;
@@ -281,11 +288,13 @@ export default function AttendanceUpload() {
           break;
         } catch (err) {
           attempts++;
-          if (attempts >= 3) throw err;
-          // Wait before retry (rate limit recovery)
-          await new Promise(r => setTimeout(r, 2000 * attempts));
+          if (attempts >= 5) throw err;
+          // Exponential backoff for rate limit recovery
+          await new Promise(r => setTimeout(r, 3000 * attempts));
         }
       }
+      // Small breather between chunks
+      if (i + 1 < chunks.length) await new Promise(r => setTimeout(r, 500));
     }
 
     // Step 3: Finalize — update upload record with totals

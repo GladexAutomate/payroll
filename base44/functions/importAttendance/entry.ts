@@ -77,31 +77,68 @@ Deno.serve(async (req) => {
     }
 
     // ── IMPORT CHUNK mode ─────────────────────────────────────────────────────
-    // Processes one chunk of 100 records at a time
+    // Processes one chunk of records. Uses skipDuplicateCheck for fresh uploads
+    // to skip the expensive existence-check phase entirely.
     if (body.action === 'importChunk') {
-      const { records, uploadId } = body;
+      const { records, uploadId, skipDuplicateCheck } = body;
       if (!records || records.length === 0) return Response.json({ saved: 0, created: 0, updated: 0 });
 
-      // Fetch existing logs for the employee+date keys in this chunk only
-      const dates = [...new Set(records.map(r => r.date))];
-      const employeeIds = [...new Set(records.map(r => r.employee_id))];
+      const recordsWithUploadId = records.map(r => ({ ...r, upload_id: uploadId }));
 
-      // Build existing map by fetching logs for dates in this chunk
+      // Fast path: no duplicate check — just bulk create everything
+      if (skipDuplicateCheck) {
+        let created = 0;
+        const CREATE_BATCH = 100;
+        for (let i = 0; i < recordsWithUploadId.length; i += CREATE_BATCH) {
+          const slice = recordsWithUploadId.slice(i, i + CREATE_BATCH);
+          let attempts = 0;
+          while (attempts < 5) {
+            try {
+              await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice);
+              created += slice.length;
+              break;
+            } catch (err) {
+              const msg = String(err?.message || err);
+              if (msg.includes('429') || msg.includes('Rate limit')) {
+                attempts++;
+                await new Promise(r => setTimeout(r, 2000 * attempts));
+                continue;
+              }
+              throw err;
+            }
+          }
+          if (i + CREATE_BATCH < recordsWithUploadId.length) await new Promise(r => setTimeout(r, 300));
+        }
+        return Response.json({ saved: created, created, updated: 0 });
+      }
+
+      // Slow path (re-upload): check for duplicates by employee+date
+      const dates = [...new Set(records.map(r => r.date))];
       const existingMap = {};
       for (const date of dates) {
-        const logs = await base44.asServiceRole.entities.AttendanceLog.filter({ date }, '-date', 500);
-        for (const log of logs) {
-          existingMap[`${log.employee_id}|${log.date}`] = log;
+        let attempts = 0;
+        while (attempts < 5) {
+          try {
+            const logs = await base44.asServiceRole.entities.AttendanceLog.filter({ date }, '-date', 500);
+            for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err);
+            if (msg.includes('429') || msg.includes('Rate limit')) {
+              attempts++;
+              await new Promise(r => setTimeout(r, 1500 * attempts));
+              continue;
+            }
+            throw err;
+          }
         }
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 200));
       }
 
       const toCreate = [];
       const toUpdate = [];
-
-      for (const rec of records) {
-        const key = `${rec.employee_id}|${rec.date}`;
-        const existing = existingMap[key];
+      for (const rec of recordsWithUploadId) {
+        const existing = existingMap[`${rec.employee_id}|${rec.date}`];
         if (existing) {
           toUpdate.push({ id: existing.id, data: {
             time_in: rec.time_in || existing.time_in,
@@ -114,27 +151,52 @@ Deno.serve(async (req) => {
             upload_id: uploadId,
           }});
         } else {
-          toCreate.push({ ...rec, upload_id: uploadId });
+          toCreate.push(rec);
         }
       }
 
-      // Bulk create in batches of 25
       let created = 0;
-      const CREATE_BATCH = 25;
+      const CREATE_BATCH = 100;
       for (let i = 0; i < toCreate.length; i += CREATE_BATCH) {
-        await base44.asServiceRole.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + CREATE_BATCH));
-        created += toCreate.slice(i, i + CREATE_BATCH).length;
-        if (i + CREATE_BATCH < toCreate.length) await new Promise(r => setTimeout(r, 800));
+        const slice = toCreate.slice(i, i + CREATE_BATCH);
+        let attempts = 0;
+        while (attempts < 5) {
+          try {
+            await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice);
+            created += slice.length;
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err);
+            if (msg.includes('429') || msg.includes('Rate limit')) {
+              attempts++;
+              await new Promise(r => setTimeout(r, 2000 * attempts));
+              continue;
+            }
+            throw err;
+          }
+        }
+        if (i + CREATE_BATCH < toCreate.length) await new Promise(r => setTimeout(r, 400));
       }
 
-      // Update in batches of 5
       let updated = 0;
-      for (let i = 0; i < toUpdate.length; i += 5) {
-        await Promise.all(toUpdate.slice(i, i + 5).map(u =>
-          base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data)
-        ));
-        updated += toUpdate.slice(i, i + 5).length;
-        if (i + 5 < toUpdate.length) await new Promise(r => setTimeout(r, 600));
+      for (const u of toUpdate) {
+        let attempts = 0;
+        while (attempts < 5) {
+          try {
+            await base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data);
+            updated++;
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err);
+            if (msg.includes('429') || msg.includes('Rate limit')) {
+              attempts++;
+              await new Promise(r => setTimeout(r, 1500 * attempts));
+              continue;
+            }
+            break;
+          }
+        }
+        await new Promise(r => setTimeout(r, 200));
       }
 
       return Response.json({ saved: created + updated, created, updated });
