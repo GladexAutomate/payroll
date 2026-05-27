@@ -1,15 +1,10 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Search, Filter, Pencil, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Search, Filter, Pencil, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { format } from 'date-fns';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
-} from '@/components/ui/alert-dialog';
 
 export default function Attendance() {
   const [logs, setLogs] = useState([]);
@@ -19,7 +14,6 @@ export default function Attendance() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingLog, setEditingLog] = useState(null);
-  const [clearingAll, setClearingAll] = useState(false);
 
   useEffect(() => { loadData(); }, [filterDate]);
 
@@ -43,13 +37,6 @@ export default function Attendance() {
     const matchStatus = filterStatus === 'all' || l.status === filterStatus;
     return matchSearch && matchStatus;
   });
-
-  const clearAllRecords = async () => {
-    setClearingAll(true);
-    await base44.functions.invoke('importAttendance', { action: 'deleteAll' });
-    setClearingAll(false);
-    loadData();
-  };
 
   const saveEdit = async (data) => {
     await base44.entities.AttendanceLog.update(editingLog.id, { ...data, is_manually_edited: true });
@@ -96,32 +83,6 @@ export default function Attendance() {
         <Button variant="outline" size="sm" onClick={loadData}>
           <Filter className="w-4 h-4 mr-1.5" /> Refresh
         </Button>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10" disabled={clearingAll}>
-              {clearingAll ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
-              Clear All Records
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Clear All Attendance Records?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete <strong>all {logs.length > 0 ? `${logs.length}+` : ''} attendance logs</strong> and upload history. This cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={clearAllRecords}
-              >
-                Clear Everything
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
 
       {/* Summary */}
