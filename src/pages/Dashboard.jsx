@@ -121,7 +121,7 @@ export default function Dashboard() {
                     <div>
                       <p className="text-sm font-medium">{log.employee_id}</p>
                       <p className="text-xs text-muted-foreground">
-                        {log.time_in ? format(new Date(log.time_in), 'hh:mm a') : '—'}
+                        {log.time_in ? (() => { try { const d = new Date(log.time_in); return isNaN(d) ? log.time_in : format(d, 'hh:mm a'); } catch { return log.time_in; } })() : '—'}
                       </p>
                     </div>
                   </div>

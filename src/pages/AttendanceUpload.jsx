@@ -249,12 +249,12 @@ export default function AttendanceUpload() {
       return Math.abs(logTime - uploadTime) < 5 * 60 * 1000;
     });
 
-    // Delete in batches of 5 with a small delay to avoid rate limits
-    for (let i = 0; i < toDelete.length; i += 5) {
-      await Promise.all(toDelete.slice(i, i + 5).map(log =>
+    // Delete sequentially in batches of 3 with delay to avoid rate limits
+    for (let i = 0; i < toDelete.length; i += 3) {
+      await Promise.all(toDelete.slice(i, i + 3).map(log =>
         base44.entities.AttendanceLog.delete(log.id)
       ));
-      if (i + 5 < toDelete.length) await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 400));
     }
 
     await base44.entities.AttendanceUpload.delete(upload.id);
