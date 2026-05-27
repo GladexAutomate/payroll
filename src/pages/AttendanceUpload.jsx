@@ -108,7 +108,7 @@ export default function AttendanceUpload() {
     // Get employees and existing logs upfront (avoid per-cell API calls)
     const [employees, existingLogs] = await Promise.all([
       base44.entities.Employee.filter({ status: 'active' }),
-      base44.entities.AttendanceLog.list('-date', 2000),
+      base44.entities.AttendanceLog.list('-date', 500),
     ]);
 
     const byBioId = {};
@@ -186,13 +186,15 @@ export default function AttendanceUpload() {
       }
     }
 
-    // Execute creates in batches of 50, updates sequentially
+    // Execute creates in batches of 50
     const BATCH = 50;
     for (let i = 0; i < toCreate.length; i += BATCH) {
       await base44.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + BATCH));
     }
-    for (const u of toUpdate) {
-      await base44.entities.AttendanceLog.update(u.id, u.data);
+    // Execute updates in batches of 10 with a small delay to avoid rate limits
+    for (let i = 0; i < toUpdate.length; i += 10) {
+      await Promise.all(toUpdate.slice(i, i + 10).map(u => base44.entities.AttendanceLog.update(u.id, u.data)));
+      if (i + 10 < toUpdate.length) await new Promise(r => setTimeout(r, 300));
     }
 
     // Upload file for record-keeping
