@@ -44,21 +44,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Bulk create in batches of 100
-    const BATCH = 100;
+    // Bulk create in batches of 50 with delay between batches
+    const BATCH = 50;
     let created = 0;
     for (let i = 0; i < toCreate.length; i += BATCH) {
       await base44.asServiceRole.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + BATCH));
       created += Math.min(BATCH, toCreate.length - i);
+      if (i + BATCH < toCreate.length) await new Promise(r => setTimeout(r, 500));
     }
 
-    // Update in batches of 20
+    // Update sequentially in small batches of 5 with delay to avoid rate limits
     let updated = 0;
-    for (let i = 0; i < toUpdate.length; i += 20) {
-      await Promise.all(toUpdate.slice(i, i + 20).map(u =>
+    for (let i = 0; i < toUpdate.length; i += 5) {
+      await Promise.all(toUpdate.slice(i, i + 5).map(u =>
         base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data)
       ));
-      updated += Math.min(20, toUpdate.length - i);
+      updated += Math.min(5, toUpdate.length - i);
+      if (i + 5 < toUpdate.length) await new Promise(r => setTimeout(r, 300));
     }
 
     const saved = created + updated;
