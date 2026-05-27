@@ -185,27 +185,23 @@ export default function AttendanceUpload() {
         if (!cellVal || cellVal === '0') { emptyCellsSkipped++; continue; }
 
         // Parse time(s) from cell — may be a number (Excel fraction) or string with 1-N times
-        let timeIn = null, timeOut = null;
+        let allPunches = [];
         if (typeof rawCell === 'number') {
-          // Excel time serial fraction
           const timeFrac = rawCell % 1;
           const totalMins = Math.round(timeFrac * 24 * 60);
           const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
           const mm = String(totalMins % 60).padStart(2, '0');
-          timeIn = `${hh}:${mm}`;
+          allPunches = [`${hh}:${mm}`];
         } else {
-          // Extract all HH:MM tokens (space, slash, or comma separated)
-          const timeTokens = cellVal.match(/\d{1,2}:\d{2}/g) || [];
-          if (timeTokens.length === 0) continue;
-          timeIn = timeTokens[0];
-          timeOut = timeTokens.length > 1 ? timeTokens[timeTokens.length - 1] : null;
+          allPunches = cellVal.match(/\d{1,2}:\d{2}/g) || [];
         }
-        if (!timeIn) continue;
+        if (allPunches.length === 0) continue;
 
         const dateStr = `${year}-${label.padStart(5, '0')}`;
         const buildISO = (t) => t ? `${dateStr}T${t}:00` : null;
-        const timeInISO = buildISO(timeIn);
-        const timeOutISO = buildISO(timeOut);
+        const timeInISO = buildISO(allPunches[0]);
+        const timeOutISO = allPunches.length > 1 ? buildISO(allPunches[allPunches.length - 1]) : null;
+        const rawPunchesISO = allPunches.map(t => buildISO(t));
         const totalHours = timeInISO && timeOutISO
           ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
           : 0;
@@ -217,6 +213,7 @@ export default function AttendanceUpload() {
           date: dateStr,
           time_in: timeInISO,
           time_out: timeOutISO,
+          raw_punches: rawPunchesISO,
           total_hours: totalHours,
           status: 'present',
         });

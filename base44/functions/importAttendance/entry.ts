@@ -80,9 +80,11 @@ Deno.serve(async (req) => {
           toUpdate.push({ id: existing.id, data: {
             time_in: rec.time_in || existing.time_in,
             time_out: rec.time_out || existing.time_out,
+            raw_punches: rec.raw_punches || existing.raw_punches,
             total_hours: rec.total_hours || existing.total_hours,
             status: 'present',
             biometric_id: rec.biometric_id || existing.biometric_id,
+            employee_name: rec.employee_name || existing.employee_name,
             upload_id: uploadId,
           }});
         } else {
