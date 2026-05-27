@@ -6,6 +6,7 @@ import TopBar from './TopBar';
 const pageTitles = {
   '/': 'Dashboard',
   '/employees': 'Employees',
+  '/airtable-employees': 'Airtable Employee List',
   '/departments': 'Departments',
   '/attendance': 'Attendance',
   '/attendance-upload': 'Upload Attendance',

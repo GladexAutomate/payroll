@@ -13,6 +13,7 @@ import AppLayout from '@/components/layout/AppLayout';
 // Pages
 import Dashboard from './pages/Dashboard';
 import Employees from './pages/Employees';
+import AirtableEmployees from './pages/AirtableEmployees';
 import Departments from './pages/Departments';
 import Attendance from './pages/Attendance';
 import AttendanceUpload from './pages/AttendanceUpload';
@@ -51,6 +52,7 @@ const AuthenticatedApp = () => {
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
+        <Route path="/airtable-employees" element={<AirtableEmployees />} />
         <Route path="/departments" element={<Departments />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />
