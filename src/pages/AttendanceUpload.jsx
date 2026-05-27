@@ -66,18 +66,33 @@ export default function AttendanceUpload() {
     }
 
     // Header row: find Person Code col, Name col, and date columns
-    const headerRow = rows[0].map(h => String(h).trim());
+    const rawHeaderRow = rows[0];
+    const headerRow = rawHeaderRow.map(h => String(h).trim());
     const personCodeIdx = headerRow.findIndex(h => /person.?code/i.test(h) || h === 'No.');
     const nameIdx = headerRow.findIndex(h => /^name$/i.test(h));
 
-    // Date columns: anything matching MM-DD pattern
+    // Date columns: MM-DD pattern OR Excel serial numbers (dates stored as numbers)
     const dateCols = [];
-    headerRow.forEach((h, i) => {
-      if (/^\d{1,2}-\d{2}$/.test(h)) dateCols.push({ idx: i, label: h });
+    rawHeaderRow.forEach((h, i) => {
+      const str = String(h).trim();
+      if (/^\d{1,2}-\d{2}$/.test(str)) {
+        // Already MM-DD string
+        dateCols.push({ idx: i, label: str });
+      } else if (typeof h === 'number' && h > 40000 && h < 50000) {
+        // Excel date serial — convert to MM-DD
+        const d = XLSX.SSF.parse_date_code(h);
+        const label = `${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+        dateCols.push({ idx: i, label });
+      }
     });
 
+    console.log('Headers found:', headerRow.slice(0, 5));
+    console.log('Date columns found:', dateCols.length, dateCols.slice(0, 3));
+    console.log('personCodeIdx:', personCodeIdx, 'nameIdx:', nameIdx);
+    console.log('Row 1 sample:', rows[1]?.slice(0, 5));
+
     if (dateCols.length === 0) {
-      setUploadResult({ error: 'No date columns found. Date columns should be in MM-DD format (e.g. 05-01, 05-02).' });
+      setUploadResult({ error: `No date columns found. Headers detected: "${headerRow.slice(0, 8).join('", "')}"` });
       setUploading(false);
       return;
     }
@@ -102,6 +117,8 @@ export default function AttendanceUpload() {
     }
 
     let saved = 0;
+    let dataRowsFound = 0;
+    let emptyCellsSkipped = 0;
     const skipped = [];
 
     for (let r = 1; r < rows.length; r++) {
@@ -109,6 +126,7 @@ export default function AttendanceUpload() {
       const code = String(personCodeIdx >= 0 ? row[personCodeIdx] : '').trim();
       const name = String(nameIdx >= 0 ? row[nameIdx] : '').toLowerCase().trim();
       if (!code && !name) continue;
+      dataRowsFound++;
 
       const emp = byBioId[code] || byName[name];
       const employeeId = emp?.id || code || name;
@@ -116,7 +134,7 @@ export default function AttendanceUpload() {
 
       for (const { idx, label } of dateCols) {
         const cellVal = String(row[idx] || '').trim();
-        if (!cellVal) continue;
+        if (!cellVal) { emptyCellsSkipped++; continue; }
 
         // Expect format like "08:00 / 17:00" or "08:00" or "08:00/17:00"
         const parts = cellVal.split(/\s*[\/,]\s*/);
@@ -168,7 +186,7 @@ export default function AttendanceUpload() {
       notes: skipped.length > 0 ? `${skipped.length} rows skipped` : ''
     });
 
-    setUploadResult({ saved, skipped: skipped.length, period: periodLabel });
+    setUploadResult({ saved, skipped: skipped.length, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
     setUploading(false);
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
@@ -275,6 +293,16 @@ export default function AttendanceUpload() {
             <div>
               {uploadResult.error ? (
                 <p className="text-sm font-medium text-red-800">Failed to parse file: {uploadResult.error}</p>
+              ) : uploadResult.saved === 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-orange-800">⚠️ No records imported</p>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Found {uploadResult.dataRowsFound} employee row(s) and {uploadResult.dateCols} date column(s), but all date cells were empty.
+                  </p>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Please fill in time data (e.g. <strong>08:00 / 17:00</strong>) in the date cells before uploading.
+                  </p>
+                </div>
               ) : (
                 <>
                   <p className="text-sm font-medium text-green-800">
