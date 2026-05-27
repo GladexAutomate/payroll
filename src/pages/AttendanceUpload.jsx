@@ -110,10 +110,22 @@ export default function AttendanceUpload() {
     // Infer year from filename or current year
     const yearMatch = file.name.match(/(\d{4})/);
     const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
-    const monthMatch = file.name.match(/(\d{4})-(\d{2})/);
-    const periodLabel = monthMatch
-      ? format(new Date(parseInt(monthMatch[1]), parseInt(monthMatch[2]) - 1), 'MMMM yyyy')
-      : `${year}`;
+
+    // Try to detect month from filename — support "may 2026", "2026-05", "05-2026", etc.
+    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    let periodLabel = `${year}`;
+    const nameLC = file.name.toLowerCase();
+    const monthNameIdx = monthNames.findIndex(m => nameLC.includes(m));
+    if (monthNameIdx >= 0) {
+      periodLabel = format(new Date(year, monthNameIdx, 1), 'MMMM yyyy');
+    } else {
+      const numMonthMatch = file.name.match(/(\d{4})-(\d{2})/) || file.name.match(/(\d{2})-(\d{4})/);
+      if (numMonthMatch) {
+        const [, a, b] = numMonthMatch;
+        const [yr, mo] = parseInt(a) > 12 ? [parseInt(a), parseInt(b)] : [parseInt(b), parseInt(a)];
+        periodLabel = format(new Date(yr, mo - 1, 1), 'MMMM yyyy');
+      }
+    }
 
     // Fetch employees once for ID mapping
     const employees = await base44.entities.Employee.filter({ status: 'active' });
