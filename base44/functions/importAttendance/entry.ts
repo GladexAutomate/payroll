@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
       const { uploadId } = body;
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
-      // Fetch all logs linked to this upload (by upload_id field)
       let page = 0;
       const PAGE_SIZE = 200;
       let allLogs = [];
@@ -26,7 +25,6 @@ Deno.serve(async (req) => {
         page++;
       }
 
-      // Delete in batches of 5 with delay
       for (let i = 0; i < allLogs.length; i += 5) {
         await Promise.all(allLogs.slice(i, i + 5).map(l =>
           base44.asServiceRole.entities.AttendanceLog.delete(l.id)
@@ -35,110 +33,98 @@ Deno.serve(async (req) => {
       }
 
       await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
-
       return Response.json({ deleted: allLogs.length });
     }
 
-    // ── DELETE ALL (no upload_id filter) mode ─────────────────────────────────
-    if (body.action === 'deleteAll') {
-      // Paginate through ALL attendance logs and delete them all
-      const PAGE_SIZE = 200;
-      let totalDeleted = 0;
-      while (true) {
-        const batch = await base44.asServiceRole.entities.AttendanceLog.list('-date', PAGE_SIZE);
-        if (batch.length === 0) break;
-        for (let i = 0; i < batch.length; i += 5) {
-          await Promise.all(batch.slice(i, i + 5).map(l =>
-            base44.asServiceRole.entities.AttendanceLog.delete(l.id)
-          ));
-          if (i + 5 < batch.length) await new Promise(r => setTimeout(r, 200));
+    // ── CREATE UPLOAD RECORD (first call before chunking) ────────────────────
+    if (body.action === 'createUpload') {
+      const { filename, periodLabel, fileUrl } = body;
+      const uploadRecord = await base44.asServiceRole.entities.AttendanceUpload.create({
+        filename,
+        file_url: fileUrl || '',
+        period_label: periodLabel,
+        records_imported: 0,
+        status: 'processing',
+        uploaded_by: user.email || '',
+      });
+      return Response.json({ uploadId: uploadRecord.id });
+    }
+
+    // ── IMPORT CHUNK mode ─────────────────────────────────────────────────────
+    // Processes one chunk of 100 records at a time
+    if (body.action === 'importChunk') {
+      const { records, uploadId } = body;
+      if (!records || records.length === 0) return Response.json({ saved: 0, created: 0, updated: 0 });
+
+      // Fetch existing logs for the employee+date keys in this chunk only
+      const dates = [...new Set(records.map(r => r.date))];
+      const employeeIds = [...new Set(records.map(r => r.employee_id))];
+
+      // Build existing map by fetching logs for dates in this chunk
+      const existingMap = {};
+      for (const date of dates) {
+        const logs = await base44.asServiceRole.entities.AttendanceLog.filter({ date }, '-date', 500);
+        for (const log of logs) {
+          existingMap[`${log.employee_id}|${log.date}`] = log;
         }
-        totalDeleted += batch.length;
-        if (batch.length < PAGE_SIZE) break;
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 100));
       }
-      // Also clear all upload records
-      const uploads = await base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 500);
-      for (const u of uploads) {
-        await base44.asServiceRole.entities.AttendanceUpload.delete(u.id);
+
+      const toCreate = [];
+      const toUpdate = [];
+
+      for (const rec of records) {
+        const key = `${rec.employee_id}|${rec.date}`;
+        const existing = existingMap[key];
+        if (existing) {
+          toUpdate.push({ id: existing.id, data: {
+            time_in: rec.time_in || existing.time_in,
+            time_out: rec.time_out || existing.time_out,
+            total_hours: rec.total_hours || existing.total_hours,
+            status: 'present',
+            biometric_id: rec.biometric_id || existing.biometric_id,
+            upload_id: uploadId,
+          }});
+        } else {
+          toCreate.push({ ...rec, upload_id: uploadId });
+        }
       }
-      return Response.json({ deleted: totalDeleted });
-    }
 
-    // ── IMPORT mode ───────────────────────────────────────────────────────────
-    const { records, filename, periodLabel, fileUrl } = body;
-
-    if (!records || records.length === 0) {
-      return Response.json({ saved: 0, updated: 0 });
-    }
-
-    // Save the upload record first so we have its ID to tag logs with
-    const uploadRecord = await base44.asServiceRole.entities.AttendanceUpload.create({
-      filename,
-      file_url: fileUrl || '',
-      period_label: periodLabel,
-      records_imported: 0,
-      status: 'processing',
-      uploaded_by: user.email || '',
-    });
-    const uploadId = uploadRecord.id;
-
-    // Fetch existing logs to detect updates vs creates
-    const existingLogs = await base44.asServiceRole.entities.AttendanceLog.list('-date', 5000);
-    const existingMap = {};
-    for (const log of existingLogs) {
-      existingMap[`${log.employee_id}|${log.date}`] = log;
-    }
-
-    const toCreate = [];
-    const toUpdate = [];
-
-    for (const rec of records) {
-      const key = `${rec.employee_id}|${rec.date}`;
-      const existing = existingMap[key];
-      if (existing) {
-        toUpdate.push({ id: existing.id, data: {
-          time_in: rec.time_in || existing.time_in,
-          time_out: rec.time_out || existing.time_out,
-          total_hours: rec.total_hours || existing.total_hours,
-          status: 'present',
-          biometric_id: rec.biometric_id || existing.biometric_id,
-          upload_id: uploadId,
-        }});
-      } else {
-        toCreate.push({ ...rec, upload_id: uploadId });
+      // Bulk create in batches of 25
+      let created = 0;
+      const CREATE_BATCH = 25;
+      for (let i = 0; i < toCreate.length; i += CREATE_BATCH) {
+        await base44.asServiceRole.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + CREATE_BATCH));
+        created += Math.min(CREATE_BATCH, toCreate.length - i);
+        if (i + CREATE_BATCH < toCreate.length) await new Promise(r => setTimeout(r, 800));
       }
+
+      // Update in batches of 5
+      let updated = 0;
+      for (let i = 0; i < toUpdate.length; i += 5) {
+        await Promise.all(toUpdate.slice(i, i + 5).map(u =>
+          base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data)
+        ));
+        updated += Math.min(5, toUpdate.length - i);
+        if (i + 5 < toUpdate.length) await new Promise(r => setTimeout(r, 600));
+      }
+
+      return Response.json({ saved: created + updated, created, updated });
     }
 
-    // Bulk create in batches of 25 with longer delay to avoid rate limits
-    const BATCH = 25;
-    let created = 0;
-    for (let i = 0; i < toCreate.length; i += BATCH) {
-      await base44.asServiceRole.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + BATCH));
-      created += Math.min(BATCH, toCreate.length - i);
-      if (i + BATCH < toCreate.length) await new Promise(r => setTimeout(r, 1000));
+    // ── FINALIZE UPLOAD (last call after all chunks done) ────────────────────
+    if (body.action === 'finalize') {
+      const { uploadId, totalSaved, totalCreated, totalUpdated } = body;
+      await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
+        records_imported: totalSaved,
+        status: totalSaved > 0 ? 'success' : 'failed',
+        notes: `${totalCreated} created, ${totalUpdated} updated`,
+      });
+      return Response.json({ ok: true });
     }
 
-    // Update in batches of 3 with longer delay
-    let updated = 0;
-    for (let i = 0; i < toUpdate.length; i += 3) {
-      await Promise.all(toUpdate.slice(i, i + 3).map(u =>
-        base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data)
-      ));
-      updated += Math.min(3, toUpdate.length - i);
-      if (i + 3 < toUpdate.length) await new Promise(r => setTimeout(r, 800));
-    }
+    return Response.json({ error: 'Unknown action' }, { status: 400 });
 
-    const saved = created + updated;
-
-    // Update the upload record with final counts
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      records_imported: saved,
-      status: saved > 0 ? 'success' : 'failed',
-      notes: `${created} created, ${updated} updated`,
-    });
-
-    return Response.json({ saved, created, updated });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

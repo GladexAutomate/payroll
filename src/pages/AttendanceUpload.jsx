@@ -14,6 +14,7 @@ export default function AttendanceUpload() {
   const [uploads, setUploads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, saved: 0 });
   const [deletingId, setDeletingId] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [previewUpload, setPreviewUpload] = useState(null);
@@ -206,17 +207,59 @@ export default function AttendanceUpload() {
     // Upload file for record-keeping
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
-    // Send all records to backend function — runs server-side, no rate limits
-    const result = await base44.functions.invoke('importAttendance', {
-      records,
+    // Step 1: Create the upload record to get an uploadId
+    const createRes = await base44.functions.invoke('importAttendance', {
+      action: 'createUpload',
       filename: file.name,
       periodLabel,
       fileUrl: file_url,
     });
+    const uploadId = createRes.data?.uploadId;
 
-    const saved = result.data?.saved || 0;
+    // Step 2: Queue records in chunks of 100
+    const CHUNK_SIZE = 100;
+    const chunks = [];
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      chunks.push(records.slice(i, i + CHUNK_SIZE));
+    }
 
-    setUploadResult({ saved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+    setUploadProgress({ current: 0, total: chunks.length, saved: 0 });
+
+    let totalSaved = 0, totalCreated = 0, totalUpdated = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const res = await base44.functions.invoke('importAttendance', {
+            action: 'importChunk',
+            records: chunks[i],
+            uploadId,
+          });
+          totalSaved += res.data?.saved || 0;
+          totalCreated += res.data?.created || 0;
+          totalUpdated += res.data?.updated || 0;
+          setUploadProgress({ current: i + 1, total: chunks.length, saved: totalSaved });
+          break;
+        } catch (err) {
+          attempts++;
+          if (attempts >= 3) throw err;
+          // Wait before retry (rate limit recovery)
+          await new Promise(r => setTimeout(r, 2000 * attempts));
+        }
+      }
+    }
+
+    // Step 3: Finalize — update upload record with totals
+    await base44.functions.invoke('importAttendance', {
+      action: 'finalize',
+      uploadId,
+      totalSaved,
+      totalCreated,
+      totalUpdated,
+    });
+
+    setUploadResult({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+    setUploadProgress({ current: 0, total: 0, saved: 0 });
     setUploading(false);
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
@@ -279,10 +322,32 @@ export default function AttendanceUpload() {
         >
           <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
           {uploading ? (
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-4 w-full max-w-sm">
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
-              <p className="text-sm font-medium">Processing file — extracting punch records...</p>
-              <p className="text-xs text-muted-foreground">This may take 15–30 seconds</p>
+              {uploadProgress.total > 0 ? (
+                <>
+                  <div className="w-full">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                      <span>Importing batch {uploadProgress.current} of {uploadProgress.total}</span>
+                      <span>{uploadProgress.saved} records saved</span>
+                    </div>
+                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5 text-center">
+                      {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% complete
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">Processing file — extracting punch records...</p>
+                  <p className="text-xs text-muted-foreground">Preparing import queue...</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
