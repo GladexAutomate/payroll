@@ -156,22 +156,31 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   };
 
   const summarize = (empLogs) => {
-    let present = 0, absent = 0, hours = 0, late = 0;
+    let present = 0, absent = 0, hours = 0, ot = 0, late = 0;
     for (const d of days) {
       const ds = format(d, 'yyyy-MM-dd');
       const l = empLogs[ds];
       if (!l) continue;
       // Only count as a worked day if BOTH time in and time out are present
-      if (l.time_in && l.time_out) present++;
-      else if (l.status === 'absent') absent++;
-      hours += Number(l.total_hours) || 0;
+      if (l.time_in && l.time_out) {
+        present++;
+        // Compute raw hours from time_in/time_out
+        const raw = (new Date(l.time_out) - new Date(l.time_in)) / 3600000;
+        if (!isNaN(raw) && raw > 0) {
+          const dayHours = Math.max(1, Math.min(8, raw));
+          hours += dayHours;
+          if (raw > 8) ot += raw - 8;
+        }
+      } else if (l.status === 'absent') {
+        absent++;
+      }
       late += Number(l.late_minutes) || 0;
     }
-    return { present, absent, hours, late };
+    return { present, absent, hours, ot, late };
   };
 
   const exportToExcel = () => {
-    const header = ['Employee', 'ID', ...days.map(d => format(d, 'MM-dd')), 'Days Present', 'Total Hours', 'Late (min)'];
+    const header = ['Employee', 'ID', ...days.map(d => format(d, 'MM-dd')), 'Days Present', 'Total Hours', 'OT Hours', 'Late (min)'];
     const data = rows.map(r => {
       const s = summarize(r.logs);
       return [
@@ -187,11 +196,12 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         }),
         s.present,
         s.hours.toFixed(1),
+        s.ot.toFixed(1),
         s.late,
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    ws['!cols'] = [{ wch: 24 }, { wch: 10 }, ...days.map(() => ({ wch: 11 })), { wch: 12 }, { wch: 12 }, { wch: 11 }];
+    ws['!cols'] = [{ wch: 24 }, { wch: 10 }, ...days.map(() => ({ wch: 11 })), { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 11 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, periodLabel.slice(0, 30));
     XLSX.writeFile(wb, `Attendance_${periodLabel.replace(/\s+/g, '_')}.xlsx`);
@@ -243,6 +253,9 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                   Hours
                 </th>
                 <th className="py-2 px-3 font-medium text-center text-muted-foreground border-b border-border min-w-[60px]">
+                  OT
+                </th>
+                <th className="py-2 px-3 font-medium text-center text-muted-foreground border-b border-border min-w-[60px]">
                   Late
                 </th>
               </tr>
@@ -250,13 +263,13 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={days.length + 4} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={days.length + 5} className="text-center py-12 text-muted-foreground">
                     Loading attendance records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={days.length + 4} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={days.length + 5} className="text-center py-12 text-muted-foreground">
                     No attendance records found for this period.
                   </td>
                 </tr>
@@ -289,6 +302,9 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                     </td>
                     <td className="py-1.5 px-3 text-center font-mono text-xs">
                       {s.hours.toFixed(1)}h
+                    </td>
+                    <td className="py-1.5 px-3 text-center font-mono text-xs text-blue-600">
+                      {s.ot > 0 ? `${s.ot.toFixed(1)}h` : '—'}
                     </td>
                     <td className="py-1.5 px-3 text-center text-orange-600 text-xs">
                       {s.late > 0 ? `${s.late}m` : '—'}
