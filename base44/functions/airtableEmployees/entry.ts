@@ -122,6 +122,48 @@ Deno.serve(async (req) => {
       return Response.json({ record: data });
     }
 
+    // ── RENAME FIELD: change a column's name ──────────────────────────────────
+    if (action === 'renameField') {
+      const { fieldId, fieldName, newName } = body;
+      if (!newName) return Response.json({ error: 'newName required' }, { status: 400 });
+
+      // Resolve fieldId if only name is provided
+      let resolvedId = fieldId;
+      if (!resolvedId) {
+        const metaRes = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`, { headers });
+        const metaData = await metaRes.json();
+        if (!metaRes.ok) return Response.json({ error: metaData.error?.message || 'Schema fetch failed' }, { status: metaRes.status });
+        const table = (metaData.tables || []).find(t => t.id === TABLE_ID);
+        const field = (table?.fields || []).find(f => f.name === fieldName);
+        if (!field) return Response.json({ error: `Field "${fieldName}" not found` }, { status: 404 });
+        resolvedId = field.id;
+      }
+
+      const res = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables/${TABLE_ID}/fields/${resolvedId}`,
+        { method: 'PATCH', headers, body: JSON.stringify({ name: newName }) }
+      );
+      const data = await res.json();
+      if (!res.ok) return Response.json({ error: data.error?.message || 'Rename failed', details: data }, { status: res.status });
+      return Response.json({ field: data });
+    }
+
+    // ── CREATE FIELD: add a new column ────────────────────────────────────────
+    if (action === 'createField') {
+      const { name, type = 'singleLineText', options } = body;
+      if (!name) return Response.json({ error: 'name required' }, { status: 400 });
+      const payload = { name, type };
+      if (options) payload.options = options;
+
+      const res = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables/${TABLE_ID}/fields`,
+        { method: 'POST', headers, body: JSON.stringify(payload) }
+      );
+      const data = await res.json();
+      if (!res.ok) return Response.json({ error: data.error?.message || 'Create field failed', details: data }, { status: res.status });
+      return Response.json({ field: data });
+    }
+
     // ── DELETE: remove a record by ID ─────────────────────────────────────────
     if (action === 'delete') {
       const { recordId } = body;

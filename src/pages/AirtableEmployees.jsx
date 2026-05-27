@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Loader2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, RefreshCw, ChevronLeft, ChevronRight, Columns3 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import AirtableRecordForm from '@/components/airtable/AirtableRecordForm';
 import TableWithTopScrollbar from '@/components/airtable/TableWithTopScrollbar';
+import EditableColumnHeader from '@/components/airtable/EditableColumnHeader';
+import AddColumnDialog from '@/components/airtable/AddColumnDialog';
 
 // Fields that are computed by Airtable — we hide them from the create/edit form
 const READ_ONLY_FIELDS = new Set([
@@ -40,6 +42,7 @@ export default function AirtableEmployees() {
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [fieldsMeta, setFieldsMeta] = useState({}); // schema: { fieldName: { type, choices } }
+  const [showAddColumn, setShowAddColumn] = useState(false);
 
   const loadPage = async (offset = null, searchQuery = '') => {
     setLoading(true);
@@ -62,11 +65,32 @@ export default function AirtableEmployees() {
   useEffect(() => { loadPage(null); }, []);
 
   // Fetch Airtable schema once to get dropdown choices for single/multi-select fields
-  useEffect(() => {
-    base44.functions.invoke('airtableEmployees', { action: 'schema' })
-      .then(res => setFieldsMeta(res.data?.fieldsMeta || {}))
-      .catch(() => {});
-  }, []);
+  const loadSchema = async () => {
+    try {
+      const res = await base44.functions.invoke('airtableEmployees', { action: 'schema' });
+      setFieldsMeta(res.data?.fieldsMeta || {});
+    } catch {}
+  };
+  useEffect(() => { loadSchema(); }, []);
+
+  const handleRenameColumn = async (oldName, newName) => {
+    await base44.functions.invoke('airtableEmployees', {
+      action: 'renameField', fieldName: oldName, newName,
+    });
+    await loadSchema();
+    const currentOffset = offsetStack[pageIdx];
+    await loadPage(currentOffset, search);
+  };
+
+  const handleAddColumn = async ({ name, type, options }) => {
+    await base44.functions.invoke('airtableEmployees', {
+      action: 'createField', name, type, options,
+    });
+    setShowAddColumn(false);
+    await loadSchema();
+    const currentOffset = offsetStack[pageIdx];
+    await loadPage(currentOffset, search);
+  };
 
   // Debounce search — when user types, reset pagination and search Airtable server-side
   useEffect(() => {
@@ -185,7 +209,10 @@ export default function AirtableEmployees() {
           <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowAddColumn(true)} disabled={loading}>
+            <Columns3 className="w-4 h-4 mr-1.5" /> Add Column
+          </Button>
           <Button onClick={() => { setEditing({}); setShowForm(true); }} disabled={loading}>
             <Plus className="w-4 h-4 mr-1.5" /> Add Record
           </Button>
@@ -208,7 +235,7 @@ export default function AirtableEmployees() {
                 </th>
                 {columns.map(col => (
                   <th key={col} className="py-2.5 px-3 text-left font-medium text-muted-foreground uppercase tracking-wide border-b border-border whitespace-nowrap min-w-[140px]">
-                    {col}
+                    <EditableColumnHeader name={col} onRename={handleRenameColumn} />
                   </th>
                 ))}
               </tr>
@@ -306,6 +333,14 @@ export default function AirtableEmployees() {
           fieldsMeta={fieldsMeta}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
+        />
+      )}
+
+      {/* Add Column Modal */}
+      {showAddColumn && (
+        <AddColumnDialog
+          onCancel={() => setShowAddColumn(false)}
+          onCreate={handleAddColumn}
         />
       )}
     </div>
