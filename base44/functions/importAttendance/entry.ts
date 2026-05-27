@@ -8,12 +8,12 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
 
-    // ── DELETE mode ──────────────────────────────────────────────────────────
+    // ── DELETE UPLOAD mode ────────────────────────────────────────────────────
     if (body.action === 'delete') {
       const { uploadId } = body;
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
-      // Fetch all logs linked to this upload
+      // Fetch all logs linked to this upload (by upload_id field)
       let page = 0;
       const PAGE_SIZE = 200;
       let allLogs = [];
@@ -37,6 +37,32 @@ Deno.serve(async (req) => {
       await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
 
       return Response.json({ deleted: allLogs.length });
+    }
+
+    // ── DELETE ALL (no upload_id filter) mode ─────────────────────────────────
+    if (body.action === 'deleteAll') {
+      // Paginate through ALL attendance logs and delete them all
+      const PAGE_SIZE = 200;
+      let totalDeleted = 0;
+      while (true) {
+        const batch = await base44.asServiceRole.entities.AttendanceLog.list('-date', PAGE_SIZE);
+        if (batch.length === 0) break;
+        for (let i = 0; i < batch.length; i += 5) {
+          await Promise.all(batch.slice(i, i + 5).map(l =>
+            base44.asServiceRole.entities.AttendanceLog.delete(l.id)
+          ));
+          if (i + 5 < batch.length) await new Promise(r => setTimeout(r, 200));
+        }
+        totalDeleted += batch.length;
+        if (batch.length < PAGE_SIZE) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      // Also clear all upload records
+      const uploads = await base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 500);
+      for (const u of uploads) {
+        await base44.asServiceRole.entities.AttendanceUpload.delete(u.id);
+      }
+      return Response.json({ deleted: totalDeleted });
     }
 
     // ── IMPORT mode ───────────────────────────────────────────────────────────
