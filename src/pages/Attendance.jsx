@@ -32,8 +32,10 @@ export default function Attendance() {
 
   const filtered = logs.filter(l => {
     const emp = empMap[l.employee_id] || empMap[l.biometric_id];
-    const name = emp ? `${emp.first_name} ${emp.last_name}`.toLowerCase() : l.employee_id?.toLowerCase() || '';
-    const matchSearch = !search || name.includes(search.toLowerCase());
+    const name = emp
+      ? `${emp.first_name} ${emp.last_name}`.toLowerCase()
+      : (l.employee_name || l.employee_id || '').toLowerCase();
+    const matchSearch = !search || name.includes(search.toLowerCase()) || (l.biometric_id || '').includes(search);
     const matchStatus = filterStatus === 'all' || l.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -47,10 +49,12 @@ export default function Attendance() {
   const fmtTime = (iso) => {
     if (!iso) return '—';
     try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
+      // Only accept clean ISO datetime strings like "2026-05-27T08:00:00"
+      const clean = String(iso).trim().split(' ')[0];
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) return '—';
       return format(d, 'hh:mm a');
-    } catch { return iso; }
+    } catch { return '—'; }
   };
   const fmtHrs = (h) => (h != null && !isNaN(h)) ? `${Number(h).toFixed(1)}h` : '—';
 
