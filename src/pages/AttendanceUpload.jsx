@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useUpload } from '@/context/UploadContext';
 import { base44 } from '@/api/base44Client';
 import { Upload, FileSpreadsheet, Trash2, AlertTriangle, CheckCircle, Loader2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,12 +12,14 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export default function AttendanceUpload() {
+  const { uploadState, startUpload, updateProgress, finishUpload, clearUpload } = useUpload();
+  const uploading = uploadState?.uploading || false;
+  const uploadProgress = uploadState?.progress || { current: 0, total: 0, saved: 0 };
+  const uploadResult = uploadState?.result || null;
+
   const [uploads, setUploads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, saved: 0 });
   const [deletingId, setDeletingId] = useState(null);
-  const [uploadResult, setUploadResult] = useState(null);
   const [previewUpload, setPreviewUpload] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef();
@@ -47,13 +50,13 @@ export default function AttendanceUpload() {
     // Validate file type upfront
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['xlsx', 'csv'].includes(ext)) {
-      setUploadResult({ error: `Unsupported file type: .${ext}. Please save your file as .xlsx (Excel Workbook) or .csv and try again.` });
+      finishUpload({ error: `Unsupported file type: .${ext}. Please save your file as .xlsx (Excel Workbook) or .csv and try again.` });
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
 
-    setUploading(true);
-    setUploadResult(null);
+    startUpload(file.name, '');
+
 
     // Parse file locally with xlsx
     const arrayBuffer = await file.arrayBuffer();
@@ -62,8 +65,8 @@ export default function AttendanceUpload() {
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
 
     if (rows.length < 2) {
-      setUploadResult({ error: 'File appears empty or has no data rows.' });
-      setUploading(false);
+      finishUpload({ error: 'File appears empty or has no data rows.' });
+      if (fileRef.current) fileRef.current.value = '';
       return;
     }
 
@@ -103,8 +106,8 @@ export default function AttendanceUpload() {
     console.log('Row 1 sample:', rows[1]?.slice(0, 5));
 
     if (dateCols.length === 0) {
-      setUploadResult({ error: `No date columns found. Headers detected: "${headerRow.slice(0, 8).join('", "')}"` });
-      setUploading(false);
+      finishUpload({ error: `No date columns found. Headers detected: "${headerRow.slice(0, 8).join('", "')}"` });
+      if (fileRef.current) fileRef.current.value = '';
       return;
     }
 
@@ -198,8 +201,7 @@ export default function AttendanceUpload() {
     }
 
     if (records.length === 0) {
-      setUploadResult({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
-      setUploading(false);
+      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
@@ -223,7 +225,7 @@ export default function AttendanceUpload() {
       chunks.push(records.slice(i, i + CHUNK_SIZE));
     }
 
-    setUploadProgress({ current: 0, total: chunks.length, saved: 0 });
+    updateProgress({ current: 0, total: chunks.length, saved: 0 });
 
     let totalSaved = 0, totalCreated = 0, totalUpdated = 0;
     for (let i = 0; i < chunks.length; i++) {
@@ -238,7 +240,7 @@ export default function AttendanceUpload() {
           totalSaved += res.data?.saved || 0;
           totalCreated += res.data?.created || 0;
           totalUpdated += res.data?.updated || 0;
-          setUploadProgress({ current: i + 1, total: chunks.length, saved: totalSaved });
+          updateProgress({ current: i + 1, total: chunks.length, saved: totalSaved });
           break;
         } catch (err) {
           attempts++;
@@ -258,9 +260,7 @@ export default function AttendanceUpload() {
       totalUpdated,
     });
 
-    setUploadResult({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
-    setUploadProgress({ current: 0, total: 0, saved: 0 });
-    setUploading(false);
+    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -366,14 +366,14 @@ export default function AttendanceUpload() {
         </div>
 
         {/* Upload Result */}
-        {uploadResult && (
+        {uploadResult && !uploading && (
           <div className={`mt-4 rounded-xl p-4 flex items-start gap-3 ${uploadResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
             {uploadResult.error ? (
               <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             ) : (
               <CheckCircle className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
             )}
-            <div>
+            <div className="flex-1">
               {uploadResult.error ? (
                 <p className="text-sm font-medium text-red-800">Failed to parse file: {uploadResult.error}</p>
               ) : uploadResult.saved === 0 ? (
@@ -398,6 +398,7 @@ export default function AttendanceUpload() {
                 </>
               )}
             </div>
+            <button onClick={clearUpload} className="ml-2 shrink-0 text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
           </div>
         )}
 
