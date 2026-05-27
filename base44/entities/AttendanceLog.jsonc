@@ -63,6 +63,10 @@
     "is_manually_edited": {
       "type": "boolean",
       "default": false
+    },
+    "upload_id": {
+      "type": "string",
+      "description": "ID of the AttendanceUpload record that created this log"
     }
   },
   "required": [

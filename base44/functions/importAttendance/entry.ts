@@ -6,20 +6,59 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { records, filename, periodLabel, fileUrl } = await req.json();
+    const body = await req.json();
+
+    // ── DELETE mode ──────────────────────────────────────────────────────────
+    if (body.action === 'delete') {
+      const { uploadId } = body;
+      if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
+
+      // Fetch all logs linked to this upload
+      let page = 0;
+      const PAGE_SIZE = 200;
+      let allLogs = [];
+      while (true) {
+        const batch = await base44.asServiceRole.entities.AttendanceLog.filter(
+          { upload_id: uploadId }, '-date', PAGE_SIZE, page * PAGE_SIZE
+        );
+        allLogs = allLogs.concat(batch);
+        if (batch.length < PAGE_SIZE) break;
+        page++;
+      }
+
+      // Delete in batches of 5 with delay
+      for (let i = 0; i < allLogs.length; i += 5) {
+        await Promise.all(allLogs.slice(i, i + 5).map(l =>
+          base44.asServiceRole.entities.AttendanceLog.delete(l.id)
+        ));
+        if (i + 5 < allLogs.length) await new Promise(r => setTimeout(r, 300));
+      }
+
+      await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
+
+      return Response.json({ deleted: allLogs.length });
+    }
+
+    // ── IMPORT mode ───────────────────────────────────────────────────────────
+    const { records, filename, periodLabel, fileUrl } = body;
 
     if (!records || records.length === 0) {
       return Response.json({ saved: 0, updated: 0 });
     }
 
-    // Fetch existing logs for the dates in this upload (to detect updates vs creates)
-    const allDates = [...new Set(records.map(r => r.date))];
-    const allEmployeeIds = [...new Set(records.map(r => r.employee_id))];
+    // Save the upload record first so we have its ID to tag logs with
+    const uploadRecord = await base44.asServiceRole.entities.AttendanceUpload.create({
+      filename,
+      file_url: fileUrl || '',
+      period_label: periodLabel,
+      records_imported: 0,
+      status: 'processing',
+      uploaded_by: user.email || '',
+    });
+    const uploadId = uploadRecord.id;
 
-    // Fetch existing logs in batches to avoid timeouts
+    // Fetch existing logs to detect updates vs creates
     const existingLogs = await base44.asServiceRole.entities.AttendanceLog.list('-date', 5000);
-
-    // Build lookup map
     const existingMap = {};
     for (const log of existingLogs) {
       existingMap[`${log.employee_id}|${log.date}`] = log;
@@ -38,13 +77,14 @@ Deno.serve(async (req) => {
           total_hours: rec.total_hours || existing.total_hours,
           status: 'present',
           biometric_id: rec.biometric_id || existing.biometric_id,
+          upload_id: uploadId,
         }});
       } else {
-        toCreate.push(rec);
+        toCreate.push({ ...rec, upload_id: uploadId });
       }
     }
 
-    // Bulk create in batches of 50 with delay between batches
+    // Bulk create in batches of 50
     const BATCH = 50;
     let created = 0;
     for (let i = 0; i < toCreate.length; i += BATCH) {
@@ -53,7 +93,7 @@ Deno.serve(async (req) => {
       if (i + BATCH < toCreate.length) await new Promise(r => setTimeout(r, 500));
     }
 
-    // Update sequentially in small batches of 5 with delay to avoid rate limits
+    // Update in batches of 5
     let updated = 0;
     for (let i = 0; i < toUpdate.length; i += 5) {
       await Promise.all(toUpdate.slice(i, i + 5).map(u =>
@@ -65,14 +105,10 @@ Deno.serve(async (req) => {
 
     const saved = created + updated;
 
-    // Save upload record
-    await base44.asServiceRole.entities.AttendanceUpload.create({
-      filename,
-      file_url: fileUrl || '',
-      period_label: periodLabel,
+    // Update the upload record with final counts
+    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
       records_imported: saved,
       status: saved > 0 ? 'success' : 'failed',
-      uploaded_by: user.email || '',
       notes: `${created} created, ${updated} updated`,
     });
 

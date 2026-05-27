@@ -14,6 +14,7 @@ export default function AttendanceUpload() {
   const [uploads, setUploads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [previewUpload, setPreviewUpload] = useState(null);
   const [dragOver, setDragOver] = useState(false);
@@ -242,22 +243,9 @@ export default function AttendanceUpload() {
   };
 
   const handleDelete = async (upload) => {
-    const uploadTime = new Date(upload.created_date).getTime();
-    const logs = await base44.entities.AttendanceLog.list('-created_date', 500);
-    const toDelete = logs.filter(l => {
-      const logTime = new Date(l.created_date).getTime();
-      return Math.abs(logTime - uploadTime) < 5 * 60 * 1000;
-    });
-
-    // Delete sequentially in batches of 3 with delay to avoid rate limits
-    for (let i = 0; i < toDelete.length; i += 3) {
-      await Promise.all(toDelete.slice(i, i + 3).map(log =>
-        base44.entities.AttendanceLog.delete(log.id)
-      ));
-      await new Promise(r => setTimeout(r, 400));
-    }
-
-    await base44.entities.AttendanceUpload.delete(upload.id);
+    setDeletingId(upload.id);
+    await base44.functions.invoke('importAttendance', { action: 'delete', uploadId: upload.id });
+    setDeletingId(null);
     loadUploads();
   };
 
@@ -407,30 +395,36 @@ export default function AttendanceUpload() {
                   <p className="text-xs text-muted-foreground">by {upload.uploaded_by}</p>
                 </div>
 
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <button className="p-2 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors shrink-0">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Upload & Records?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete <strong>{upload.records_imported || 0} attendance records</strong> imported from <strong>{upload.filename}</strong>. This cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={() => handleDelete(upload)}
-                      >
-                        Delete Permanently
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                {deletingId === upload.id ? (
+                  <div className="p-2 shrink-0">
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button className="p-2 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors shrink-0" disabled={!!deletingId}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Upload & Records?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete <strong>{upload.records_imported || 0} attendance records</strong> imported from <strong>{upload.filename}</strong>. This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => handleDelete(upload)}
+                        >
+                          Delete Permanently
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </div>
             ))}
           </div>
