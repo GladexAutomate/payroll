@@ -39,15 +39,6 @@ export default function TableWithTopScrollbar({ children }) {
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
-      {/* Top scrollbar */}
-      <div
-        ref={topRef}
-        onScroll={handleTopScroll}
-        className="overflow-x-auto overflow-y-hidden border-b border-border"
-        style={{ height: 14 }}
-      >
-        <div ref={spacerRef} style={{ height: 1 }} />
-      </div>
       {/* Actual table */}
       <div
         ref={bodyRef}
@@ -55,6 +46,15 @@ export default function TableWithTopScrollbar({ children }) {
         className="overflow-auto max-h-[70vh]"
       >
         {children}
+      </div>
+      {/* Bottom mirrored scrollbar (visible without scrolling the table down) */}
+      <div
+        ref={topRef}
+        onScroll={handleTopScroll}
+        className="overflow-x-auto overflow-y-hidden border-t border-border"
+        style={{ height: 14 }}
+      >
+        <div ref={spacerRef} style={{ height: 1 }} />
       </div>
     </div>
   );
