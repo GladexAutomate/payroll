@@ -25,15 +25,17 @@ Deno.serve(async (req) => {
         page++;
       }
 
-      // Delete in parallel batches of 20 — no artificial delays
+      // Delete in parallel batches of 20 — ignore 404s (already deleted)
       const BATCH = 20;
       for (let i = 0; i < allLogs.length; i += BATCH) {
-        await Promise.all(allLogs.slice(i, i + BATCH).map(l =>
+        await Promise.allSettled(allLogs.slice(i, i + BATCH).map(l =>
           base44.asServiceRole.entities.AttendanceLog.delete(l.id)
         ));
       }
 
-      await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
+      try {
+        await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
+      } catch (_) { /* already deleted */ }
       return Response.json({ deleted: allLogs.length });
     }
 
