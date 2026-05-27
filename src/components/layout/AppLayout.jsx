@@ -8,7 +8,7 @@ const pageTitles = {
   '/employees': 'Employees',
   '/departments': 'Departments',
   '/attendance': 'Attendance',
-  '/biometric': 'Biometric Sync',
+  '/attendance-upload': 'Upload Attendance',
   '/shifts': 'Shift Schedules',
   '/leaves': 'Leave Requests',
   '/overtime': 'Overtime',

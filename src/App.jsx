@@ -14,7 +14,7 @@ import Dashboard from './pages/Dashboard';
 import Employees from './pages/Employees';
 import Departments from './pages/Departments';
 import Attendance from './pages/Attendance';
-import Biometric from './pages/Biometric';
+import AttendanceUpload from './pages/AttendanceUpload';
 import Shifts from './pages/Shifts';
 import Leaves from './pages/Leaves';
 import Overtime from './pages/Overtime';
@@ -52,7 +52,7 @@ const AuthenticatedApp = () => {
         <Route path="/employees" element={<Employees />} />
         <Route path="/departments" element={<Departments />} />
         <Route path="/attendance" element={<Attendance />} />
-        <Route path="/biometric" element={<Biometric />} />
+        <Route path="/attendance-upload" element={<AttendanceUpload />} />
         <Route path="/shifts" element={<Shifts />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, ChevronRight, Building2, Fingerprint,
-  ClipboardList, Calendar, X
+  ClipboardList, Calendar, Upload, X
 } from 'lucide-react';
 
 const navItems = [
@@ -11,7 +11,7 @@ const navItems = [
   { label: 'Employees', icon: Users, path: '/employees' },
   { label: 'Departments', icon: Building2, path: '/departments' },
   { label: 'Attendance', icon: Clock, path: '/attendance' },
-  { label: 'Biometric Sync', icon: Fingerprint, path: '/biometric' },
+  { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },
   { label: 'Shift Schedules', icon: CalendarDays, path: '/shifts' },
   { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
   { label: 'Overtime', icon: ClipboardList, path: '/overtime' },
@@ -80,10 +80,7 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Footer */}
         <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-2 px-1">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-white/40 text-xs">Device: 112.209.71.138</span>
-          </div>
+          <p className="text-white/30 text-xs px-1">PaySync PH v1.0</p>
         </div>
       </aside>
     </>
