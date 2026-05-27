@@ -105,11 +105,8 @@ export default function AttendanceUpload() {
       ? format(new Date(parseInt(monthMatch[1]), parseInt(monthMatch[2]) - 1), 'MMMM yyyy')
       : `${year}`;
 
-    // Get employees and existing logs upfront (avoid per-cell API calls)
-    const [employees, existingLogs] = await Promise.all([
-      base44.entities.Employee.filter({ status: 'active' }),
-      base44.entities.AttendanceLog.list('-date', 500),
-    ]);
+    // Fetch employees once for ID mapping
+    const employees = await base44.entities.Employee.filter({ status: 'active' });
 
     const byBioId = {};
     const byName = {};
@@ -120,21 +117,11 @@ export default function AttendanceUpload() {
       byName[fullName] = emp;
     }
 
-    // Build a lookup map: "employeeId|date" -> existing log
-    const existingMap = {};
-    for (const log of existingLogs) {
-      existingMap[`${log.employee_id}|${log.date}`] = log;
-    }
-
-    let saved = 0;
     let dataRowsFound = 0;
     let emptyCellsSkipped = 0;
-    const skipped = [];
 
-    // Collect all creates/updates to batch
-    const toCreate = [];
-    const toUpdate = [];
-
+    // Parse all records locally — no DB calls here
+    const records = [];
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
       const code = String(personCodeIdx >= 0 ? row[personCodeIdx] : '').trim();
@@ -163,54 +150,39 @@ export default function AttendanceUpload() {
           ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
           : 0;
 
-        const existing = existingMap[`${employeeId}|${dateStr}`];
-        if (existing) {
-          toUpdate.push({ id: existing.id, data: {
-            time_in: timeInISO || existing.time_in,
-            time_out: timeOutISO || existing.time_out,
-            total_hours: totalHours || existing.total_hours,
-            status: 'present'
-          }});
-        } else {
-          toCreate.push({
-            employee_id: employeeId,
-            biometric_id: biometricId,
-            date: dateStr,
-            time_in: timeInISO,
-            time_out: timeOutISO,
-            total_hours: totalHours,
-            status: 'present'
-          });
-        }
-        saved++;
+        records.push({
+          employee_id: employeeId,
+          biometric_id: biometricId,
+          date: dateStr,
+          time_in: timeInISO,
+          time_out: timeOutISO,
+          total_hours: totalHours,
+          status: 'present',
+        });
       }
     }
 
-    // Execute creates in batches of 50
-    const BATCH = 50;
-    for (let i = 0; i < toCreate.length; i += BATCH) {
-      await base44.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + BATCH));
-    }
-    // Execute updates in batches of 10 with a small delay to avoid rate limits
-    for (let i = 0; i < toUpdate.length; i += 10) {
-      await Promise.all(toUpdate.slice(i, i + 10).map(u => base44.entities.AttendanceLog.update(u.id, u.data)));
-      if (i + 10 < toUpdate.length) await new Promise(r => setTimeout(r, 300));
+    if (records.length === 0) {
+      setUploadResult({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
     }
 
     // Upload file for record-keeping
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
-    await base44.entities.AttendanceUpload.create({
+    // Send all records to backend function — runs server-side, no rate limits
+    const result = await base44.functions.invoke('importAttendance', {
+      records,
       filename: file.name,
-      file_url,
-      period_label: periodLabel,
-      records_imported: saved,
-      status: saved > 0 ? 'success' : 'failed',
-      uploaded_by: (await base44.auth.me())?.email || '',
-      notes: skipped.length > 0 ? `${skipped.length} rows skipped` : ''
+      periodLabel,
+      fileUrl: file_url,
     });
 
-    setUploadResult({ saved, skipped: skipped.length, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+    const saved = result.data?.saved || 0;
+
+    setUploadResult({ saved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
     setUploading(false);
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
