@@ -26,34 +26,33 @@ Deno.serve(async (req) => {
         await new Promise(r => setTimeout(r, 200));
       }
 
-      // Delete one at a time with rate-limit retry, ignore "not found" errors
-      let deleted = 0;
-      for (const log of allLogs) {
+      // Delete in parallel batches with rate-limit retry
+      const deleteOne = async (log) => {
         let attempts = 0;
         while (attempts < 5) {
           try {
             await base44.asServiceRole.entities.AttendanceLog.delete(log.id);
-            deleted++;
-            break;
+            return true;
           } catch (err) {
             const msg = String(err?.message || err);
-            // Already gone — count as deleted and move on
-            if (msg.includes('not found') || msg.includes('404')) {
-              deleted++;
-              break;
-            }
-            // Rate limit — back off and retry
+            if (msg.includes('not found') || msg.includes('404')) return true;
             if (msg.includes('429') || msg.includes('Rate limit')) {
               attempts++;
-              await new Promise(r => setTimeout(r, 1500 * attempts));
+              await new Promise(r => setTimeout(r, 1000 * attempts));
               continue;
             }
-            // Other error — skip this one
-            break;
+            return false;
           }
         }
-        // Small throttle between deletes
-        await new Promise(r => setTimeout(r, 150));
+        return false;
+      };
+
+      let deleted = 0;
+      const PARALLEL = 10;
+      for (let i = 0; i < allLogs.length; i += PARALLEL) {
+        const results = await Promise.all(allLogs.slice(i, i + PARALLEL).map(deleteOne));
+        deleted += results.filter(Boolean).length;
+        if (i + PARALLEL < allLogs.length) await new Promise(r => setTimeout(r, 200));
       }
 
       try {
