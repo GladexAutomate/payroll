@@ -53,124 +53,125 @@ export default function AttendanceUpload() {
     setUploading(true);
     setUploadResult(null);
 
-    // Upload file to storage
+    // Parse file locally with xlsx
+    const arrayBuffer = await file.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-
-    // Extract attendance data from the Excel
-    const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
-      file_url,
-      json_schema: {
-        type: 'object',
-        properties: {
-          records: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                person_code: { type: 'string', description: 'Person Code / employee ID' },
-                name: { type: 'string', description: 'Employee name' },
-                date: { type: 'string', description: 'Date in YYYY-MM-DD or MM-DD format' },
-                time_in: { type: 'string', description: 'First punch / time in (HH:MM)' },
-                time_out: { type: 'string', description: 'Last punch / time out (HH:MM)' },
-              }
-            }
-          },
-          period: { type: 'string', description: 'Period covered by this attendance sheet, e.g. May 2026' }
-        }
-      }
-    });
-
-    if (result.status !== 'success') {
-      setUploadResult({ error: result.details || 'Failed to parse file' });
+    if (rows.length < 2) {
+      setUploadResult({ error: 'File appears empty or has no data rows.' });
       setUploading(false);
       return;
     }
 
-    const { records = [], period } = result.output;
+    // Header row: find Person Code col, Name col, and date columns
+    const headerRow = rows[0].map(h => String(h).trim());
+    const personCodeIdx = headerRow.findIndex(h => /person.?code/i.test(h) || h === 'No.');
+    const nameIdx = headerRow.findIndex(h => /^name$/i.test(h));
 
-    // Get all employees to map by name or biometric_id
+    // Date columns: anything matching MM-DD pattern
+    const dateCols = [];
+    headerRow.forEach((h, i) => {
+      if (/^\d{1,2}-\d{2}$/.test(h)) dateCols.push({ idx: i, label: h });
+    });
+
+    if (dateCols.length === 0) {
+      setUploadResult({ error: 'No date columns found. Date columns should be in MM-DD format (e.g. 05-01, 05-02).' });
+      setUploading(false);
+      return;
+    }
+
+    // Infer year from filename or current year
+    const yearMatch = file.name.match(/(\d{4})/);
+    const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+    const monthMatch = file.name.match(/(\d{4})-(\d{2})/);
+    const periodLabel = monthMatch
+      ? format(new Date(parseInt(monthMatch[1]), parseInt(monthMatch[2]) - 1), 'MMMM yyyy')
+      : `${year}`;
+
+    // Get employees
     const employees = await base44.entities.Employee.filter({ status: 'active' });
     const byBioId = {};
     const byName = {};
     for (const emp of employees) {
-      if (emp.biometric_id) byBioId[emp.biometric_id] = emp;
-      if (emp.employee_id) byBioId[emp.employee_id] = emp;
+      if (emp.biometric_id) byBioId[emp.biometric_id.trim()] = emp;
+      if (emp.employee_id) byBioId[emp.employee_id.trim()] = emp;
       const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase().trim();
       byName[fullName] = emp;
     }
 
-    const currentYear = new Date().getFullYear();
     let saved = 0;
     const skipped = [];
 
-    for (const rec of records) {
-      if (!rec.date || (!rec.time_in && !rec.time_out)) continue;
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const code = String(personCodeIdx >= 0 ? row[personCodeIdx] : '').trim();
+      const name = String(nameIdx >= 0 ? row[nameIdx] : '').toLowerCase().trim();
+      if (!code && !name) continue;
 
-      // Normalize date
-      let dateStr = rec.date?.trim();
-      if (dateStr && !dateStr.match(/^\d{4}-/)) {
-        // MM-DD format — prepend current year
-        dateStr = `${currentYear}-${dateStr.replace(/\//g, '-').padStart(5, '0')}`;
-      }
-
-      // Find employee
-      const code = String(rec.person_code || '').trim();
-      const name = String(rec.name || '').toLowerCase().trim();
-      let emp = byBioId[code] || byName[name];
-
+      const emp = byBioId[code] || byName[name];
       const employeeId = emp?.id || code || name;
       const biometricId = emp?.biometric_id || code;
 
-      if (!dateStr || !employeeId) { skipped.push(rec); continue; }
+      for (const { idx, label } of dateCols) {
+        const cellVal = String(row[idx] || '').trim();
+        if (!cellVal) continue;
 
-      // Build ISO datetimes
-      const buildISO = (t) => t ? `${dateStr}T${t.length === 5 ? t : t + ':00'}:00` : null;
-      const timeIn = buildISO(rec.time_in);
-      const timeOut = buildISO(rec.time_out);
+        // Expect format like "08:00 / 17:00" or "08:00" or "08:00/17:00"
+        const parts = cellVal.split(/\s*[\/,]\s*/);
+        const timeIn = parts[0]?.trim() || null;
+        const timeOut = parts[1]?.trim() || null;
+        if (!timeIn) continue;
 
-      const totalHours = timeIn && timeOut
-        ? Math.round((new Date(timeOut) - new Date(timeIn)) / 36000) / 100
-        : 0;
+        const dateStr = `${year}-${label.padStart(5, '0')}`;
+        const buildISO = (t) => t ? `${dateStr}T${t}:00` : null;
+        const timeInISO = buildISO(timeIn);
+        const timeOutISO = buildISO(timeOut);
+        const totalHours = timeInISO && timeOutISO
+          ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
+          : 0;
 
-      // Upsert attendance log
-      const existing = await base44.entities.AttendanceLog.filter({ employee_id: employeeId, date: dateStr });
-      if (existing.length > 0) {
-        await base44.entities.AttendanceLog.update(existing[0].id, {
-          time_in: timeIn || existing[0].time_in,
-          time_out: timeOut || existing[0].time_out,
-          total_hours: totalHours || existing[0].total_hours,
-          status: 'present'
-        });
-      } else {
-        await base44.entities.AttendanceLog.create({
-          employee_id: employeeId,
-          biometric_id: biometricId,
-          date: dateStr,
-          time_in: timeIn,
-          time_out: timeOut,
-          total_hours: totalHours,
-          status: 'present'
-        });
+        const existing = await base44.entities.AttendanceLog.filter({ employee_id: employeeId, date: dateStr });
+        if (existing.length > 0) {
+          await base44.entities.AttendanceLog.update(existing[0].id, {
+            time_in: timeInISO || existing[0].time_in,
+            time_out: timeOutISO || existing[0].time_out,
+            total_hours: totalHours || existing[0].total_hours,
+            status: 'present'
+          });
+        } else {
+          await base44.entities.AttendanceLog.create({
+            employee_id: employeeId,
+            biometric_id: biometricId,
+            date: dateStr,
+            time_in: timeInISO,
+            time_out: timeOutISO,
+            total_hours: totalHours,
+            status: 'present'
+          });
+        }
+        saved++;
       }
-      saved++;
     }
 
-    // Save upload record
-    const uploadRecord = await base44.entities.AttendanceUpload.create({
+    // Upload file for record-keeping
+    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+
+    await base44.entities.AttendanceUpload.create({
       filename: file.name,
       file_url,
-      period_label: period || '',
+      period_label: periodLabel,
       records_imported: saved,
       status: saved > 0 ? 'success' : 'failed',
       uploaded_by: (await base44.auth.me())?.email || '',
-      notes: skipped.length > 0 ? `${skipped.length} rows skipped (no matching employee or date)` : ''
+      notes: skipped.length > 0 ? `${skipped.length} rows skipped` : ''
     });
 
-    setUploadResult({ saved, skipped: skipped.length, period, uploadRecord });
+    setUploadResult({ saved, skipped: skipped.length, period: periodLabel });
     setUploading(false);
     loadUploads();
-    fileRef.current.value = '';
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   const [templateMonth, setTemplateMonth] = useState(() => {
