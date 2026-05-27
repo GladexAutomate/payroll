@@ -1,73 +1,83 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-// ZKTeco device connection via HTTP/CGI interface (AIFACE11 supports HTTP API)
-// The AIFACE11 AI Face device uses ZKTeco's ADMS/PUSH protocol and HTTP CGI interface
+// ZKTeco ADMS Push Protocol receiver
+// The AIFACE11 device pushes attendance records TO this endpoint.
+// Configure on device: Menu → Comm → Cloud Server Settings → Server Address = this function's URL
 
 Deno.serve(async (req) => {
+  const base44 = createClientFromRequest(req);
+
+  // Handle device heartbeat / info requests (GET)
+  if (req.method === 'GET') {
+    // ZKTeco devices send GET to check server is alive, respond with current server time
+    const now = new Date();
+    const timeStr = now.toISOString().replace('T', ' ').slice(0, 19);
+    return new Response(`GET PUSH RESULT OK\nServerVersion:2.4.1 88\nServerTime:${timeStr}`, {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
   try {
-    const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const contentType = req.headers.get('content-type') || '';
+    const body = await req.text();
 
-    const body = await req.json().catch(() => ({}));
-    const deviceIp = body.device_ip || '112.209.71.138';
-    const devicePort = body.device_port || 80;
-    const username = body.username || 'admin';
-    const password = body.password || '12345';
+    // Log the raw push for debugging
+    console.log('ZKTeco push received:', req.method, contentType);
+    console.log('Body:', body.slice(0, 500));
 
-    // Log sync start
-    const syncStart = new Date().toISOString();
-    let recordsFetched = 0;
-    let recordsSaved = 0;
-    let errorMsg = null;
-
-    // ZKTeco AIFACE11 HTTP CGI API - get attendance records
-    // Standard ZKTeco HTTP API endpoint for attendance logs
-    const authHeader = 'Basic ' + btoa(`${username}:${password}`);
-    
     let attendanceRecords = [];
-    
-    try {
-      // Try ZKTeco HTTP CGI interface
-      const response = await fetch(
-        `http://${deviceIp}:${devicePort}/iclock/cdata?ACTION=att&StartStamp=2000-01-01T00:00:00&EndStamp=${new Date().toISOString().slice(0,19)}`,
-        {
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'text/plain'
-          },
-          signal: AbortSignal.timeout(15000)
-        }
-      );
+    const deviceIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
 
-      if (response.ok) {
-        const text = await response.text();
-        // Parse ZKTeco text format: PIN\tDateTime\tVerifyType\tStatus
-        const lines = text.split('\n').filter(l => l.trim());
-        for (const line of lines) {
-          const parts = line.trim().split('\t');
-          if (parts.length >= 2) {
-            const pin = parts[0];
-            const timestamp = parts[1];
-            if (pin && timestamp) {
-              attendanceRecords.push({ pin, timestamp, verify_type: parts[2] || '0', status: parts[3] || '0' });
-            }
+    // Parse ZKTeco ADMS push format
+    // The device sends: PIN\tDateTime\tVerifyMode\tInOutStatus\tWorkCode
+    // or JSON depending on firmware version
+    if (contentType.includes('application/json')) {
+      const json = JSON.parse(body);
+      // Some firmware sends { records: [...] }
+      const raw = json.records || json.Record || [json];
+      for (const r of raw) {
+        if (r.PIN && r.DateTime) {
+          attendanceRecords.push({ pin: String(r.PIN), timestamp: r.DateTime });
+        }
+      }
+    } else {
+      // Text format: each line is one punch record
+      const lines = body.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        // Skip header/meta lines
+        if (line.startsWith('GET') || line.startsWith('POST') || line.startsWith('Content')) continue;
+        const parts = line.trim().split('\t');
+        if (parts.length >= 2) {
+          const pin = parts[0]?.trim();
+          const timestamp = parts[1]?.trim();
+          if (pin && timestamp && pin !== 'PIN') {
+            attendanceRecords.push({ pin, timestamp });
           }
         }
-        recordsFetched = attendanceRecords.length;
-      } else {
-        errorMsg = `Device responded with HTTP ${response.status}`;
       }
-    } catch (deviceError) {
-      errorMsg = `Cannot reach device: ${deviceError.message}. The device at ${deviceIp} may require VPN/direct network access or different credentials. Records can be imported manually.`;
     }
 
-    // Group punches by employee and date
+    console.log(`Parsed ${attendanceRecords.length} records`);
+
+    if (attendanceRecords.length === 0) {
+      // Device may be sending a keepalive — log it and respond OK
+      await base44.asServiceRole.entities.BiometricSyncLog.create({
+        sync_time: new Date().toISOString(),
+        status: 'partial',
+        records_fetched: 0,
+        records_saved: 0,
+        device_ip: deviceIp,
+        error_message: 'Keepalive or empty push received',
+        triggered_by: 'device_push'
+      });
+      return new Response('OK', { headers: { 'Content-Type': 'text/plain' } });
+    }
+
+    // Group punches by employee+date
     const grouped = {};
     for (const record of attendanceRecords) {
       const dt = new Date(record.timestamp);
+      if (isNaN(dt.getTime())) continue;
       const dateKey = dt.toISOString().slice(0, 10);
       const key = `${record.pin}_${dateKey}`;
       if (!grouped[key]) {
@@ -76,38 +86,47 @@ Deno.serve(async (req) => {
       grouped[key].punches.push(record.timestamp);
     }
 
-    // Find all employees to map biometric_id → employee_id
+    // Map biometric IDs to employee IDs
     const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
     const bioMap = {};
     for (const emp of employees) {
       if (emp.biometric_id) bioMap[emp.biometric_id] = emp.id;
+      if (emp.employee_id) bioMap[emp.employee_id] = emp.id;
     }
 
-    // Save attendance logs
+    let recordsSaved = 0;
     for (const [, group] of Object.entries(grouped)) {
       const empId = bioMap[group.pin];
       const sortedPunches = group.punches.sort();
       const timeIn = sortedPunches[0];
-      const timeOut = sortedPunches[sortedPunches.length - 1];
-      
-      // Compute total hours
+      const timeOut = sortedPunches.length > 1 ? sortedPunches[sortedPunches.length - 1] : null;
       const inMs = new Date(timeIn).getTime();
-      const outMs = new Date(timeOut).getTime();
-      const totalHours = sortedPunches.length > 1 ? Math.round((outMs - inMs) / 36000) / 100 : 0;
+      const outMs = timeOut ? new Date(timeOut).getTime() : inMs;
+      const totalHours = timeOut ? Math.round((outMs - inMs) / 36000) / 100 : 0;
 
-      // Check if log already exists for this employee+date
+      // Upsert: update if exists, create if not
       const existing = await base44.asServiceRole.entities.AttendanceLog.filter({
         employee_id: empId || group.pin,
         date: group.date
       });
 
-      if (existing.length === 0) {
+      if (existing.length > 0) {
+        // Update with latest punch data
+        const allPunches = [...new Set([...(existing[0].raw_punches || []), ...sortedPunches])].sort();
+        const newTimeOut = allPunches.length > 1 ? allPunches[allPunches.length - 1] : null;
+        const newTotal = newTimeOut ? Math.round((new Date(newTimeOut) - new Date(allPunches[0])) / 36000) / 100 : 0;
+        await base44.asServiceRole.entities.AttendanceLog.update(existing[0].id, {
+          time_out: newTimeOut,
+          raw_punches: allPunches,
+          total_hours: newTotal
+        });
+      } else {
         await base44.asServiceRole.entities.AttendanceLog.create({
           employee_id: empId || group.pin,
           biometric_id: group.pin,
           date: group.date,
           time_in: timeIn,
-          time_out: sortedPunches.length > 1 ? timeOut : null,
+          time_out: timeOut,
           raw_punches: sortedPunches,
           total_hours: totalHours,
           status: 'present'
@@ -118,26 +137,27 @@ Deno.serve(async (req) => {
 
     // Save sync log
     await base44.asServiceRole.entities.BiometricSyncLog.create({
-      sync_time: syncStart,
-      status: errorMsg && recordsFetched === 0 ? 'failed' : recordsFetched > 0 ? 'success' : 'partial',
-      records_fetched: recordsFetched,
+      sync_time: new Date().toISOString(),
+      status: 'success',
+      records_fetched: attendanceRecords.length,
       records_saved: recordsSaved,
       device_ip: deviceIp,
-      error_message: errorMsg,
-      triggered_by: user.email
+      triggered_by: 'device_push'
     });
 
-    return Response.json({
-      success: true,
-      records_fetched: recordsFetched,
-      records_saved: recordsSaved,
-      error: errorMsg,
-      message: errorMsg
-        ? `Sync attempted. ${errorMsg}`
-        : `Successfully synced ${recordsSaved} new attendance records from device.`
-    });
+    // ZKTeco expects plain "OK" response
+    return new Response('OK', { headers: { 'Content-Type': 'text/plain' } });
 
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('Push handler error:', error.message);
+    await base44.asServiceRole.entities.BiometricSyncLog.create({
+      sync_time: new Date().toISOString(),
+      status: 'failed',
+      records_fetched: 0,
+      records_saved: 0,
+      error_message: error.message,
+      triggered_by: 'device_push'
+    });
+    return new Response('ERROR', { status: 500, headers: { 'Content-Type': 'text/plain' } });
   }
 });
