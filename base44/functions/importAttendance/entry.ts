@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
       let page = 0;
-      const PAGE_SIZE = 200;
+      const PAGE_SIZE = 500;
       let allLogs = [];
       while (true) {
         const batch = await base44.asServiceRole.entities.AttendanceLog.filter(
@@ -25,11 +25,12 @@ Deno.serve(async (req) => {
         page++;
       }
 
-      for (let i = 0; i < allLogs.length; i += 5) {
-        await Promise.all(allLogs.slice(i, i + 5).map(l =>
+      // Delete in parallel batches of 20 — no artificial delays
+      const BATCH = 20;
+      for (let i = 0; i < allLogs.length; i += BATCH) {
+        await Promise.all(allLogs.slice(i, i + BATCH).map(l =>
           base44.asServiceRole.entities.AttendanceLog.delete(l.id)
         ));
-        if (i + 5 < allLogs.length) await new Promise(r => setTimeout(r, 300));
       }
 
       await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
