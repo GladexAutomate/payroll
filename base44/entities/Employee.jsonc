@@ -92,13 +92,16 @@
     },
     "bank_name": {
       "type": "string"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Raw department label from import (used until linked to Department record)"
+    },
+    "gender": {
+      "type": "string"
     }
   },
   "required": [
-    "employee_id",
-    "first_name",
-    "last_name",
-    "department_id",
-    "basic_salary"
+    "employee_id"
   ]
 }
