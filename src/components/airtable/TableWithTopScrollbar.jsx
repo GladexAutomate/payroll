@@ -49,7 +49,7 @@ export default function TableWithTopScrollbar({ children }) {
   const handleBottomScroll = (e) => syncFrom(e.currentTarget.scrollLeft, e.currentTarget);
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
+    <div className="bg-card border border-border rounded-xl overflow-hidden relative">
       {/* Top mirrored scrollbar */}
       <div
         ref={topRef}
@@ -59,7 +59,7 @@ export default function TableWithTopScrollbar({ children }) {
       >
         <div ref={spacerRef} style={{ height: 1 }} />
       </div>
-      {/* Actual table — hide its native horizontal scrollbar; vertical only */}
+      {/* Actual table */}
       <div
         ref={bodyRef}
         onScroll={handleBodyScroll}
@@ -67,11 +67,11 @@ export default function TableWithTopScrollbar({ children }) {
       >
         {children}
       </div>
-      {/* Bottom mirrored scrollbar */}
+      {/* Bottom mirrored scrollbar — sticks to bottom of viewport so it's always visible */}
       <div
         ref={bottomRef}
         onScroll={handleBottomScroll}
-        className="overflow-x-auto overflow-y-hidden border-t border-border"
+        className="overflow-x-auto overflow-y-hidden border-t border-border bg-card sticky bottom-0 z-20"
         style={{ height: 16 }}
       >
         <div ref={bottomSpacerRef} style={{ height: 1 }} />
