@@ -176,14 +176,14 @@ export default function AttendanceUpload() {
       <div className="bg-card border border-border rounded-xl p-6">
         <h2 className="font-semibold text-base mb-1">Upload Attendance Excel</h2>
         <p className="text-sm text-muted-foreground mb-5">
-          Upload the monthly punch record Excel exported from your biometric software (ZKBioTime / Yunatt). Accepts .xlsx or .xls files.
+          Upload the monthly punch record Excel exported from your biometric software (ZKBioTime / Yunatt). Accepts .xlsx or .csv files.
         </p>
 
         <div
           className="border-2 border-dashed border-border rounded-xl p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
           onClick={() => !uploading && fileRef.current?.click()}
         >
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+          <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
           {uploading ? (
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -197,7 +197,7 @@ export default function AttendanceUpload() {
               </div>
               <div>
                 <p className="font-medium text-sm">Click to select file</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports ZKBioTime / Yunatt monthly attendance export (.xlsx, .xls)</p>
+                <p className="text-xs text-muted-foreground mt-1">Supports ZKBioTime / Yunatt monthly attendance export (.xlsx, .csv)</p>
               </div>
               <Button size="sm" variant="outline">
                 <Upload className="w-4 h-4 mr-1.5" /> Browse File
