@@ -15,6 +15,7 @@ export default function AttendanceUpload() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const [previewUpload, setPreviewUpload] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef();
 
   useEffect(() => { loadUploads(); }, []);
@@ -26,13 +27,25 @@ export default function AttendanceUpload() {
     setLoading(false);
   };
 
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  };
+
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    processFile(file);
+  };
+
+  const processFile = async (file) => {
     setUploading(true);
     setUploadResult(null);
 
     // Upload file to storage
+
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
     // Extract attendance data from the Excel
@@ -180,8 +193,11 @@ export default function AttendanceUpload() {
         </p>
 
         <div
-          className="border-2 border-dashed border-border rounded-xl p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${dragOver ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50 hover:bg-primary/5'}`}
           onClick={() => !uploading && fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
         >
           <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
           {uploading ? (
@@ -196,7 +212,7 @@ export default function AttendanceUpload() {
                 <FileSpreadsheet className="w-7 h-7 text-primary" />
               </div>
               <div>
-                <p className="font-medium text-sm">Click to select file</p>
+                <p className="font-medium text-sm">{dragOver ? 'Drop to upload' : 'Drag & drop or click to select file'}</p>
                 <p className="text-xs text-muted-foreground mt-1">Supports ZKBioTime / Yunatt monthly attendance export (.xlsx, .csv)</p>
               </div>
               <Button size="sm" variant="outline">
