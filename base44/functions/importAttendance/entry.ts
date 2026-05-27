@@ -23,21 +23,43 @@ Deno.serve(async (req) => {
         allLogs = allLogs.concat(batch);
         if (batch.length < PAGE_SIZE) break;
         page++;
+        await new Promise(r => setTimeout(r, 200));
       }
 
-      // Delete sequentially in small batches to avoid rate limits
-      const BATCH = 5;
-      for (let i = 0; i < allLogs.length; i += BATCH) {
-        await Promise.allSettled(allLogs.slice(i, i + BATCH).map(l =>
-          base44.asServiceRole.entities.AttendanceLog.delete(l.id)
-        ));
-        if (i + BATCH < allLogs.length) await new Promise(r => setTimeout(r, 400));
+      // Delete one at a time with rate-limit retry, ignore "not found" errors
+      let deleted = 0;
+      for (const log of allLogs) {
+        let attempts = 0;
+        while (attempts < 5) {
+          try {
+            await base44.asServiceRole.entities.AttendanceLog.delete(log.id);
+            deleted++;
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err);
+            // Already gone — count as deleted and move on
+            if (msg.includes('not found') || msg.includes('404')) {
+              deleted++;
+              break;
+            }
+            // Rate limit — back off and retry
+            if (msg.includes('429') || msg.includes('Rate limit')) {
+              attempts++;
+              await new Promise(r => setTimeout(r, 1500 * attempts));
+              continue;
+            }
+            // Other error — skip this one
+            break;
+          }
+        }
+        // Small throttle between deletes
+        await new Promise(r => setTimeout(r, 150));
       }
 
       try {
         await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
       } catch (_) { /* already deleted */ }
-      return Response.json({ deleted: allLogs.length });
+      return Response.json({ deleted });
     }
 
     // ── CREATE UPLOAD RECORD (first call before chunking) ────────────────────
