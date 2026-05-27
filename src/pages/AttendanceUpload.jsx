@@ -221,20 +221,21 @@ export default function AttendanceUpload() {
   };
 
   const handleDelete = async (upload) => {
-    // Delete all attendance logs that came from this upload period — 
-    // We identify by matching the upload's created_date window (records created around same time)
-    // Simpler: just delete the upload record. Attendance logs stay unless user manually clears.
-    // Per requirement: deleting upload removes records completely.
-    // We'll delete attendance logs created within 5 minutes of the upload.
     const uploadTime = new Date(upload.created_date).getTime();
     const logs = await base44.entities.AttendanceLog.list('-created_date', 500);
     const toDelete = logs.filter(l => {
       const logTime = new Date(l.created_date).getTime();
       return Math.abs(logTime - uploadTime) < 5 * 60 * 1000;
     });
-    for (const log of toDelete) {
-      await base44.entities.AttendanceLog.delete(log.id);
+
+    // Delete in batches of 5 with a small delay to avoid rate limits
+    for (let i = 0; i < toDelete.length; i += 5) {
+      await Promise.all(toDelete.slice(i, i + 5).map(log =>
+        base44.entities.AttendanceLog.delete(log.id)
+      ));
+      if (i + 5 < toDelete.length) await new Promise(r => setTimeout(r, 300));
     }
+
     await base44.entities.AttendanceUpload.delete(upload.id);
     loadUploads();
   };
