@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import {
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 import AirtableRecordForm from '@/components/airtable/AirtableRecordForm';
+import TableWithTopScrollbar from '@/components/airtable/TableWithTopScrollbar';
 
 // Fields that are computed by Airtable — we hide them from the create/edit form
 const READ_ONLY_FIELDS = new Set([
@@ -183,8 +184,7 @@ export default function AirtableEmployees() {
       )}
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="overflow-x-auto max-h-[70vh]">
+      <TableWithTopScrollbar>
           <table className="text-xs min-w-full">
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
@@ -264,8 +264,7 @@ export default function AirtableEmployees() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
+      </TableWithTopScrollbar>
 
       {/* Pagination */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
