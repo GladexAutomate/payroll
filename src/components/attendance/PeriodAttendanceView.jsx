@@ -28,7 +28,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
           'date',
           5000
         ),
-        base44.entities.Employee.filter({ status: 'active' }, 'last_name', 1000),
+        base44.entities.Employee.list('last_name', 2000),
       ]);
       if (cancelled) return;
       setLogs(logsData);
@@ -110,6 +110,17 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   };
 
   const [editCell, setEditCell] = useState(null); // { row, dateStr, log }
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  // Reset to first page whenever search changes
+  useEffect(() => { setPage(1); }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pagedRows = useMemo(
+    () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [rows, page]
+  );
 
   const reloadLogs = async () => {
     const logsData = await base44.entities.AttendanceLog.filter(
@@ -275,7 +286,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                     No attendance records found for this period.
                   </td>
                 </tr>
-              ) : rows.map(r => {
+              ) : pagedRows.map(r => {
                 const s = summarize(r.logs);
                 return (
                   <tr key={r.key} className="border-b border-border/50 hover:bg-muted/20">
@@ -318,6 +329,34 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
           </table>
         </div>
       </div>
+
+      {!loading && rows.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div>
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, rows.length)} of {rows.length}
+            {search && ' (filtered)'}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="px-2">Page {page} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       {editCell && (
         <PunchEditModal
