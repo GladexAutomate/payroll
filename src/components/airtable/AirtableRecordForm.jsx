@@ -34,42 +34,61 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Fields auto-detected as computed during this session — stripped from payload
+  const [skipFields, setSkipFields] = useState(new Set());
 
   const handleChange = (col, val) => {
     setValues(prev => ({ ...prev, [col]: val }));
+  };
+
+  const buildPayload = (extraSkip) => {
+    const payload = {};
+    for (const col of editableCols) {
+      if (extraSkip.has(col)) continue;
+      const orig = initialFields[col];
+      const curr = values[col];
+
+      // Skip attachment fields if unchanged (don't try to re-upload)
+      if (Array.isArray(orig) && orig[0]?.url && curr === orig) continue;
+      // Skip empty fields on create
+      if (!isEditing && (curr === '' || curr == null)) continue;
+
+      if (curr === '' || curr == null) {
+        if (isEditing && orig != null) payload[col] = null;
+        continue;
+      }
+      payload[col] = curr;
+    }
+    return payload;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    try {
-      // Build the payload — only include fields that have a non-empty value, or were originally set
-      const payload = {};
-      for (const col of editableCols) {
-        const orig = initialFields[col];
-        const curr = values[col];
 
-        // Skip attachment fields if unchanged (don't try to re-upload)
-        if (Array.isArray(orig) && orig[0]?.url && curr === orig) continue;
-        // Skip empty fields on create
-        if (!isEditing && (curr === '' || curr == null)) continue;
-
-        if (curr === '' || curr == null) {
-          // Allow clearing a field on edit
-          if (isEditing && orig != null) payload[col] = null;
-          continue;
+    // Auto-retry: if Airtable rejects a computed field, strip it and try again.
+    let currentSkip = new Set(skipFields);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        await onSave(buildPayload(currentSkip), record?.id);
+        setSkipFields(currentSkip);
+        return;
+      } catch (err) {
+        const msg = err?.response?.data?.error || err.message || 'Save failed';
+        // Match: Field "X" cannot accept a value because the field is computed
+        const m = String(msg).match(/Field "([^"]+)" cannot accept a value because the field is computed/i);
+        if (m && !currentSkip.has(m[1])) {
+          currentSkip.add(m[1]);
+          continue; // retry without the computed field
         }
-
-        // Try to coerce numeric strings → numbers (Airtable typecast=true handles most)
-        payload[col] = curr;
+        setError(msg);
+        setSkipFields(currentSkip);
+        setSaving(false);
+        return;
       }
-
-      await onSave(payload, record?.id);
-    } catch (err) {
-      setError(err?.response?.data?.error || err.message || 'Save failed');
-      setSaving(false);
     }
+    setSaving(false);
   };
 
   return (

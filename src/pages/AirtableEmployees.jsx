@@ -20,6 +20,10 @@ const READ_ONLY_FIELDS = new Set([
   'Employee Code', // formula, mirrored from Employee Code ID
   'Full Name', // computed from First + Middle + Last Name
   'Employee #', // auto-number
+  'Birth Month', // computed from Birthday
+  'Age', // computed from Birthday
+  'Years of Service', // computed from Date Hired
+  'Tenure', // computed from Date Hired
 ]);
 
 const PAGE_SIZE = 50;

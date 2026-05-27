@@ -21,6 +21,31 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action } = body;
 
+    // ── SCHEMA: fetch field metadata to detect computed/read-only fields ──────
+    if (action === 'schema') {
+      const res = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`,
+        { headers }
+      );
+      const data = await res.json();
+      if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+      const table = (data.tables || []).find(t => t.id === TABLE_ID);
+      if (!table) return Response.json({ error: 'Table not found in schema' }, { status: 404 });
+
+      // Airtable computed/read-only field types
+      const COMPUTED_TYPES = new Set([
+        'formula', 'rollup', 'lookup', 'count',
+        'autoNumber', 'createdTime', 'lastModifiedTime',
+        'createdBy', 'lastModifiedBy', 'externalSyncSource',
+        'aiText', 'button',
+      ]);
+      const computedFields = (table.fields || [])
+        .filter(f => COMPUTED_TYPES.has(f.type))
+        .map(f => f.name);
+
+      return Response.json({ computedFields });
+    }
+
     // ── LIST: paginated fetch of records ──────────────────────────────────────
     if (action === 'list') {
       const { pageSize = 50, offset, search } = body;
