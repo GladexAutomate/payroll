@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { format, eachDayOfInterval, parseISO } from 'date-fns';
-import { Search, Download } from 'lucide-react';
+import { Search, Download, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import * as XLSX from 'xlsx';
@@ -99,9 +99,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     const tIn = fmtTime(log.time_in);
     const tOut = fmtTime(log.time_out);
     if (!tIn && !tOut) {
-      // No times but a status (absent/leave/holiday/rest)
-      const s = log.status?.[0]?.toUpperCase() || '—';
-      return <span className="text-xs text-muted-foreground">{s}</span>;
+      return <span className="text-muted-foreground/40">—</span>;
     }
     return (
       <div className="leading-tight">
@@ -109,6 +107,52 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         <div className="text-[11px] font-mono text-muted-foreground">{tOut || '—'}</div>
       </div>
     );
+  };
+
+  const [editCell, setEditCell] = useState(null); // { row, dateStr, log }
+
+  const reloadLogs = async () => {
+    const logsData = await base44.entities.AttendanceLog.filter(
+      { date: { $gte: startDate, $lte: endDate } },
+      'date',
+      5000
+    );
+    setLogs(logsData);
+  };
+
+  const savePunch = async ({ timeIn, timeOut }) => {
+    const { row, dateStr, log } = editCell;
+    const buildISO = (t) => t ? `${dateStr}T${t}:00` : null;
+    const timeInISO = buildISO(timeIn);
+    const timeOutISO = buildISO(timeOut);
+    const totalHours = timeInISO && timeOutISO
+      ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
+      : 0;
+
+    if (log) {
+      await base44.entities.AttendanceLog.update(log.id, {
+        time_in: timeInISO,
+        time_out: timeOutISO,
+        total_hours: totalHours,
+        is_manually_edited: true,
+        status: 'present',
+      });
+    } else {
+      await base44.entities.AttendanceLog.create({
+        employee_id: row.emp?.id || row.key,
+        biometric_id: row.emp?.biometric_id || row.key,
+        employee_name: row.name,
+        date: dateStr,
+        time_in: timeInISO,
+        time_out: timeOutISO,
+        raw_punches: [timeInISO, timeOutISO].filter(Boolean),
+        total_hours: totalHours,
+        status: 'present',
+        is_manually_edited: true,
+      });
+    }
+    setEditCell(null);
+    await reloadLogs();
   };
 
   const summarize = (empLogs) => {
@@ -230,7 +274,8 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                       return (
                         <td
                           key={ds}
-                          className={`py-1.5 px-1 text-center border-r border-border/30 ${
+                          onClick={() => setEditCell({ row: r, dateStr: ds, log })}
+                          className={`py-1.5 px-1 text-center border-r border-border/30 cursor-pointer hover:bg-primary/10 ${
                             isWeekend ? 'bg-muted/30' : ''
                           }`}
                         >
@@ -252,6 +297,84 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {editCell && (
+        <PunchEditModal
+          row={editCell.row}
+          dateStr={editCell.dateStr}
+          log={editCell.log}
+          onClose={() => setEditCell(null)}
+          onSave={savePunch}
+        />
+      )}
+    </div>
+  );
+}
+
+function PunchEditModal({ row, dateStr, log, onClose, onSave }) {
+  const initTime = (iso) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(String(iso).split(' ')[0]);
+      if (isNaN(d.getTime())) return '';
+      return format(d, 'HH:mm');
+    } catch { return ''; }
+  };
+  const [timeIn, setTimeIn] = useState(initTime(log?.time_in));
+  const [timeOut, setTimeOut] = useState(initTime(log?.time_out));
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave({ timeIn, timeOut });
+  };
+
+  const handleClear = async () => {
+    setSaving(true);
+    await onSave({ timeIn: '', timeOut: '' });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div>
+            <h3 className="font-semibold text-sm">Manual Punch Record</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {row.name} · {format(parseISO(dateStr), 'EEE, MMM d yyyy')}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Time In</label>
+              <Input type="time" value={timeIn} onChange={e => setTimeIn(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Time Out</label>
+              <Input type="time" value={timeOut} onChange={e => setTimeOut(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Manually entered records will be marked as edited and override any imported values for this day.
+          </p>
+        </div>
+        <div className="flex justify-between gap-2 px-5 pb-5">
+          {log && (
+            <Button variant="ghost" size="sm" onClick={handleClear} disabled={saving} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+              Clear
+            </Button>
+          )}
+          <div className="flex gap-2 ml-auto">
+            <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+          </div>
         </div>
       </div>
     </div>
