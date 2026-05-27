@@ -18,6 +18,8 @@ const READ_ONLY_FIELDS = new Set([
   'Tenure(Months)',
   'New Formula Column',
   'Employee Code', // formula, mirrored from Employee Code ID
+  'Full Name', // computed from First + Middle + Last Name
+  'Employee #', // auto-number
 ]);
 
 const PAGE_SIZE = 50;
