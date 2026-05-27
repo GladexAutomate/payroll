@@ -55,9 +55,9 @@ export default function AttendanceUpload() {
 
     // Parse file locally with xlsx
     const arrayBuffer = await file.arrayBuffer();
-    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, raw: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
 
     if (rows.length < 2) {
       setUploadResult({ error: 'File appears empty or has no data rows.' });
@@ -76,13 +76,22 @@ export default function AttendanceUpload() {
     rawHeaderRow.forEach((h, i) => {
       const str = String(h).trim();
       if (/^\d{1,2}-\d{2}$/.test(str)) {
-        // Already MM-DD string
+        // Already MM-DD string e.g. "05-01"
         dateCols.push({ idx: i, label: str });
-      } else if (typeof h === 'number' && h > 40000 && h < 50000) {
-        // Excel date serial — convert to MM-DD
-        const d = XLSX.SSF.parse_date_code(h);
-        const label = `${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        // Full ISO date string e.g. "2026-05-01"
+        const parts = str.split('-');
+        const label = `${parts[1]}-${parts[2]}`;
         dateCols.push({ idx: i, label });
+      } else if (typeof h === 'number' && h > 1 && h < 100000) {
+        // Excel date serial — convert to MM-DD
+        try {
+          const d = XLSX.SSF.parse_date_code(h);
+          if (d && d.m && d.d) {
+            const label = `${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+            dateCols.push({ idx: i, label });
+          }
+        } catch {}
       }
     });
 
@@ -134,12 +143,24 @@ export default function AttendanceUpload() {
       const biometricId = emp?.biometric_id || code;
 
       for (const { idx, label } of dateCols) {
-        const cellVal = String(row[idx] || '').trim();
-        if (!cellVal) { emptyCellsSkipped++; continue; }
+        const rawCell = row[idx];
+        const cellVal = String(rawCell ?? '').trim();
+        if (!cellVal || cellVal === '0') { emptyCellsSkipped++; continue; }
 
-        const parts = cellVal.split(/\s*[\/,]\s*/);
-        const timeIn = parts[0]?.trim() || null;
-        const timeOut = parts[1]?.trim() || null;
+        // If cell is a number, it may be an Excel time fraction (0.333 = 08:00)
+        // or a combined date+time serial — extract just the time portion
+        let timeIn = null, timeOut = null;
+        if (typeof rawCell === 'number') {
+          const timeFrac = rawCell % 1;
+          const totalMins = Math.round(timeFrac * 24 * 60);
+          const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
+          const mm = String(totalMins % 60).padStart(2, '0');
+          timeIn = `${hh}:${mm}`;
+        } else {
+          const parts = cellVal.split(/\s*[\/,]\s*/);
+          timeIn = parts[0]?.trim() || null;
+          timeOut = parts[1]?.trim() || null;
+        }
         if (!timeIn) continue;
 
         const dateStr = `${year}-${label.padStart(5, '0')}`;
