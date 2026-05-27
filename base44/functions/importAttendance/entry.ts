@@ -25,12 +25,13 @@ Deno.serve(async (req) => {
         page++;
       }
 
-      // Delete in parallel batches of 20 — ignore 404s (already deleted)
-      const BATCH = 20;
+      // Delete sequentially in small batches to avoid rate limits
+      const BATCH = 5;
       for (let i = 0; i < allLogs.length; i += BATCH) {
         await Promise.allSettled(allLogs.slice(i, i + BATCH).map(l =>
           base44.asServiceRole.entities.AttendanceLog.delete(l.id)
         ));
+        if (i + BATCH < allLogs.length) await new Promise(r => setTimeout(r, 400));
       }
 
       try {

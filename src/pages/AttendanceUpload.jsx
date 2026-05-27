@@ -47,6 +47,9 @@ export default function AttendanceUpload() {
   };
 
   const processFile = async (file) => {
+    // Clear any previous upload state first
+    clearUpload();
+
     // Validate file type upfront
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['xlsx', 'csv'].includes(ext)) {
