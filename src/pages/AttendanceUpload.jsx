@@ -26,6 +26,18 @@ export default function AttendanceUpload() {
 
   useEffect(() => { loadUploads(); }, []);
 
+  // Prevent navigation during upload
+  useEffect(() => {
+    if (!uploading) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [uploading]);
+
   const loadUploads = async () => {
     setLoading(true);
     const data = await base44.entities.AttendanceUpload.list('-created_date', 50);
