@@ -41,6 +41,14 @@ export default function AttendanceUpload() {
   };
 
   const processFile = async (file) => {
+    // Validate file type upfront
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['xlsx', 'csv'].includes(ext)) {
+      setUploadResult({ error: `Unsupported file type: .${ext}. Please save your file as .xlsx (Excel Workbook) or .csv and try again.` });
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
     setUploadResult(null);
 
@@ -253,6 +261,9 @@ export default function AttendanceUpload() {
           <p className="text-xs text-blue-800 font-medium mb-1">📋 Expected Format</p>
           <p className="text-xs text-blue-700">
             The file should have columns for: <strong>Person Code</strong>, <strong>Name</strong>, and dates as columns (e.g. 05-01, 05-02...) with time pairs (IN/OUT) in each cell. This matches the standard ZKBioTime / Yunatt monthly export format.
+          </p>
+          <p className="text-xs text-orange-700 mt-2 font-medium">
+            ⚠️ Only <strong>.xlsx</strong> and <strong>.csv</strong> are supported. If your file is <strong>.xls</strong>, open it in Excel and save as <em>Excel Workbook (.xlsx)</em> first.
           </p>
         </div>
       </div>
