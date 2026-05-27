@@ -161,7 +161,8 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
       const ds = format(d, 'yyyy-MM-dd');
       const l = empLogs[ds];
       if (!l) continue;
-      if (l.status === 'present') present++;
+      // Only count as a worked day if BOTH time in and time out are present
+      if (l.time_in && l.time_out) present++;
       else if (l.status === 'absent') absent++;
       hours += Number(l.total_hours) || 0;
       late += Number(l.late_minutes) || 0;
