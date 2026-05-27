@@ -55,8 +55,7 @@ export default function Sidebar({ open, onClose }) {
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <div className="space-y-0.5">
             {navItems.map(item => {
-              const active = location.pathname === item.path || 
-                (item.path !== '/' && location.pathname.startsWith(item.path));
+              const active = location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
