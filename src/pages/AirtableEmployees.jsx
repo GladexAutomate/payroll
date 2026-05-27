@@ -34,7 +34,7 @@ export default function AirtableEmployees() {
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
 
-  const loadPage = async (offset = null) => {
+  const loadPage = async (offset = null, searchQuery = '') => {
     setLoading(true);
     setError(null);
     try {
@@ -42,6 +42,7 @@ export default function AirtableEmployees() {
         action: 'list',
         pageSize: PAGE_SIZE,
         offset: offset || undefined,
+        search: searchQuery || undefined,
       });
       setRecords(res.data.records || []);
       setNextOffset(res.data.offset || null);
@@ -53,12 +54,23 @@ export default function AirtableEmployees() {
 
   useEffect(() => { loadPage(null); }, []);
 
+  // Debounce search — when user types, reset pagination and search Airtable server-side
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setOffsetStack([null]);
+      setPageIdx(0);
+      loadPage(null, search);
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
   const handleNext = async () => {
     if (!nextOffset) return;
     const newStack = [...offsetStack, nextOffset];
     setOffsetStack(newStack);
     setPageIdx(newStack.length - 1);
-    await loadPage(nextOffset);
+    await loadPage(nextOffset, search);
   };
 
   const handlePrev = async () => {
@@ -67,13 +79,13 @@ export default function AirtableEmployees() {
     setPageIdx(newIdx);
     const offset = offsetStack[newIdx];
     setOffsetStack(offsetStack.slice(0, newIdx + 1));
-    await loadPage(offset);
+    await loadPage(offset, search);
   };
 
   const handleRefresh = () => {
     setOffsetStack([null]);
     setPageIdx(0);
-    loadPage(null);
+    loadPage(null, search);
   };
 
   const handleSave = async (fields, recordId) => {
@@ -86,7 +98,7 @@ export default function AirtableEmployees() {
     setEditing(null);
     // Refresh current page
     const currentOffset = offsetStack[pageIdx];
-    await loadPage(currentOffset);
+    await loadPage(currentOffset, search);
   };
 
   const handleDelete = async (recordId) => {
@@ -94,7 +106,7 @@ export default function AirtableEmployees() {
     await base44.functions.invoke('airtableEmployees', { action: 'delete', recordId });
     setDeletingId(null);
     const currentOffset = offsetStack[pageIdx];
-    await loadPage(currentOffset);
+    await loadPage(currentOffset, search);
   };
 
   // Discover all column keys across loaded records
@@ -117,19 +129,8 @@ export default function AirtableEmployees() {
     return arr;
   }, [records]);
 
-  // Filter by search (across visible cells)
-  const filteredRecords = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter(r => {
-      const f = r.fields || {};
-      return Object.values(f).some(v => {
-        if (v == null) return false;
-        if (Array.isArray(v)) return JSON.stringify(v).toLowerCase().includes(q);
-        return String(v).toLowerCase().includes(q);
-      });
-    });
-  }, [records, search]);
+  // Server-side search means records returned are already filtered
+  const filteredRecords = records;
 
   const renderCell = (value) => {
     if (value == null || value === '') return <span className="text-muted-foreground/40">—</span>;
@@ -160,7 +161,7 @@ export default function AirtableEmployees() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search records on this page..."
+            placeholder="Search all Airtable records..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9"
@@ -269,8 +270,8 @@ export default function AirtableEmployees() {
       {/* Pagination */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Page {pageIdx + 1} · {records.length} records loaded
-          {search && ` · ${filteredRecords.length} match search`}
+          Page {pageIdx + 1} · {records.length} records
+          {search && ` matching "${search}"`}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handlePrev} disabled={pageIdx === 0 || loading}>

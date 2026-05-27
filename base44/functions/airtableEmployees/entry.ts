@@ -23,9 +23,26 @@ Deno.serve(async (req) => {
 
     // ── LIST: paginated fetch of records ──────────────────────────────────────
     if (action === 'list') {
-      const { pageSize = 50, offset } = body;
+      const { pageSize = 50, offset, search } = body;
       const params = new URLSearchParams({ pageSize: String(Math.min(pageSize, 100)) });
       if (offset) params.set('offset', offset);
+
+      // If search query is provided, build a server-side filterByFormula that
+      // does a case-insensitive substring match across common text fields.
+      if (search && search.trim()) {
+        const safe = search.trim().replace(/"/g, '\\"').toLowerCase();
+        const fieldsToSearch = [
+          'Full Name', 'First Name', 'Last Name', 'Middle Name',
+          'Employee Code ID', 'Email', 'Business email',
+          'Department', 'Department Role', 'Job Title', 'Status',
+          'Work Location', 'Mobile Number', 'SSS Number',
+          'PhilHealth Number', 'Pag-IBIG Number', 'Address',
+        ];
+        const formula = `OR(${fieldsToSearch.map(f =>
+          `FIND("${safe}", LOWER({${f}}&""))`
+        ).join(',')})`;
+        params.set('filterByFormula', formula);
+      }
 
       const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
       const data = await res.json();
