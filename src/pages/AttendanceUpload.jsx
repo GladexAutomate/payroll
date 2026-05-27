@@ -171,7 +171,9 @@ export default function AttendanceUpload() {
       const row = rows[r];
       const code = String(row[personCodeIdx] ?? '').trim();
       const rawName = String(row[nameIdx] ?? '').trim();
-      if (!code && !rawName) continue;
+      // Skip rows with no person code (department headers like "ADMIN", "Admin", section labels)
+      if (!code) continue;
+      if (!rawName) continue;
       dataRowsFound++;
 
       const emp = byBioId[code] || byName[rawName.toLowerCase()];
