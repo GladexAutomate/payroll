@@ -73,28 +73,47 @@ export default function AttendanceUpload() {
     // Header row: find Person Code col, Name col, and date columns
     const rawHeaderRow = rows[0];
     const headerRow = rawHeaderRow.map(h => String(h).trim());
-    const personCodeIdx = headerRow.findIndex(h => /person.?code/i.test(h) || h === 'No.');
-    const nameIdx = headerRow.findIndex(h => /^name$/i.test(h));
 
-    // Date columns: MM-DD pattern OR Excel serial numbers (dates stored as numbers)
+    // Person code: column explicitly named, or fall back to column 0
+    const personCodeIdx = headerRow.findIndex(h => /person.?code/i.test(h) || /^no\.?$/i.test(h)) !== -1
+      ? headerRow.findIndex(h => /person.?code/i.test(h) || /^no\.?$/i.test(h))
+      : 0;
+
+    // Name: column explicitly named "Name", or fall back to column 1
+    const nameIdx = headerRow.findIndex(h => /^name$/i.test(h)) !== -1
+      ? headerRow.findIndex(h => /^name$/i.test(h))
+      : 1;
+
+    const monthAbbr = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+    // Date columns: MM-DD, "D-Mon" (e.g. "1-May"), ISO date, or Excel serial
     const dateCols = [];
     rawHeaderRow.forEach((h, i) => {
+      if (i === personCodeIdx || i === nameIdx) return;
       const str = String(h).trim();
+
+      // "D-Mon" or "DD-Mon" e.g. "1-May", "13-May"
+      const dMonMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})$/);
+      if (dMonMatch) {
+        const day = parseInt(dMonMatch[1]);
+        const monIdx = monthAbbr.indexOf(dMonMatch[2].toLowerCase());
+        if (monIdx >= 0) {
+          const label = `${String(monIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          dateCols.push({ idx: i, label });
+          return;
+        }
+      }
+
       if (/^\d{1,2}-\d{2}$/.test(str)) {
-        // Already MM-DD string e.g. "05-01"
         dateCols.push({ idx: i, label: str });
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-        // Full ISO date string e.g. "2026-05-01"
         const parts = str.split('-');
-        const label = `${parts[1]}-${parts[2]}`;
-        dateCols.push({ idx: i, label });
+        dateCols.push({ idx: i, label: `${parts[1]}-${parts[2]}` });
       } else if (typeof h === 'number' && h > 1 && h < 100000) {
-        // Excel date serial — convert to MM-DD
         try {
           const d = XLSX.SSF.parse_date_code(h);
           if (d && d.m && d.d) {
-            const label = `${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
-            dateCols.push({ idx: i, label });
+            dateCols.push({ idx: i, label: `${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}` });
           }
         } catch {}
       }
@@ -150,33 +169,36 @@ export default function AttendanceUpload() {
     const records = [];
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
-      const code = String(personCodeIdx >= 0 ? row[personCodeIdx] : '').trim();
-      const name = String(nameIdx >= 0 ? row[nameIdx] : '').toLowerCase().trim();
-      if (!code && !name) continue;
+      const code = String(row[personCodeIdx] ?? '').trim();
+      const rawName = String(row[nameIdx] ?? '').trim();
+      if (!code && !rawName) continue;
       dataRowsFound++;
 
-      const emp = byBioId[code] || byName[name];
-      const employeeId = emp?.id || code || name;
+      const emp = byBioId[code] || byName[rawName.toLowerCase()];
+      const employeeId = emp?.id || code || rawName;
       const biometricId = emp?.biometric_id || code;
+      const employeeName = emp ? `${emp.first_name} ${emp.last_name}` : rawName;
 
       for (const { idx, label } of dateCols) {
         const rawCell = row[idx];
         const cellVal = String(rawCell ?? '').trim();
         if (!cellVal || cellVal === '0') { emptyCellsSkipped++; continue; }
 
-        // If cell is a number, it may be an Excel time fraction (0.333 = 08:00)
-        // or a combined date+time serial — extract just the time portion
+        // Parse time(s) from cell — may be a number (Excel fraction) or string with 1-N times
         let timeIn = null, timeOut = null;
         if (typeof rawCell === 'number') {
+          // Excel time serial fraction
           const timeFrac = rawCell % 1;
           const totalMins = Math.round(timeFrac * 24 * 60);
           const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
           const mm = String(totalMins % 60).padStart(2, '0');
           timeIn = `${hh}:${mm}`;
         } else {
-          const parts = cellVal.split(/\s*[\/,]\s*/);
-          timeIn = parts[0]?.trim() || null;
-          timeOut = parts[1]?.trim() || null;
+          // Extract all HH:MM tokens (space, slash, or comma separated)
+          const timeTokens = cellVal.match(/\d{1,2}:\d{2}/g) || [];
+          if (timeTokens.length === 0) continue;
+          timeIn = timeTokens[0];
+          timeOut = timeTokens.length > 1 ? timeTokens[timeTokens.length - 1] : null;
         }
         if (!timeIn) continue;
 
@@ -191,6 +213,7 @@ export default function AttendanceUpload() {
         records.push({
           employee_id: employeeId,
           biometric_id: biometricId,
+          employee_name: employeeName,
           date: dateStr,
           time_in: timeInISO,
           time_out: timeOutISO,

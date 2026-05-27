@@ -8,6 +8,10 @@
     "biometric_id": {
       "type": "string"
     },
+    "employee_name": {
+      "type": "string",
+      "description": "Full name from the source file"
+    },
     "date": {
       "type": "string",
       "format": "date"

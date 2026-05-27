@@ -133,7 +133,7 @@ export default function Attendance() {
                     <td className="py-3.5 px-4">
                       <div>
                         <p className="font-medium">
-                          {emp ? `${emp.first_name} ${emp.last_name}` : log.employee_id}
+                          {emp ? `${emp.first_name} ${emp.last_name}` : (log.employee_name || log.employee_id)}
                           {log.is_manually_edited && <span className="ml-2 text-xs text-orange-600">(edited)</span>}
                         </p>
                         <p className="text-xs text-muted-foreground">{log.biometric_id || log.employee_id}</p>
