@@ -169,7 +169,9 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         if (!isNaN(raw) && raw > 0) {
           const dayHours = Math.max(1, Math.min(8, raw));
           hours += dayHours;
-          if (raw > 8) ot += raw - 8;
+          // OT only counts in whole hours, minimum 1h (e.g. 1h30m = 1, 2h20m = 2)
+          const extra = raw - 8;
+          if (extra >= 1) ot += Math.floor(extra);
         }
       } else if (l.status === 'absent') {
         absent++;
