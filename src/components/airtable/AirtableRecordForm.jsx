@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import AirtableSelectField from './AirtableSelectField';
 
 /**
  * Generic Airtable record form.
  * Renders an input for each editable column. Excludes computed/formula fields.
  */
-export default function AirtableRecordForm({ record, allColumns, readOnlyFields, onCancel, onSave }) {
+export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, onCancel, onSave }) {
   const isEditing = !!record?.id;
   const initialFields = record?.fields || {};
 
@@ -121,6 +122,9 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {editableCols.map(col => {
                 const isAttachment = Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
+                const meta = fieldsMeta[col];
+                const isSingleSelect = meta?.type === 'singleSelect';
+                const isMultiSelect = meta?.type === 'multipleSelects';
                 return (
                   <div key={col} className={isAttachment ? 'md:col-span-2' : ''}>
                     <label className="text-xs font-medium text-muted-foreground">{col}</label>
@@ -129,6 +133,13 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
                         Attachment(s): {initialFields[col].map(a => a.filename).join(', ')}
                         <p className="mt-1 text-[10px]">Attachments must be managed directly in Airtable.</p>
                       </div>
+                    ) : (isSingleSelect || isMultiSelect) ? (
+                      <AirtableSelectField
+                        value={values[col]}
+                        onChange={(v) => handleChange(col, v)}
+                        choices={meta.choices || []}
+                        multi={isMultiSelect}
+                      />
                     ) : (
                       <Input
                         value={typeof values[col] === 'object' ? '' : (values[col] ?? '')}

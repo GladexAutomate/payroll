@@ -43,7 +43,23 @@ Deno.serve(async (req) => {
         .filter(f => COMPUTED_TYPES.has(f.type))
         .map(f => f.name);
 
-      return Response.json({ computedFields });
+      // Extract field metadata for selects, multi-selects, and other relevant types
+      const fieldsMeta = {};
+      for (const f of (table.fields || [])) {
+        if (f.type === 'singleSelect' || f.type === 'multipleSelects') {
+          fieldsMeta[f.name] = {
+            type: f.type,
+            choices: (f.options?.choices || []).map(c => ({
+              name: c.name,
+              color: c.color || null,
+            })),
+          };
+        } else {
+          fieldsMeta[f.name] = { type: f.type };
+        }
+      }
+
+      return Response.json({ computedFields, fieldsMeta });
     }
 
     // ── LIST: paginated fetch of records ──────────────────────────────────────

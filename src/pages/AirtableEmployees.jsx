@@ -39,6 +39,7 @@ export default function AirtableEmployees() {
   const [showForm, setShowForm] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
+  const [fieldsMeta, setFieldsMeta] = useState({}); // schema: { fieldName: { type, choices } }
 
   const loadPage = async (offset = null, searchQuery = '') => {
     setLoading(true);
@@ -59,6 +60,13 @@ export default function AirtableEmployees() {
   };
 
   useEffect(() => { loadPage(null); }, []);
+
+  // Fetch Airtable schema once to get dropdown choices for single/multi-select fields
+  useEffect(() => {
+    base44.functions.invoke('airtableEmployees', { action: 'schema' })
+      .then(res => setFieldsMeta(res.data?.fieldsMeta || {}))
+      .catch(() => {});
+  }, []);
 
   // Debounce search — when user types, reset pagination and search Airtable server-side
   useEffect(() => {
@@ -295,6 +303,7 @@ export default function AirtableEmployees() {
           record={editing}
           allColumns={columns}
           readOnlyFields={READ_ONLY_FIELDS}
+          fieldsMeta={fieldsMeta}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
         />
