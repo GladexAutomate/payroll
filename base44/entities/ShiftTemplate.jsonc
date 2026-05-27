@@ -1,0 +1,39 @@
+{
+  "name": "ShiftTemplate",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "start_time": {
+      "type": "string",
+      "description": "HH:MM format"
+    },
+    "end_time": {
+      "type": "string",
+      "description": "HH:MM format"
+    },
+    "break_minutes": {
+      "type": "number",
+      "default": 60
+    },
+    "grace_period_minutes": {
+      "type": "number",
+      "default": 15,
+      "description": "Minutes allowed before marking as late"
+    },
+    "work_hours": {
+      "type": "number",
+      "description": "Expected work hours per day"
+    },
+    "is_night_shift": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "name",
+    "start_time",
+    "end_time"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "HolidayCalendar",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "regular",
+        "special_non_working",
+        "local"
+      ],
+      "default": "regular"
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "name",
+    "type"
+  ]
+}

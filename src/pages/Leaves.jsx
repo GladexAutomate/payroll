@@ -1,0 +1,177 @@
+import { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { Plus, Check, X, Calendar } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import StatusBadge from '@/components/shared/StatusBadge';
+import { format } from 'date-fns';
+
+export default function Leaves() {
+  const [requests, setRequests] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('pending');
+  const [showForm, setShowForm] = useState(false);
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [reqs, emps] = await Promise.all([
+      base44.entities.LeaveRequest.list('-created_date', 100),
+      base44.entities.Employee.filter({ status: 'active' })
+    ]);
+    setRequests(reqs);
+    setEmployees(emps);
+    setLoading(false);
+  };
+
+  const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
+  const filtered = requests.filter(r => filterStatus === 'all' || r.status === filterStatus);
+
+  const handleApprove = async (id) => {
+    await base44.entities.LeaveRequest.update(id, { status: 'approved', approved_date: new Date().toISOString() });
+    loadData();
+  };
+
+  const handleReject = async (id) => {
+    await base44.entities.LeaveRequest.update(id, { status: 'rejected' });
+    loadData();
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {['all', 'pending', 'approved', 'rejected'].map(s => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors capitalize ${filterStatus === s ? 'bg-primary text-white border-primary' : 'bg-card border-border text-muted-foreground hover:text-foreground'}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4 mr-1.5" /> File Leave
+        </Button>
+      </div>
+
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/50 border-b border-border">
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Type</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">From</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">To</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Days</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Reason</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}</tr>)
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">No {filterStatus === 'all' ? '' : filterStatus} leave requests.</td></tr>
+              ) : filtered.map(req => {
+                const emp = empMap[req.employee_id];
+                return (
+                  <tr key={req.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                    <td className="py-3.5 px-4 font-medium">{emp ? `${emp.first_name} ${emp.last_name}` : req.employee_id}</td>
+                    <td className="py-3.5 px-4 capitalize text-muted-foreground">{req.leave_type?.replace('_', ' ')}</td>
+                    <td className="py-3.5 px-4">{req.date_from}</td>
+                    <td className="py-3.5 px-4">{req.date_to}</td>
+                    <td className="py-3.5 px-4 text-right">{req.days_count}</td>
+                    <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
+                    <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>
+                    <td className="py-3.5 px-4">
+                      {req.status === 'pending' && (
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => handleApprove(req.id)} className="p-1.5 rounded hover:bg-green-50 text-green-600 transition-colors" title="Approve">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleReject(req.id)} className="p-1.5 rounded hover:bg-red-50 text-red-600 transition-colors" title="Reject">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showForm && (
+        <LeaveForm employees={employees} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+      )}
+    </div>
+  );
+}
+
+function LeaveForm({ employees, onClose, onSaved }) {
+  const [form, setForm] = useState({ employee_id: '', leave_type: 'vacation', date_from: '', date_to: '', reason: '', is_paid: true });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const days = form.date_from && form.date_to
+    ? Math.ceil((new Date(form.date_to) - new Date(form.date_from)) / 86400000) + 1
+    : 0;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await base44.entities.LeaveRequest.create({ ...form, days_count: days });
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="font-semibold">File Leave Request</h3>
+          <button onClick={onClose}><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Employee*</label>
+            <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+              <option value="">Select employee</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Leave Type</label>
+            <select value={form.leave_type} onChange={e => set('leave_type', e.target.value)} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+              <option value="vacation">Vacation</option>
+              <option value="sick">Sick</option>
+              <option value="emergency">Emergency</option>
+              <option value="maternity">Maternity</option>
+              <option value="paternity">Paternity</option>
+              <option value="unpaid">Unpaid</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-muted-foreground">From*</label><Input type="date" value={form.date_from} onChange={e => set('date_from', e.target.value)} required className="mt-1" /></div>
+            <div><label className="text-xs font-medium text-muted-foreground">To*</label><Input type="date" value={form.date_to} onChange={e => set('date_to', e.target.value)} required className="mt-1" /></div>
+          </div>
+          {days > 0 && <p className="text-xs text-primary font-medium">{days} day(s)</p>}
+          <div><label className="text-xs font-medium text-muted-foreground">Reason</label><Input value={form.reason} onChange={e => set('reason', e.target.value)} className="mt-1" /></div>
+          <div className="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="is_paid" checked={form.is_paid} onChange={e => set('is_paid', e.target.checked)} />
+            <label htmlFor="is_paid" className="text-sm">Paid leave</label>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Submit Request</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

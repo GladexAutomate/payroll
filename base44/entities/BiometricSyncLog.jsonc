@@ -1,0 +1,36 @@
+{
+  "name": "BiometricSyncLog",
+  "type": "object",
+  "properties": {
+    "sync_time": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "partial"
+      ]
+    },
+    "records_fetched": {
+      "type": "number"
+    },
+    "records_saved": {
+      "type": "number"
+    },
+    "device_ip": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "triggered_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sync_time",
+    "status"
+  ]
+}

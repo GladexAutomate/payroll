@@ -1,0 +1,72 @@
+{
+  "name": "AttendanceLog",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string"
+    },
+    "biometric_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "time_in": {
+      "type": "string",
+      "description": "ISO datetime"
+    },
+    "time_out": {
+      "type": "string",
+      "description": "ISO datetime"
+    },
+    "raw_punches": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "All raw punch timestamps"
+    },
+    "total_hours": {
+      "type": "number"
+    },
+    "late_minutes": {
+      "type": "number",
+      "default": 0
+    },
+    "undertime_minutes": {
+      "type": "number",
+      "default": 0
+    },
+    "overtime_minutes": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "present",
+        "absent",
+        "half_day",
+        "on_leave",
+        "holiday",
+        "rest_day"
+      ],
+      "default": "present"
+    },
+    "shift_template_id": {
+      "type": "string"
+    },
+    "remarks": {
+      "type": "string"
+    },
+    "is_manually_edited": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "employee_id",
+    "date"
+  ]
+}

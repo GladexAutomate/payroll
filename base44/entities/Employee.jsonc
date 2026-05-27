@@ -1,0 +1,104 @@
+{
+  "name": "Employee",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "Unique employee ID (matches biometric device ID)"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "middle_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "position": {
+      "type": "string"
+    },
+    "employment_type": {
+      "type": "string",
+      "enum": [
+        "regular",
+        "probationary",
+        "contractual",
+        "part_time"
+      ],
+      "default": "regular"
+    },
+    "date_hired": {
+      "type": "string",
+      "format": "date"
+    },
+    "basic_salary": {
+      "type": "number",
+      "description": "Monthly basic salary"
+    },
+    "pay_frequency": {
+      "type": "string",
+      "enum": [
+        "semi_monthly",
+        "monthly"
+      ],
+      "default": "semi_monthly"
+    },
+    "sss_number": {
+      "type": "string"
+    },
+    "philhealth_number": {
+      "type": "string"
+    },
+    "pagibig_number": {
+      "type": "string"
+    },
+    "tin": {
+      "type": "string"
+    },
+    "biometric_id": {
+      "type": "string",
+      "description": "Employee ID registered in biometric device"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        "terminated"
+      ],
+      "default": "active"
+    },
+    "photo_url": {
+      "type": "string"
+    },
+    "allowances": {
+      "type": "number",
+      "default": 0,
+      "description": "Monthly fixed allowances"
+    },
+    "bank_account": {
+      "type": "string"
+    },
+    "bank_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_id",
+    "first_name",
+    "last_name",
+    "department_id",
+    "basic_salary"
+  ]
+}

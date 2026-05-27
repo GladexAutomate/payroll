@@ -1,0 +1,203 @@
+import { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { Plus, Play, CheckCircle, Eye, DollarSign, Users, TrendingDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import StatusBadge from '@/components/shared/StatusBadge';
+import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
+import { format } from 'date-fns';
+
+export default function Payroll() {
+  const [runs, setRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [computing, setComputing] = useState(null);
+
+  useEffect(() => { loadRuns(); }, []);
+
+  const loadRuns = async () => {
+    setLoading(true);
+    const data = await base44.entities.PayrollRun.list('-period_start', 50);
+    setRuns(data);
+    setLoading(false);
+  };
+
+  const handleCompute = async (run) => {
+    setComputing(run.id);
+    await base44.functions.invoke('computePayroll', { payroll_run_id: run.id });
+    setComputing(null);
+    loadRuns();
+  };
+
+  const handleApprove = async (run) => {
+    await base44.entities.PayrollRun.update(run.id, {
+      status: 'approved',
+      approved_date: new Date().toISOString()
+    });
+    loadRuns();
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{runs.length} payroll runs</p>
+        <Button onClick={() => setShowCreate(true)}>
+          <Plus className="w-4 h-4 mr-1.5" /> New Payroll Run
+        </Button>
+      </div>
+
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/50 border-b border-border">
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Period</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Pay Date</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employees</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Gross Pay</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Total Deductions</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Net Pay</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                [...Array(4)].map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    {[...Array(8)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
+                  </tr>
+                ))
+              ) : runs.length === 0 ? (
+                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">No payroll runs yet. Create one to get started.</td></tr>
+              ) : runs.map(run => (
+                <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                  <td className="py-3.5 px-4">
+                    <p className="font-medium">{run.period_label}</p>
+                    <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
+                  </td>
+                  <td className="py-3.5 px-4 text-muted-foreground">{run.pay_date || '—'}</td>
+                  <td className="py-3.5 px-4 text-right">{run.employee_count || '—'}</td>
+                  <td className="py-3.5 px-4 text-right font-medium">
+                    {run.total_gross ? `₱${run.total_gross.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                  </td>
+                  <td className="py-3.5 px-4 text-right text-red-600">
+                    {run.total_deductions ? `₱${run.total_deductions.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-bold text-green-600">
+                    {run.total_net ? `₱${run.total_net.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                  </td>
+                  <td className="py-3.5 px-4"><StatusBadge status={run.status} /></td>
+                  <td className="py-3.5 px-4">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => setSelectedRun(run)}
+                        className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                        title="View details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      {run.status === 'draft' && (
+                        <button
+                          onClick={() => handleCompute(run)}
+                          disabled={computing === run.id}
+                          className="p-1.5 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
+                          title="Compute payroll"
+                        >
+                          <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                      {run.status === 'processing' && (
+                        <button
+                          onClick={() => handleApprove(run)}
+                          className="p-1.5 rounded hover:bg-green-50 text-green-600 hover:text-green-700 transition-colors"
+                          title="Approve payroll"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showCreate && (
+        <CreatePayrollModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); loadRuns(); }}
+        />
+      )}
+
+      {selectedRun && (
+        <PayrollRunDetail
+          run={selectedRun}
+          onClose={() => setSelectedRun(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreatePayrollModal({ onClose, onCreated }) {
+  const [form, setForm] = useState({
+    period_label: '',
+    period_start: '',
+    period_end: '',
+    pay_date: ''
+  });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await base44.entities.PayrollRun.create({ ...form, status: 'draft' });
+    onCreated();
+  };
+
+  // Auto-fill period label
+  const autoLabel = () => {
+    if (form.period_start && form.period_end) {
+      const s = format(new Date(form.period_start), 'MMM d');
+      const e = format(new Date(form.period_end), 'MMM d, yyyy');
+      set('period_label', `${s} – ${e}`);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="font-semibold">Create Payroll Run</h3>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Period Start*</label>
+              <Input type="date" value={form.period_start} onChange={e => { set('period_start', e.target.value); }} onBlur={autoLabel} required className="mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Period End*</label>
+              <Input type="date" value={form.period_end} onChange={e => set('period_end', e.target.value)} onBlur={autoLabel} required className="mt-1" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Period Label*</label>
+            <Input value={form.period_label} onChange={e => set('period_label', e.target.value)} required className="mt-1" placeholder="e.g. May 1–15, 2026" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
+            <Input type="date" value={form.pay_date} onChange={e => set('pay_date', e.target.value)} className="mt-1" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Create Run</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

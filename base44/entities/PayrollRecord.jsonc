@@ -1,0 +1,91 @@
+{
+  "name": "PayrollRecord",
+  "type": "object",
+  "properties": {
+    "payroll_run_id": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "basic_salary": {
+      "type": "number"
+    },
+    "days_worked": {
+      "type": "number"
+    },
+    "days_absent": {
+      "type": "number"
+    },
+    "late_minutes": {
+      "type": "number"
+    },
+    "undertime_minutes": {
+      "type": "number"
+    },
+    "overtime_hours": {
+      "type": "number"
+    },
+    "overtime_pay": {
+      "type": "number"
+    },
+    "holiday_pay": {
+      "type": "number"
+    },
+    "allowances": {
+      "type": "number"
+    },
+    "gross_pay": {
+      "type": "number"
+    },
+    "sss_employee": {
+      "type": "number"
+    },
+    "sss_employer": {
+      "type": "number"
+    },
+    "philhealth_employee": {
+      "type": "number"
+    },
+    "philhealth_employer": {
+      "type": "number"
+    },
+    "pagibig_employee": {
+      "type": "number"
+    },
+    "pagibig_employer": {
+      "type": "number"
+    },
+    "withholding_tax": {
+      "type": "number"
+    },
+    "late_deduction": {
+      "type": "number"
+    },
+    "absent_deduction": {
+      "type": "number"
+    },
+    "other_deductions": {
+      "type": "number"
+    },
+    "total_deductions": {
+      "type": "number"
+    },
+    "net_pay": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "computed",
+        "approved",
+        "released"
+      ],
+      "default": "computed"
+    }
+  },
+  "required": [
+    "payroll_run_id",
+    "employee_id"
+  ]
+}

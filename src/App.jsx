@@ -5,43 +5,67 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
-// Add page imports here
+
+// Layout
+import AppLayout from '@/components/layout/AppLayout';
+
+// Pages
+import Dashboard from './pages/Dashboard';
+import Employees from './pages/Employees';
+import Departments from './pages/Departments';
+import Attendance from './pages/Attendance';
+import Biometric from './pages/Biometric';
+import Shifts from './pages/Shifts';
+import Leaves from './pages/Leaves';
+import Overtime from './pages/Overtime';
+import Payroll from './pages/Payroll';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
 
-  // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading PaySync PH...</p>
+        </div>
       </div>
     );
   }
 
-  // Handle authentication errors
   if (authError) {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     } else if (authError.type === 'auth_required') {
-      // Redirect to login automatically
       navigateToLogin();
       return null;
     }
   }
 
-  // Render the main app
   return (
     <Routes>
-      {/* Add your page Route elements here */}
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/employees" element={<Employees />} />
+        <Route path="/departments" element={<Departments />} />
+        <Route path="/attendance" element={<Attendance />} />
+        <Route path="/biometric" element={<Biometric />} />
+        <Route path="/shifts" element={<Shifts />} />
+        <Route path="/leaves" element={<Leaves />} />
+        <Route path="/overtime" element={<Overtime />} />
+        <Route path="/payroll" element={<Payroll />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/settings" element={<Settings />} />
+      </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
 };
 
-
 function App() {
-
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>

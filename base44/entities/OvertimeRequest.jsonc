@@ -1,0 +1,47 @@
+{
+  "name": "OvertimeRequest",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "requested_hours": {
+      "type": "number"
+    },
+    "approved_hours": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "is_rest_day": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_holiday": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "employee_id",
+    "date",
+    "requested_hours"
+  ]
+}

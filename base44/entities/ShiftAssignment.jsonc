@@ -1,0 +1,25 @@
+{
+  "name": "ShiftAssignment",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string"
+    },
+    "shift_template_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_rest_day": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "employee_id",
+    "shift_template_id",
+    "date"
+  ]
+}
