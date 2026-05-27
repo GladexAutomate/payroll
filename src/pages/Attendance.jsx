@@ -44,8 +44,15 @@ export default function Attendance() {
     loadData();
   };
 
-  const fmtTime = (iso) => iso ? format(new Date(iso), 'hh:mm a') : '—';
-  const fmtHrs = (h) => h ? `${h.toFixed(1)}h` : '—';
+  const fmtTime = (iso) => {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return format(d, 'hh:mm a');
+    } catch { return iso; }
+  };
+  const fmtHrs = (h) => (h != null && !isNaN(h)) ? `${Number(h).toFixed(1)}h` : '—';
 
   return (
     <div className="space-y-5">
