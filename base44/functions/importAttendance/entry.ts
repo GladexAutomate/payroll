@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
       const CREATE_BATCH = 25;
       for (let i = 0; i < toCreate.length; i += CREATE_BATCH) {
         await base44.asServiceRole.entities.AttendanceLog.bulkCreate(toCreate.slice(i, i + CREATE_BATCH));
-        created += Math.min(CREATE_BATCH, toCreate.length - i);
+        created += toCreate.slice(i, i + CREATE_BATCH).length;
         if (i + CREATE_BATCH < toCreate.length) await new Promise(r => setTimeout(r, 800));
       }
 
@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
         await Promise.all(toUpdate.slice(i, i + 5).map(u =>
           base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data)
         ));
-        updated += Math.min(5, toUpdate.length - i);
+        updated += toUpdate.slice(i, i + 5).length;
         if (i + 5 < toUpdate.length) await new Promise(r => setTimeout(r, 600));
       }
 
