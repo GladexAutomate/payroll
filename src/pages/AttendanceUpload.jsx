@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Upload, FileSpreadsheet, Trash2, AlertTriangle, CheckCircle, Loader2, Eye } from 'lucide-react';
+import { Upload, FileSpreadsheet, Trash2, AlertTriangle, CheckCircle, Loader2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
+import { format, getDaysInMonth } from 'date-fns';
+import * as XLSX from 'xlsx';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -172,6 +173,38 @@ export default function AttendanceUpload() {
     fileRef.current.value = '';
   };
 
+  const [templateMonth, setTemplateMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const downloadTemplate = () => {
+    const [year, month] = templateMonth.split('-').map(Number);
+    const daysInMonth = getDaysInMonth(new Date(year, month - 1));
+    const monthLabel = format(new Date(year, month - 1), 'MMMM yyyy');
+
+    // Build header row: Person Code, Name, then each day as MM-DD
+    const headers = ['Person Code', 'Name'];
+    for (let d = 1; d <= daysInMonth; d++) {
+      headers.push(`${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    }
+
+    // Sample rows
+    const rows = [
+      ['EMP001', 'Juan Dela Cruz', ...Array(daysInMonth).fill('')],
+      ['EMP002', 'Maria Santos', ...Array(daysInMonth).fill('')],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Style header row width hints
+    ws['!cols'] = [{ wch: 14 }, { wch: 24 }, ...Array(daysInMonth).fill({ wch: 12 })];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, monthLabel);
+    XLSX.writeFile(wb, `Attendance_Template_${templateMonth}.xlsx`);
+  };
+
   const handleDelete = async (upload) => {
     // Delete all attendance logs that came from this upload period — 
     // We identify by matching the upload's created_date window (records created around same time)
@@ -266,6 +299,34 @@ export default function AttendanceUpload() {
             ⚠️ Only <strong>.xlsx</strong> and <strong>.csv</strong> are supported. If your file is <strong>.xls</strong>, open it in Excel and save as <em>Excel Workbook (.xlsx)</em> first.
           </p>
         </div>
+      </div>
+
+      {/* Template Download */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="font-semibold text-base mb-1">Download Attendance Template</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Generate a blank template for a specific month. Fill in the time pairs (e.g. <code className="bg-muted px-1 rounded text-xs">08:00 / 17:00</code>) for each day column, then upload it above.
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">Month / Year</label>
+            <input
+              type="month"
+              value={templateMonth}
+              onChange={(e) => setTemplateMonth(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+          <div className="flex flex-col justify-end pt-5">
+            <Button onClick={downloadTemplate} variant="outline" className="gap-2">
+              <Download className="w-4 h-4" />
+              Download Template
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">
+          Template columns: <strong>Person Code</strong>, <strong>Name</strong>, then one column per day (e.g. 05-01, 05-02…). Each cell accepts time pairs like <code className="bg-muted px-1 rounded">08:00 / 17:00</code>.
+        </p>
       </div>
 
       {/* Upload History */}
