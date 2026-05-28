@@ -51,10 +51,22 @@ export default function DepartmentRoles() {
           <SetupCard
             key={departmentRole.id}
             title={departmentRole.name}
-            subtitle={`${departmentRole.employee_count || 0} employees in Airtable · ${departmentRole.company_name || 'Unassigned company'} / ${departmentRole.branch_name || 'Unassigned branch'} / ${departmentRole.department_name || 'Unassigned department'}`}
+            subtitle={`${departmentRole.employee_count || 0} employees in Airtable`}
             count={teams.filter(team => team.sub_department_id === departmentRole.id).length}
             onManage={() => openMapping(departmentRole)}
-          />
+          >
+            <div className="flex flex-col gap-1">
+              <span className="inline-flex w-fit max-w-full items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary truncate">
+                Company: {departmentRole.company_name || 'Unassigned'}
+              </span>
+              <span className="inline-flex w-fit max-w-full items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 truncate">
+                Branch: {departmentRole.branch_name || 'Unassigned'}
+              </span>
+              <span className="inline-flex w-fit max-w-full items-center rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 truncate">
+                Department: {departmentRole.department_name || 'Unassigned'}
+              </span>
+            </div>
+          </SetupCard>
         ))}
       </div>
 

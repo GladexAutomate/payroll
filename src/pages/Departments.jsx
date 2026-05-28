@@ -104,8 +104,14 @@ export default function Departments() {
               <div className="min-w-0">
                 <p className="font-semibold truncate">{dept.name}</p>
                 {dept.code && <p className="text-xs text-muted-foreground">{dept.code}</p>}
-                <p className="text-xs text-muted-foreground truncate mt-1">Company: {dept.company_name || 'Unassigned'}</p>
-                <p className="text-xs text-muted-foreground truncate">Branch: {dept.branch_name || 'Unassigned'}</p>
+                <div className="mt-2 flex flex-col gap-1">
+                  <span className="inline-flex w-fit max-w-full items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary truncate">
+                    Company: {dept.company_name || 'Unassigned'}
+                  </span>
+                  <span className="inline-flex w-fit max-w-full items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 truncate">
+                    Branch: {dept.branch_name || 'Unassigned'}
+                  </span>
+                </div>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
