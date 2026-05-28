@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
+import PayrollProgress from '@/components/payroll/PayrollProgress';
 import { format } from 'date-fns';
 
 export default function Payroll() {
@@ -17,6 +18,13 @@ export default function Payroll() {
 
   useEffect(() => { loadRuns(); }, []);
 
+  useEffect(() => {
+    const hasComputingRun = runs.some(run => run.status === 'computing');
+    if (!hasComputingRun) return;
+    const timer = setInterval(loadRuns, 2000);
+    return () => clearInterval(timer);
+  }, [runs]);
+
   const loadRuns = async () => {
     setLoading(true);
     const data = await base44.entities.PayrollRun.list('-period_start', 50);
@@ -26,9 +34,17 @@ export default function Payroll() {
 
   const handleCompute = async (run) => {
     setComputing(run.id);
-    await base44.functions.invoke('computePayroll', { payroll_run_id: run.id });
-    setComputing(null);
-    loadRuns();
+    setRuns(prev => prev.map(item => item.id === run.id ? {
+      ...item,
+      status: 'computing',
+      compute_progress: 1,
+      compute_processed: 0,
+      compute_total: item.employee_count || 0
+    } : item));
+
+    base44.functions.invoke('computePayroll', { payroll_run_id: run.id })
+      .then(loadRuns)
+      .finally(() => setComputing(null));
   };
 
   const handleApprove = async (run) => {
@@ -102,7 +118,10 @@ export default function Payroll() {
                   <td className="py-3.5 px-4 text-right font-bold text-green-600">
                     {run.total_net ? `₱${run.total_net.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
                   </td>
-                  <td className="py-3.5 px-4"><StatusBadge status={run.status} /></td>
+                  <td className="py-3.5 px-4">
+                    <StatusBadge status={run.status} />
+                    <PayrollProgress run={run} />
+                  </td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center justify-end gap-1">
                       <button
@@ -112,10 +131,10 @@ export default function Payroll() {
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      {run.status === 'draft' && (
+                      {(run.status === 'draft' || run.status === 'computing') && (
                         <button
                           onClick={() => handleCompute(run)}
-                          disabled={computing === run.id}
+                          disabled={computing === run.id || run.status === 'computing'}
                           className="p-1.5 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
                           title="Compute payroll"
                         >

@@ -22,11 +22,33 @@
       "type": "string",
       "enum": [
         "draft",
+        "computing",
         "processing",
         "approved",
         "released"
       ],
       "default": "draft"
+    },
+    "compute_progress": {
+      "type": "number",
+      "default": 0,
+      "description": "Payroll computation completion percentage"
+    },
+    "compute_processed": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of payroll records processed"
+    },
+    "compute_total": {
+      "type": "number",
+      "default": 0,
+      "description": "Total payroll records to process"
+    },
+    "compute_started_at": {
+      "type": "string"
+    },
+    "compute_completed_at": {
+      "type": "string"
     },
     "total_gross": {
       "type": "number"

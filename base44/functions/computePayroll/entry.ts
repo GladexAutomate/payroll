@@ -105,9 +105,10 @@ async function withRetry(operation, attempts = 8) {
   throw lastError;
 }
 
-async function bulkCreateInChunks(entity, records, size = 25) {
+async function bulkCreateInChunks(entity, records, size = 25, onProgress = null) {
   for (let i = 0; i < records.length; i += size) {
     await withRetry(() => entity.bulkCreate(records.slice(i, i + size)));
+    if (onProgress) await onProgress(Math.min(i + size, records.length));
     await wait(300);
   }
 }
@@ -126,6 +127,15 @@ Deno.serve(async (req) => {
     if (!runs.length) return Response.json({ error: 'Payroll run not found' }, { status: 404 });
     const run = runs[0];
 
+    await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
+      status: 'computing',
+      compute_progress: 1,
+      compute_processed: 0,
+      compute_total: 0,
+      compute_started_at: new Date().toISOString(),
+      compute_completed_at: null,
+    }));
+
     const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
     await wait(600);
     const paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
@@ -137,6 +147,12 @@ Deno.serve(async (req) => {
     }
 
     const employees = allEmployees.filter(isActiveEmployee);
+    await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
+      compute_progress: 10,
+      compute_processed: 0,
+      compute_total: employees.length,
+    }));
+
     const summaryByEmployeeId = paySummaries.reduce((map, summary) => {
       if (!map[summary.employee_id]) map[summary.employee_id] = summary;
       return map;
@@ -218,7 +234,14 @@ Deno.serve(async (req) => {
       totalNet += netPay;
     }
 
-    await bulkCreateInChunks(base44.asServiceRole.entities.PayrollRecord, recordsToCreate);
+    await bulkCreateInChunks(base44.asServiceRole.entities.PayrollRecord, recordsToCreate, 25, async (processed) => {
+      const progress = recordsToCreate.length ? 10 + Math.round((processed / recordsToCreate.length) * 85) : 95;
+      await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
+        compute_progress: progress,
+        compute_processed: processed,
+        compute_total: recordsToCreate.length,
+      }));
+    });
 
     await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
       total_gross: money(totalGross),
@@ -226,6 +249,10 @@ Deno.serve(async (req) => {
       total_net: money(totalNet),
       employee_count: employees.length,
       status: 'processing',
+      compute_progress: 100,
+      compute_processed: employees.length,
+      compute_total: employees.length,
+      compute_completed_at: new Date().toISOString(),
     }));
 
     return Response.json({
