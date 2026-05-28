@@ -16,13 +16,16 @@ const categoryLabels = {
   team: 'Team',
 };
 
+const itemKey = (item) => [item.company_name, item.branch_name, item.department_name, item.name].filter(Boolean).join(' / ').toLowerCase();
+const dedupeItems = (items = []) => Array.from(new Map(items.map(item => [item.id || itemKey(item), item])).values());
+
 export default function EmployeeListModal({ employees, label = 'employees', title, open, onOpen, onClose, categories = {}, onUpdated }) {
   const count = employees.length;
   const [category, setCategory] = useState('company');
   const [draggingEmployee, setDraggingEmployee] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const categoryItems = useMemo(() => categories[category] || [], [categories, category]);
+  const categoryItems = useMemo(() => dedupeItems(categories[category] || []), [categories, category]);
 
   const moveEmployee = async (target) => {
     if (!draggingEmployee?.airtable_record_id || !target?.name) return;
@@ -87,9 +90,14 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
               <div className="p-5 space-y-3 overflow-y-auto bg-muted/20">
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground">Move to category</label>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {Object.entries(categoryLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-                  </select>
+                  <div className="mt-2 grid grid-cols-1 gap-2">
+                    {Object.entries(categoryLabels).map(([value, text]) => (
+                      <label key={value} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer ${category === value ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background'}`}>
+                        <input type="checkbox" checked={category === value} onChange={() => setCategory(value)} className="rounded border-input" />
+                        <span>{text}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 {saving && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Updating Airtable...</div>}
@@ -105,6 +113,11 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                       className="rounded-xl border border-border bg-card p-3 text-sm hover:border-primary hover:bg-primary/5 transition-colors"
                     >
                       <p className="font-medium">{item.name}</p>
+                      {(item.company_name || item.branch_name || item.department_name) && (
+                        <p className="text-xs text-muted-foreground mt-1 truncate">
+                          {[item.company_name, item.branch_name, item.department_name].filter(Boolean).join(' / ')}
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground mt-1">Drop employee here</p>
                     </div>
                   ))}
