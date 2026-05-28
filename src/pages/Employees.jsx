@@ -25,6 +25,16 @@ export default function Employees() {
 
   useEffect(() => { loadData(); }, []);
 
+  useEffect(() => {
+    if (!loading && employees.length && airtableRecords.length && !syncingMatches) {
+      const hasPendingAutoMatch = employees.some(employee => {
+        if (matchMap[employee.id] || !employee.employee_id) return false;
+        return airtableRecords.some(record => airtableMatchName(record) === employeeMatchName(employee));
+      });
+      if (hasPendingAutoMatch) autoMatchEmployees();
+    }
+  }, [loading, employees.length, airtableRecords.length, matches.length]);
+
   const loadData = async () => {
     setLoading(true);
     const [emps, depts, savedMatches, airtableRes] = await Promise.all([
@@ -46,7 +56,11 @@ export default function Employees() {
     const fields = record.fields || {};
     return record.full_name || fields['Full Name'] || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' ').trim();
   };
-  const employeeMatchName = (employee) => normalizeName([employee.first_name, employee.last_name].filter(Boolean).join(' '));
+  const employeeMatchName = (employee) => {
+    const first = String(employee.first_name || '').trim();
+    const last = String(employee.last_name || '').trim();
+    return normalizeName(last ? `${first} ${last}` : first);
+  };
   const airtableMatchName = (record) => {
     const fields = record.fields || {};
     return normalizeName([fields['First Name'], fields['Last Name']].filter(Boolean).join(' '));
