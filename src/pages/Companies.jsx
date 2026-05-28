@@ -16,12 +16,13 @@ export default function Companies() {
 
   const loadData = async () => {
     setLoading(true);
-    const [res, companyData] = await Promise.all([
+    const [res, branchRes, companyData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
+      base44.functions.invoke('airtableEmployees', { action: 'branches' }),
       base44.entities.Company.list('name'),
     ]);
     setCompanies(res.data?.companies?.length ? res.data.companies : companyData);
-    setBranches(res.data?.branches || []);
+    setBranches(res.data?.branches?.length ? res.data.branches : branchRes.data?.branches || []);
     setLoading(false);
   };
 
