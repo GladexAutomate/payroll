@@ -72,24 +72,37 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     return byEmp;
   }, [logs, empMap]);
 
-  // Build display rows: one per employee key seen in logs
+  // Build display rows: start with all active employees, then include any unmatched imported logs.
   const rows = useMemo(() => {
-    const keys = Object.keys(grid);
-    const items = keys.map(key => {
+    const items = employees
+      .filter(emp => emp.status !== 'inactive' && emp.status !== 'terminated')
+      .map(emp => ({
+        key: emp.id,
+        emp,
+        name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_id || emp.id,
+        logs: grid[emp.id] || grid[emp.employee_id] || grid[emp.biometric_id] || {},
+      }));
+
+    const existingKeys = new Set(items.map(item => item.key));
+    for (const key of Object.keys(grid)) {
+      if (existingKeys.has(key)) continue;
       const emp = empMap[key];
       const name = emp
-        ? `${emp.first_name} ${emp.last_name}`.trim()
+        ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
         : (Object.values(grid[key])[0]?.employee_name || key);
-      return { key, emp, name, logs: grid[key] };
-    });
+      items.push({ key, emp, name, logs: grid[key] });
+    }
+
     items.sort((a, b) => a.name.localeCompare(b.name));
     const q = search.trim().toLowerCase();
     if (!q) return items;
     return items.filter(r =>
       r.name.toLowerCase().includes(q) ||
+      (r.emp?.employee_id || '').toLowerCase().includes(q) ||
+      (r.emp?.biometric_id || '').toLowerCase().includes(q) ||
       (r.key || '').toLowerCase().includes(q)
     );
-  }, [grid, empMap, search]);
+  }, [employees, grid, empMap, search]);
 
   const fmtTime = (iso) => {
     if (!iso) return '';
