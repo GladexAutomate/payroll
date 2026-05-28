@@ -15,7 +15,7 @@ export default function PayrollRunDetail({ run, onClose }) {
       setLoading(true);
       const [recs, emps] = await Promise.all([
         base44.entities.PayrollRecord.filter({ payroll_run_id: run.id }),
-        base44.entities.Employee.filter({ status: 'active' })
+        base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000)
       ]);
       setRecords(recs);
       setEmployees(emps);
@@ -24,7 +24,7 @@ export default function PayrollRunDetail({ run, onClose }) {
     load();
   }, [run.id]);
 
-  const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
+  const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.airtable_record_id]: e }), {});
   const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 
   return (
@@ -72,7 +72,7 @@ export default function PayrollRunDetail({ run, onClose }) {
                   <tr className="bg-muted/50 border-b border-border">
                     <th className="text-left py-2.5 px-3 font-medium text-muted-foreground text-xs">Employee</th>
                     <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">Basic</th>
-                    <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">Days</th>
+                    <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">Hours</th>
                     <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">OT Pay</th>
                     <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">Gross</th>
                     <th className="text-right py-2.5 px-3 font-medium text-muted-foreground text-xs">SSS</th>
@@ -88,9 +88,12 @@ export default function PayrollRunDetail({ run, onClose }) {
                     const emp = empMap[rec.employee_id];
                     return (
                       <tr key={rec.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                        <td className="py-3 px-3 font-medium">{emp ? `${emp.first_name} ${emp.last_name}` : rec.employee_id}</td>
+                        <td className="py-3 px-3 font-medium">
+                          {rec.employee_name || emp?.full_name || emp?.fields?.['Full Name'] || rec.employee_id}
+                          {rec.employee_code && <p className="text-[10px] text-muted-foreground">{rec.employee_code}</p>}
+                        </td>
                         <td className="py-3 px-3 text-right text-muted-foreground text-xs">{fmt(rec.basic_salary)}</td>
-                        <td className="py-3 px-3 text-right text-xs">{rec.days_worked}</td>
+                        <td className="py-3 px-3 text-right text-xs">{rec.total_hours ?? rec.days_worked}</td>
                         <td className="py-3 px-3 text-right text-xs">{fmt(rec.overtime_pay)}</td>
                         <td className="py-3 px-3 text-right font-medium">{fmt(rec.gross_pay)}</td>
                         <td className="py-3 px-3 text-right text-xs text-red-600">{fmt(rec.sss_employee)}</td>
@@ -116,7 +119,7 @@ export default function PayrollRunDetail({ run, onClose }) {
         </div>
 
         {selectedRecord && (
-          <PayslipModal record={selectedRecord} employee={employees.find(e => e.id === selectedRecord.employee_id)} run={run} onClose={() => setSelectedRecord(null)} />
+          <PayslipModal record={selectedRecord} employee={employees.find(e => e.id === selectedRecord.employee_id || e.airtable_record_id === selectedRecord.airtable_record_id)} run={run} onClose={() => setSelectedRecord(null)} />
         )}
       </div>
     </div>
@@ -139,10 +142,10 @@ function PayslipModal({ record, employee, run, onClose }) {
           <div className="p-6 space-y-4">
             {/* Employee Info */}
             <div className="bg-gray-50 rounded-xl p-4">
-              <p className="font-bold text-base">{employee ? `${employee.first_name} ${employee.last_name}` : '—'}</p>
-              <p className="text-sm text-gray-500">{employee?.position || '—'}</p>
+              <p className="font-bold text-base">{record.employee_name || employee?.full_name || employee?.fields?.['Full Name'] || '—'}</p>
+              <p className="text-sm text-gray-500">{employee?.fields?.['Job Title'] || '—'}</p>
               <div className="grid grid-cols-2 gap-1 mt-2 text-xs text-gray-600">
-                <span>ID: {employee?.employee_id}</span>
+                <span>ID: {record.employee_code || employee?.employee_code || employee?.fields?.['Employee Code ID']}</span>
                 <span>Period: {run.period_label}</span>
               </div>
             </div>
@@ -151,7 +154,7 @@ function PayslipModal({ record, employee, run, onClose }) {
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Earnings</p>
               {[
-                ['Basic Salary', record.basic_salary],
+                ['Regular Pay', record.regular_pay || record.basic_salary],
                 ['Overtime Pay', record.overtime_pay],
                 ['Allowances', record.allowances],
               ].filter(([, v]) => v > 0).map(([label, val]) => (
