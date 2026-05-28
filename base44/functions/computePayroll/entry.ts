@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
     const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
     const holidays = await base44.asServiceRole.entities.HolidayCalendar.filter({});
     const hiddenUploads = await base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200);
-    const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
+    const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
 
     const holidayDates = new Set(holidays.map(h => h.date));
     const regularHolidays = new Set(holidays.filter(h => h.type === 'regular').map(h => h.date));
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
       const logs = await base44.asServiceRole.entities.AttendanceLog.filter({
         employee_id: emp.id
       });
-      const periodLogs = logs.filter(l => l.date >= run.period_start && l.date <= run.period_end && !hiddenUploadIds.has(l.upload_id));
+      const periodLogs = logs.filter(l => l.date >= run.period_start && l.date <= run.period_end && (!l.upload_id || activeUploadIds.has(l.upload_id)));
 
       // Get approved overtime
       const otRequests = await base44.asServiceRole.entities.OvertimeRequest.filter({

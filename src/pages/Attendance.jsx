@@ -49,8 +49,8 @@ export default function Attendance() {
       base44.entities.Employee.filter({ status: 'active' }),
       base44.entities.AttendanceUpload.list('-created_date', 200)
     ]);
-    const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
-    setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
+    const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
+    setLogs(logsData.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id)));
     setEmployees(empsData);
     setLoading(false);
   };
