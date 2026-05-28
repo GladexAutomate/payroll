@@ -1,36 +1,21 @@
 {
-  "name": "Team",
+  "name": "SubDepartment",
   "type": "object",
   "properties": {
     "name": {
       "type": "string"
     },
-    "company_id": {
-      "type": "string"
-    },
-    "branch_id": {
-      "type": "string"
-    },
     "department_id": {
-      "type": "string"
-    },
-    "sub_department_id": {
-      "type": "string"
-    },
-    "leader_name": {
-      "type": "string"
-    },
-    "leader_email": {
       "type": "string"
     },
     "department_name": {
       "type": "string"
     },
-    "member_record_ids": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
+    "branch_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
     },
     "status": {
       "type": "string",

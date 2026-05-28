@@ -1,19 +1,58 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Building2, RefreshCw } from 'lucide-react';
+import { Building2, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
+  const [subDepartments, setSubDepartments] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [activeDepartment, setActiveDepartment] = useState(null);
+  const [subDepartmentName, setSubDepartmentName] = useState('');
+  const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const res = await base44.functions.invoke('airtableEmployees', { action: 'departments' });
+    const [res, subDepartmentData, teamData] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'departments' }),
+      base44.entities.SubDepartment.list('name'),
+      base44.entities.Team.list('name'),
+    ]);
     setDepartments(res.data?.departments || []);
+    setSubDepartments(subDepartmentData);
+    setTeams(teamData);
     setLoading(false);
+  };
+
+  const createSubDepartment = async (e) => {
+    e.preventDefault();
+    if (!activeDepartment || !subDepartmentName.trim()) return;
+    await base44.entities.SubDepartment.create({
+      name: subDepartmentName.trim(),
+      department_id: activeDepartment.id,
+      department_name: activeDepartment.name,
+      status: 'active',
+    });
+    setSubDepartmentName('');
+    loadData();
+  };
+
+  const createTeam = async (e) => {
+    e.preventDefault();
+    if (!activeDepartment || !teamName.trim()) return;
+    await base44.entities.Team.create({
+      name: teamName.trim(),
+      department_id: activeDepartment.id,
+      department_name: activeDepartment.name,
+      member_record_ids: [],
+      status: 'active',
+    });
+    setTeamName('');
+    loadData();
   };
 
   return (
@@ -50,9 +89,62 @@ export default function Departments() {
               <span className="text-xs text-muted-foreground">{dept.employee_count || 0} employees</span>
               <span className="text-xs text-primary font-medium">Airtable</span>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              <span>{subDepartments.filter(item => item.department_id === dept.id).length} sub departments</span>
+              <span>{teams.filter(item => item.department_id === dept.id).length} teams</span>
+            </div>
+            <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setActiveDepartment(dept)}>
+              <Plus className="w-4 h-4 mr-1.5" /> Add Under Department
+            </Button>
           </div>
         ))}
       </div>
+
+      {activeDepartment && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-5">
+            <div>
+              <h3 className="font-semibold">Add under {activeDepartment.name}</h3>
+              <p className="text-sm text-muted-foreground">Create sub departments and teams connected to this department.</p>
+            </div>
+
+            <form onSubmit={createSubDepartment} className="space-y-2">
+              <p className="text-sm font-medium">Sub Department</p>
+              <div className="flex gap-2">
+                <Input value={subDepartmentName} onChange={(e) => setSubDepartmentName(e.target.value)} placeholder="Sub department name" />
+                <Button type="submit">Create</Button>
+              </div>
+            </form>
+
+            <form onSubmit={createTeam} className="space-y-2">
+              <p className="text-sm font-medium">Team</p>
+              <div className="flex gap-2">
+                <Input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="Team name" />
+                <Button type="submit">Create</Button>
+              </div>
+            </form>
+
+            <div className="grid md:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl border border-border p-3">
+                <p className="font-medium mb-2">Sub Departments</p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {subDepartments.filter(item => item.department_id === activeDepartment.id).map(item => <p key={item.id}>{item.name}</p>)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border p-3">
+                <p className="font-medium mb-2">Teams</p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {teams.filter(item => item.department_id === activeDepartment.id).map(item => <p key={item.id}>{item.name}</p>)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setActiveDepartment(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
