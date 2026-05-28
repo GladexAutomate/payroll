@@ -95,6 +95,44 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── DEPARTMENTS: unique department names from Airtable employee records ───
+    if (action === 'departments') {
+      const counts = new Map();
+      let offset = null;
+
+      do {
+        const params = new URLSearchParams({ pageSize: '100' });
+        params.append('fields[]', 'Department');
+        if (offset) params.set('offset', offset);
+
+        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+
+        for (const record of (data.records || [])) {
+          const value = record.fields?.Department;
+          const names = Array.isArray(value) ? value : [value];
+          for (const rawName of names) {
+            const name = String(rawName || '').trim();
+            if (!name) continue;
+            counts.set(name, (counts.get(name) || 0) + 1);
+          }
+        }
+        offset = data.offset || null;
+      } while (offset);
+
+      const departments = Array.from(counts.entries())
+        .map(([name, employee_count]) => ({
+          id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          name,
+          code: name.split(/\s+/).map(word => word[0]).join('').slice(0, 5).toUpperCase(),
+          employee_count,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return Response.json({ departments });
+    }
+
     // ── CREATE: add a new record ──────────────────────────────────────────────
     if (action === 'create') {
       const { fields } = body;
