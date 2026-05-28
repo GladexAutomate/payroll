@@ -30,6 +30,23 @@ const employeeInitials = (fields) => {
   return names.map(name => name[0]).join('').toUpperCase();
 };
 const generatedPassword = (fields) => `${employeeInitials(fields)}${digitsOnly(fields['Date Hired']).slice(0, 8)}`;
+const normalizeName = (value) => String(value || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const nameTokens = (value) => normalizeName(value).split(' ').filter(Boolean);
+const smartNameKey = (value) => {
+  const tokens = nameTokens(value);
+  if (tokens.length <= 2) return tokens.join(' ');
+  return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+};
+const localEmployeeName = (employee) => [employee.first_name, employee.middle_name, employee.last_name].filter(Boolean).join(' ');
+const airtableRecordName = (record) => {
+  const fields = record.fields || {};
+  return fields['Full Name'] || [fields['First Name'], fields['Middle Name'], fields['Last Name']].filter(Boolean).join(' ');
+};
+const namesMatch = (employee, record) => {
+  const localName = localEmployeeName(employee);
+  const remoteName = airtableRecordName(record);
+  return normalizeName(localName) === normalizeName(remoteName) || smartNameKey(localName) === smartNameKey(remoteName);
+};
 
 Deno.serve(async (req) => {
   try {
@@ -230,14 +247,13 @@ Deno.serve(async (req) => {
       return Response.json({ count: allRecords.filter(isActive).length });
     }
 
-    if (action === 'syncBiometricsMatch') {
-      const { employeeRecordId, employeeNumber, employeeName, airtableRecordId, matchStatus = 'manual' } = body;
-      if (!employeeRecordId || !employeeNumber || !airtableRecordId) return Response.json({ error: 'employeeRecordId, employeeNumber, and airtableRecordId are required' }, { status: 400 });
+    const syncBiometricsMatch = async ({ employeeRecordId, employeeNumber, employeeName, airtableRecordId, matchStatus = 'manual' }) => {
+      if (!employeeRecordId || !employeeNumber || !airtableRecordId) throw new Error('employeeRecordId, employeeNumber, and airtableRecordId are required');
 
       const orgFields = await getOrgFields();
       const table = await getTableSchema();
       const biometricsField = pickField(table.fields || [], ['Biometrics Number', 'BIOMETRICS NUMBER', 'Biometric Number', 'Biometrics No']);
-      if (!biometricsField) return Response.json({ error: 'Biometrics Number column was not found in Airtable.' }, { status: 404 });
+      if (!biometricsField) throw new Error('Biometrics Number column was not found in Airtable.');
 
       const res = await fetch(`${AIRTABLE_URL}/${airtableRecordId}`, {
         method: 'PATCH',
@@ -245,7 +261,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ fields: { [biometricsField]: String(employeeNumber) }, typecast: true }),
       });
       const data = await res.json();
-      if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable biometrics update failed', details: data }, { status: res.status });
+      if (!res.ok) throw new Error(data.error?.message || 'Airtable biometrics update failed');
       const mirrored = await upsertMirrorRecord(data, orgFields);
 
       const fields = data.fields || {};
@@ -264,7 +280,46 @@ Deno.serve(async (req) => {
       const match = existing.length
         ? await base44.asServiceRole.entities.EmployeeAirtableMatch.update(existing[0].id, matchData)
         : await base44.asServiceRole.entities.EmployeeAirtableMatch.create(matchData);
-      return Response.json({ match, record: { id: data.id, fields: data.fields, backend_id: mirrored.id } });
+      return { match, record: { id: data.id, fields: data.fields, backend_id: mirrored.id } };
+    };
+
+    if (action === 'syncBiometricsMatch') {
+      const { employeeRecordId, employeeNumber, employeeName, airtableRecordId, matchStatus = 'manual' } = body;
+      if (!employeeRecordId || !employeeNumber || !airtableRecordId) return Response.json({ error: 'employeeRecordId, employeeNumber, and airtableRecordId are required' }, { status: 400 });
+      return Response.json(await syncBiometricsMatch({ employeeRecordId, employeeNumber, employeeName, airtableRecordId, matchStatus }));
+    }
+
+    if (action === 'autoMatchBiometrics') {
+      await syncFromAirtable();
+      const employees = await base44.asServiceRole.entities.Employee.list('-updated_date', 5000);
+      const matches = await base44.asServiceRole.entities.EmployeeAirtableMatch.list('-updated_date', 5000);
+      const matchedEmployeeIds = new Set(matches.map(match => match.employee_record_id));
+      const airtableRecords = (await listMirrorRecords(5000)).filter(isNotResigned);
+      let matched = 0;
+      let skipped = 0;
+
+      for (const employee of employees) {
+        const employeeNumber = employee.biometric_id || employee.employee_id;
+        if (!employeeNumber || matchedEmployeeIds.has(employee.id)) {
+          skipped += 1;
+          continue;
+        }
+        const matchRecord = airtableRecords.find(record => namesMatch(employee, record));
+        if (!matchRecord) {
+          skipped += 1;
+          continue;
+        }
+        await syncBiometricsMatch({
+          employeeRecordId: employee.id,
+          employeeNumber,
+          employeeName: localEmployeeName(employee),
+          airtableRecordId: matchRecord.airtable_record_id,
+          matchStatus: 'matched',
+        });
+        matched += 1;
+      }
+
+      return Response.json({ matched, skipped });
     }
 
     if (action === 'employeeAccounts') {
