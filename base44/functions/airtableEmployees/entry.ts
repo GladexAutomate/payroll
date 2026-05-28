@@ -231,6 +231,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'employeeAccounts') {
+      await syncFromAirtable();
       const allRecords = await listMirrorRecords(5000);
       const accounts = allRecords.map(record => {
         const fields = record.fields || {};
@@ -248,6 +249,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'employeeAccessStatus') {
+      await syncFromAirtable();
       const currentUser = await base44.auth.me();
       if (currentUser.role === 'admin') return Response.json({ allowed: true, admin: true });
       if (!currentUser.employee_access_verified || !currentUser.employee_code) return Response.json({ allowed: false });
@@ -261,6 +263,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'validateEmployeeAccess') {
+      await syncFromAirtable();
       const { employeeCode, password } = body;
       const currentUser = await base44.auth.me();
       const allRecords = await listMirrorRecords(5000);
