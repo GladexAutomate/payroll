@@ -198,8 +198,13 @@ function CreatePayrollModal({ onClose, onCreated }) {
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   useEffect(() => {
-    base44.entities.Branch.list('name', 500).then(data => {
-      setBranches(data.filter(branch => branch.status !== 'inactive'));
+    base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000).then(data => {
+      const branchNames = [...new Set(data
+        .map(employee => employee.branch || employee.fields?.Branch)
+        .filter(Boolean)
+        .map(branch => String(branch).trim())
+      )].sort((a, b) => a.localeCompare(b));
+      setBranches(branchNames.map(name => ({ id: name, name })));
     });
   }, []);
 
@@ -234,24 +239,6 @@ function CreatePayrollModal({ onClose, onCreated }) {
           <h3 className="font-semibold">Create Payroll Run</h3>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Period Start*</label>
-              <Input type="date" value={form.period_start} onChange={e => { set('period_start', e.target.value); }} onBlur={autoLabel} required className="mt-1" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Period End*</label>
-              <Input type="date" value={form.period_end} onChange={e => set('period_end', e.target.value)} onBlur={autoLabel} required className="mt-1" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Period Label*</label>
-            <Input value={form.period_label} onChange={e => set('period_label', e.target.value)} required className="mt-1" placeholder="e.g. May 1–15, 2026" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
-            <Input type="date" value={form.pay_date} onChange={e => set('pay_date', e.target.value)} className="mt-1" />
-          </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Branch*</label>
             <select
@@ -260,15 +247,36 @@ function CreatePayrollModal({ onClose, onCreated }) {
               required
               className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value="">Choose branch...</option>
+              <option value="">Choose branch first...</option>
               {branches.map(branch => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </select>
+            {!form.branch_id && <p className="mt-1 text-[11px] text-muted-foreground">Select a branch before completing payroll details.</p>}
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Period Start*</label>
+              <Input type="date" value={form.period_start} onChange={e => { set('period_start', e.target.value); }} onBlur={autoLabel} required disabled={!form.branch_id} className="mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Period End*</label>
+              <Input type="date" value={form.period_end} onChange={e => set('period_end', e.target.value)} onBlur={autoLabel} required disabled={!form.branch_id} className="mt-1" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Period Label*</label>
+            <Input value={form.period_label} onChange={e => set('period_label', e.target.value)} required disabled={!form.branch_id} className="mt-1" placeholder="e.g. May 1–15, 2026" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
+            <Input type="date" value={form.pay_date} onChange={e => set('pay_date', e.target.value)} disabled={!form.branch_id} className="mt-1" />
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit">Create Run</Button>
+            <Button type="submit" disabled={!form.branch_id}>Create Run</Button>
           </div>
         </form>
       </div>
