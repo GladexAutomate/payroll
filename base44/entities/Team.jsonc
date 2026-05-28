@@ -8,6 +8,12 @@
     "company_id": {
       "type": "string"
     },
+    "branch_id": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
     "leader_name": {
       "type": "string"
     },

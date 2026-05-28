@@ -1,0 +1,27 @@
+{
+  "name": "Branch",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "active"
+    }
+  },
+  "required": [
+    "name",
+    "company_id"
+  ]
+}

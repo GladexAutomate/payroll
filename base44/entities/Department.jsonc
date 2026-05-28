@@ -8,6 +8,12 @@
     "code": {
       "type": "string"
     },
+    "company_id": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
     "manager_user_id": {
       "type": "string",
       "description": "User ID of the department manager"

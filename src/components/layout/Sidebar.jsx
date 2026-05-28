@@ -10,6 +10,7 @@ const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Employees', icon: Users, path: '/employees' },
   { label: 'Airtable Employee List', icon: Database, path: '/airtable-employees' },
+  { label: 'Organization Setup', icon: Building2, path: '/organization-setup' },
   { label: 'Departments', icon: Building2, path: '/departments' },
   { label: 'Attendance', icon: Clock, path: '/attendance' },
   { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },

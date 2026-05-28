@@ -25,6 +25,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import ScheduleProposal from './pages/ScheduleProposal';
 import ScheduleRequests from './pages/ScheduleRequests';
+import OrganizationSetup from './pages/OrganizationSetup';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -55,6 +56,7 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/airtable-employees" element={<AirtableEmployees />} />
+        <Route path="/organization-setup" element={<OrganizationSetup />} />
         <Route path="/departments" element={<Departments />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />

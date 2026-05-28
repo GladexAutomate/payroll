@@ -7,6 +7,7 @@ const pageTitles = {
   '/': 'Dashboard',
   '/employees': 'Employees',
   '/airtable-employees': 'Airtable Employee List',
+  '/organization-setup': 'Organization Setup',
   '/departments': 'Departments',
   '/attendance': 'Attendance',
   '/attendance-upload': 'Upload Attendance',
