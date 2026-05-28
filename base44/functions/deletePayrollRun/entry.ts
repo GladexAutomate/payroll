@@ -28,6 +28,9 @@ Deno.serve(async (req) => {
     const runs = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id }, '-created_date', 1));
     if (!runs?.length) return Response.json({ success: true, deleted_records: 0, already_deleted: true });
 
+    await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.delete(payroll_run_id));
+    await wait(1000);
+
     let deletedRecords = 0;
     let records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
     while (records?.length > 0) {
@@ -39,8 +42,6 @@ Deno.serve(async (req) => {
       await wait(1500);
       records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
     }
-
-    await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.delete(payroll_run_id));
 
     return Response.json({ success: true, deleted_records: deletedRecords });
   } catch (error) {

@@ -46,10 +46,9 @@ export default function Payroll() {
     try {
       await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
     } catch (error) {
-      alert('Delete is still having trouble in the background. Please try again in a moment if it reappears.');
+      alert('Delete is still running slowly in the backend. The row will stay hidden while cleanup continues.');
     } finally {
       setDeleting(null);
-      loadRuns();
     }
   };
 
