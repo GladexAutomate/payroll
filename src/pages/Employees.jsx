@@ -100,7 +100,7 @@ export default function Employees() {
   const getEmployeeStatus = (employee) => {
     const match = matchMap[employee.id];
     const airtableRecord = match ? airtableRecordMap[match.airtable_record_id] : null;
-    return String(airtableRecord?.fields?.Status || employee.status || 'inactive').toLowerCase();
+    return airtableRecord?.fields?.Status ? String(airtableRecord.fields.Status).toLowerCase() : 'unmatched';
   };
 
   const filtered = employees.filter(e => {
@@ -176,7 +176,7 @@ export default function Employees() {
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-            <option value="terminated">Terminated</option>
+            <option value="unmatched">No Match</option>
           </select>
         </div>
         <div className="flex gap-2">
@@ -240,9 +240,13 @@ export default function Employees() {
                     </div>
                   </td>
                   <td className="py-3.5 px-4">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getEmployeeStatus(emp) === 'active' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {getEmployeeStatus(emp) === 'active' ? 'Active' : 'Inactive'}
-                    </span>
+                    {getEmployeeStatus(emp) === 'unmatched' ? (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-orange-50 text-orange-700">No Match</span>
+                    ) : (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getEmployeeStatus(emp) === 'active' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {getEmployeeStatus(emp) === 'active' ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3.5 px-4 font-medium text-muted-foreground">{emp.employee_id || '—'}</td>
                   <td className="py-3.5 px-4">
