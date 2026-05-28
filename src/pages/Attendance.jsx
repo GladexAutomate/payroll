@@ -44,11 +44,13 @@ export default function Attendance() {
 
   const loadData = async () => {
     setLoading(true);
-    const [logsData, empsData] = await Promise.all([
+    const [logsData, empsData, hiddenUploads] = await Promise.all([
       base44.entities.AttendanceLog.filter({ date: filterDate }),
-      base44.entities.Employee.filter({ status: 'active' })
+      base44.entities.Employee.filter({ status: 'active' }),
+      base44.entities.AttendanceUpload.filter({ status: 'deleting' })
     ]);
-    setLogs(logsData);
+    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
     setEmployees(empsData);
     setLoading(false);
   };

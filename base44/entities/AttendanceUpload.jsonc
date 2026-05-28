@@ -18,9 +18,12 @@
     "status": {
       "type": "string",
       "enum": [
+        "processing",
         "success",
         "failed",
-        "partial"
+        "partial",
+        "deleting",
+        "deleted"
       ],
       "default": "success"
     },
@@ -29,6 +32,14 @@
     },
     "notes": {
       "type": "string"
+    },
+    "delete_requested_at": {
+      "type": "string",
+      "description": "When this upload was marked for background deletion"
+    },
+    "deleted_records_count": {
+      "type": "number",
+      "default": 0
     }
   },
   "required": [

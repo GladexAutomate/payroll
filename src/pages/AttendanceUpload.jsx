@@ -54,7 +54,7 @@ export default function AttendanceUpload() {
   const loadUploads = async () => {
     setLoading(true);
     const data = await base44.entities.AttendanceUpload.list('-created_date', 50);
-    setUploads(data);
+    setUploads(data.filter(upload => upload.status !== 'deleting' && upload.status !== 'deleted'));
     setLoading(false);
   };
 

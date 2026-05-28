@@ -18,12 +18,15 @@ export default function Dashboard() {
 
   const loadDashboard = async () => {
     setLoading(true);
-    const [employees, todayLogs, pendingLeaves, pendingOT] = await Promise.all([
+    const [employees, todayLogsRaw, pendingLeaves, pendingOT, hiddenUploads] = await Promise.all([
       base44.entities.Employee.filter({ status: 'active' }),
       base44.entities.AttendanceLog.filter({ date: today }),
       base44.entities.LeaveRequest.filter({ status: 'pending' }),
       base44.entities.OvertimeRequest.filter({ status: 'pending' }),
+      base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
     ]);
+    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    const todayLogs = todayLogsRaw.filter(log => !hiddenUploadIds.has(log.upload_id));
 
     const present = todayLogs.filter(l => l.status === 'present').length;
     const absent = todayLogs.filter(l => l.status === 'absent').length;

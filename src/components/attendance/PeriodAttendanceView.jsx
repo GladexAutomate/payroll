@@ -22,16 +22,18 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     const load = async () => {
       setLoading(true);
       // Fetch all logs in the date range. Filter API supports $gte/$lte.
-      const [logsData, empsData] = await Promise.all([
+      const [logsData, empsData, hiddenUploads] = await Promise.all([
         base44.entities.AttendanceLog.filter(
           { date: { $gte: startDate, $lte: endDate } },
           'date',
           5000
         ),
         base44.entities.Employee.list('last_name', 2000),
+        base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
       ]);
       if (cancelled) return;
-      setLogs(logsData);
+      const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+      setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
       setEmployees(empsData);
       setLoading(false);
     };
@@ -127,12 +129,16 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   );
 
   const reloadLogs = async () => {
-    const logsData = await base44.entities.AttendanceLog.filter(
-      { date: { $gte: startDate, $lte: endDate } },
-      'date',
-      5000
-    );
-    setLogs(logsData);
+    const [logsData, hiddenUploads] = await Promise.all([
+      base44.entities.AttendanceLog.filter(
+        { date: { $gte: startDate, $lte: endDate } },
+        'date',
+        5000
+      ),
+      base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
+    ]);
+    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
   };
 
   const savePunch = async ({ timeIn, timeOut }) => {
