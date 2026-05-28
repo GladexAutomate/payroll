@@ -15,12 +15,21 @@ export default function Branches() {
 
   const loadData = async () => {
     setLoading(true);
-    const [branchResponse, departmentData] = await Promise.all([
-      base44.functions.invoke('airtableEmployees', { action: 'branches' }),
+    const [hierarchyResponse, departmentData] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Department.list('name'),
     ]);
-    setBranches(branchResponse.data?.branches || []);
-    setDepartments(departmentData);
+
+    const mergedDepartments = new Map();
+    for (const department of (hierarchyResponse.data?.departments || [])) {
+      mergedDepartments.set(`${department.name}-${department.branch_id || ''}`.toLowerCase(), department);
+    }
+    for (const department of (departmentData || [])) {
+      mergedDepartments.set(`${department.name}-${department.branch_id || ''}`.toLowerCase(), department);
+    }
+
+    setBranches(hierarchyResponse.data?.branches || []);
+    setDepartments(Array.from(mergedDepartments.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setLoading(false);
   };
 
@@ -75,7 +84,7 @@ export default function Branches() {
               <h3 className="font-semibold">Map Departments to {selectedBranch.name}</h3>
               <p className="text-sm text-muted-foreground">Select existing departments under this Airtable branch.</p>
             </div>
-            <MultiSelectList items={departments} selectedIds={selectedDepartments} onToggle={(id) => setSelectedDepartments(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id])} />
+            <MultiSelectList items={departments.filter(department => !department.branch_id || department.branch_id === selectedBranch.id)} selectedIds={selectedDepartments} onToggle={(id) => setSelectedDepartments(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id])} />
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setSelectedBranch(null)}>Cancel</Button>
               <Button onClick={saveMapping}>Save Mapping</Button>
