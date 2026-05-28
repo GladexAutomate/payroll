@@ -97,8 +97,8 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[70] bg-black/40 p-3">
-          <div className="bg-card rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-[70] bg-black/40">
+          <div className="bg-card w-screen h-screen flex flex-col overflow-hidden">
             <div className="p-5 border-b border-border flex items-start justify-between gap-4">
               <div>
                 <h3 className="font-semibold flex items-center gap-2">
@@ -136,7 +136,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                       setDraggingId(null);
                       setDragPreviewPosition(null);
                     }}
-                    className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing bg-background transition-all duration-200 hover:border-primary/50 ${draggingId === (employee.airtable_record_id || employee.id) ? 'border-primary bg-primary/10 shadow-lg scale-[1.01]' : 'border-border'}`}
+                    className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing bg-background transition-all duration-200 hover:border-primary/50 ${draggingId === (employee.airtable_record_id || employee.id) ? 'border-primary bg-primary/10 shadow-lg opacity-40' : 'border-border'}`}
                   >
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-4 h-4 text-muted-foreground" />
@@ -232,8 +232,8 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
 
       {draggingEmployee && dragPreviewPosition && (
         <div
-          className="fixed z-[100] pointer-events-none w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-primary bg-primary/10 p-3 shadow-2xl scale-[1.02]"
-          style={{ left: dragPreviewPosition.x + 12, top: dragPreviewPosition.y + 12 }}
+          className="fixed z-[100] pointer-events-none w-[520px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-primary bg-primary/10 p-3 shadow-2xl scale-[1.02]"
+          style={{ left: dragPreviewPosition.x, top: dragPreviewPosition.y }}
         >
           <div className="flex items-center gap-2">
             <GripVertical className="w-4 h-4 text-primary" />
