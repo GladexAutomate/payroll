@@ -34,10 +34,10 @@ export default function OrganizationSetup() {
     setLoading(false);
   };
 
-  const filteredBranches = useMemo(() => branches.filter(branch => branch.company_id === selected.companyId), [branches, selected.companyId]);
-  const filteredDepartments = useMemo(() => departments.filter(department => department.branch_id === selected.branchId), [departments, selected.branchId]);
-  const filteredDepartmentRoles = useMemo(() => departmentRoles.filter(role => role.department_id === selected.departmentId), [departmentRoles, selected.departmentId]);
-  const filteredTeams = useMemo(() => teams.filter(team => team.sub_department_id === selected.roleId), [teams, selected.roleId]);
+  const filteredBranches = useMemo(() => selected.companyId ? branches.filter(branch => branch.company_id === selected.companyId) : [], [branches, selected.companyId]);
+  const filteredDepartments = useMemo(() => selected.branchId ? departments.filter(department => department.branch_id === selected.branchId) : [], [departments, selected.branchId]);
+  const filteredDepartmentRoles = useMemo(() => selected.departmentId ? departmentRoles.filter(role => role.department_id === selected.departmentId) : [], [departmentRoles, selected.departmentId]);
+  const filteredTeams = useMemo(() => selected.roleId ? teams.filter(team => team.sub_department_id === selected.roleId) : [], [teams, selected.roleId]);
   const selectedTeam = teams.find(team => team.id === selected.teamId);
 
   const updateSelected = (key, value) => {
