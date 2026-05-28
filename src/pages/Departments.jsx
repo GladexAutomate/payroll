@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [subDepartments, setSubDepartments] = useState([]);
   const [teams, setTeams] = useState([]);
   const [activeDepartment, setActiveDepartment] = useState(null);
@@ -13,6 +15,8 @@ export default function Departments() {
   const [teamName, setTeamName] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
@@ -33,6 +37,8 @@ export default function Departments() {
       mergedRoles.set(`${role.name}-${role.department_id || ''}`.toLowerCase(), role);
     }
 
+    setCompanies(res.data?.companies || []);
+    setBranches(res.data?.branches || []);
     setDepartments(res.data?.departments || []);
     setSubDepartments(Array.from(mergedRoles.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setTeams(teamData);
@@ -76,6 +82,13 @@ export default function Departments() {
     loadData();
   };
 
+  const availableBranches = selectedCompanyId ? branches.filter(branch => branch.company_id === selectedCompanyId) : branches;
+  const filteredDepartments = departments.filter(dept => {
+    const companyMatch = !selectedCompanyId || dept.company_id === selectedCompanyId;
+    const branchMatch = !selectedBranchId || dept.branch_id === selectedBranchId;
+    return companyMatch && branchMatch;
+  });
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
@@ -88,14 +101,31 @@ export default function Departments() {
         </Button>
       </div>
 
+      <div className="bg-card border border-border rounded-xl p-4 grid md:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Filter by Company</label>
+          <select value={selectedCompanyId} onChange={(e) => { setSelectedCompanyId(e.target.value); setSelectedBranchId(''); }} className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+            <option value="">All companies</option>
+            {companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Filter by Branch</label>
+          <select value={selectedBranchId} onChange={(e) => setSelectedBranchId(e.target.value)} className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+            <option value="">All branches</option>
+            {availableBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+          </select>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
           [...Array(6)].map((_, i) => <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />)
-        ) : departments.length === 0 ? (
+        ) : filteredDepartments.length === 0 ? (
           <div className="col-span-full bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
             No departments found in Airtable yet.
           </div>
-        ) : departments.map(dept => (
+        ) : filteredDepartments.map(dept => (
           <div key={dept.id} className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">

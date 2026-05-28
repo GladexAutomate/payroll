@@ -6,9 +6,11 @@ import SetupCard from '@/components/organization/SetupCard';
 
 export default function Branches() {
   const [branches, setBranches] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
@@ -28,6 +30,7 @@ export default function Branches() {
       mergedDepartments.set(`${department.name}-${department.branch_id || ''}`.toLowerCase(), department);
     }
 
+    setCompanies(hierarchyResponse.data?.companies || []);
     setBranches(hierarchyResponse.data?.branches || []);
     setDepartments(Array.from(mergedDepartments.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setLoading(false);
@@ -52,11 +55,27 @@ export default function Branches() {
     loadData();
   };
 
+  const filteredBranches = selectedCompanyId
+    ? branches.filter(branch => branch.company_id === selectedCompanyId)
+    : branches;
+
   return (
     <div className="space-y-5 max-w-6xl">
       <div className="bg-card border border-border rounded-xl p-5">
         <h2 className="font-semibold text-lg">Branches</h2>
         <p className="text-sm text-muted-foreground mt-1">Branches load from the saved backend copy of Airtable records.</p>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-4">
+        <label className="text-xs font-semibold text-muted-foreground">Filter by Company</label>
+        <select
+          value={selectedCompanyId}
+          onChange={(e) => setSelectedCompanyId(e.target.value)}
+          className="mt-2 h-9 w-full md:w-80 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All companies</option>
+          {companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+        </select>
       </div>
 
       {loading ? (
@@ -65,7 +84,7 @@ export default function Branches() {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {branches.map(branch => (
+          {filteredBranches.map(branch => (
             <SetupCard
               key={branch.id}
               title={branch.name}
