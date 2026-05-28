@@ -111,6 +111,8 @@ export default function DepartmentRoles() {
                 open={employeeModal === departmentRole.id}
                 onOpen={() => setEmployeeModal(departmentRole.id)}
                 onClose={() => setEmployeeModal(null)}
+                onUpdated={loadData}
+                categories={{ company: companies, branch: branches, department: departments, department_role: departmentRoles, team: teams }}
               />
             }
             count={teams.filter(team => team.sub_department_id === departmentRole.id).length}

@@ -57,6 +57,7 @@ Deno.serve(async (req) => {
         branch: pickField(fields, ['Branch', 'BRANCH']),
         department: pickField(fields, ['Department', 'DEPARTMENT']),
         role: pickField(fields, ['Department Role', 'DEPARTMENT ROLE']),
+        team: pickField(fields, ['Team', 'TEAM']),
         fullName: pickField(fields, ['Full Name', 'FULL NAME']),
         employeeCode: pickField(fields, ['Employee Code ID', 'Employee Code', 'EMPLOYEE CODE ID']),
       };
@@ -72,6 +73,7 @@ Deno.serve(async (req) => {
         branch: valueText(fields[orgFields.branch]).trim(),
         department: valueText(fields[orgFields.department]).trim(),
         department_role: valueText(fields[orgFields.role]).trim(),
+        team: valueText(fields[orgFields.team]).trim(),
         full_name: valueText(fields[orgFields.fullName]).trim(),
         employee_code: valueText(fields[orgFields.employeeCode]).trim(),
         search_text: searchText,
@@ -292,6 +294,37 @@ Deno.serve(async (req) => {
       const data = await res.json();
       if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
       const mirrored = await upsertMirrorRecord(data, await getOrgFields());
+      return Response.json({ record: { id: data.id, fields: data.fields, backend_id: mirrored.id } });
+    }
+
+    if (action === 'reassignEmployeeCategory') {
+      const { recordId, category, target } = body;
+      if (!recordId || !category || !target?.name) return Response.json({ error: 'recordId, category, and target are required' }, { status: 400 });
+
+      const orgFields = await getOrgFields();
+      const fieldMap = {
+        company: orgFields.company,
+        branch: orgFields.branch,
+        department: orgFields.department,
+        department_role: orgFields.role,
+        team: orgFields.team,
+      };
+      const targetField = fieldMap[category];
+      if (!targetField) return Response.json({ error: `Airtable column for ${category.replace('_', ' ')} was not found.` }, { status: 404 });
+
+      const fields = { [targetField]: String(target.name || '').trim() };
+      if (orgFields.company && target.company_name) fields[orgFields.company] = String(target.company_name).trim();
+      if (orgFields.branch && target.branch_name) fields[orgFields.branch] = String(target.branch_name).trim();
+      if (orgFields.department && target.department_name) fields[orgFields.department] = String(target.department_name).trim();
+
+      const res = await fetch(`${AIRTABLE_URL}/${recordId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ fields, typecast: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable update failed', details: data }, { status: res.status });
+      const mirrored = await upsertMirrorRecord(data, orgFields);
       return Response.json({ record: { id: data.id, fields: data.fields, backend_id: mirrored.id } });
     }
 

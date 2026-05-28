@@ -22,6 +22,9 @@
     "department_role": {
       "type": "string"
     },
+    "team": {
+      "type": "string"
+    },
     "full_name": {
       "type": "string"
     },

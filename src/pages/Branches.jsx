@@ -101,6 +101,8 @@ export default function Branches() {
                   open={employeeModal === branch.id}
                   onOpen={() => setEmployeeModal(branch.id)}
                   onClose={() => setEmployeeModal(null)}
+                  onUpdated={loadData}
+                  categories={{ company: companies, branch: branches, department: departments, department_role: [], team: [] }}
                 />
               }
               count={departments.filter(department => department.branch_id === branch.id).length}

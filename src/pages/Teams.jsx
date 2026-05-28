@@ -131,6 +131,8 @@ export default function Teams() {
                 open={employeeModal === team.id}
                 onOpen={() => setEmployeeModal(team.id)}
                 onClose={() => setEmployeeModal(null)}
+                onUpdated={loadData}
+                categories={{ company: companies, branch: branches, department: departments, department_role: departmentRoles, team: teams }}
               />
             }
             count={employees.filter(employee => employee.team_id === team.id).length}

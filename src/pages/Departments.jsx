@@ -157,6 +157,8 @@ export default function Departments() {
                 open={employeeModal === dept.id}
                 onOpen={() => setEmployeeModal(dept.id)}
                 onClose={() => setEmployeeModal(null)}
+                onUpdated={loadData}
+                categories={{ company: companies, branch: branches, department: departments, department_role: subDepartments, team: teams }}
               />
               <span className="text-xs text-primary font-medium">Airtable</span>
             </div>
