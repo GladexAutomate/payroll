@@ -31,7 +31,7 @@ export default function Employees() {
       base44.entities.Employee.list('-created_date', 200),
       base44.entities.Department.list(),
       base44.entities.EmployeeAirtableMatch.list('-updated_date', 1000),
-      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 })
+      base44.functions.invoke('airtableEmployees', { action: 'matchCandidates' })
     ]);
     setEmployees(emps);
     setDepartments(depts);
@@ -45,6 +45,11 @@ export default function Employees() {
   const airtableFullName = (record) => {
     const fields = record.fields || {};
     return record.full_name || fields['Full Name'] || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' ').trim();
+  };
+  const employeeMatchName = (employee) => normalizeName([employee.first_name, employee.last_name].filter(Boolean).join(' '));
+  const airtableMatchName = (record) => {
+    const fields = record.fields || {};
+    return normalizeName([fields['First Name'], fields['Last Name']].filter(Boolean).join(' '));
   };
   const matchMap = matches.reduce((map, match) => ({ ...map, [match.employee_record_id]: match }), {});
 
@@ -85,8 +90,8 @@ export default function Employees() {
     const existingEmployeeIds = new Set(matches.map(match => match.employee_record_id));
     for (const employee of employees) {
       if (existingEmployeeIds.has(employee.id) || !employee.employee_id) continue;
-      const localName = normalizeName(employeeFullName(employee));
-      const matchedRecord = airtableRecords.find(record => normalizeName(airtableFullName(record)) === localName);
+      const localName = employeeMatchName(employee);
+      const matchedRecord = airtableRecords.find(record => airtableMatchName(record) === localName);
       if (matchedRecord) await connectMatch(employee, matchedRecord, 'matched');
     }
     setSyncingMatches(false);

@@ -338,6 +338,19 @@ Deno.serve(async (req) => {
       return Response.json(await syncFromAirtable());
     }
 
+    if (action === 'matchCandidates') {
+      const allRecords = await listMirrorRecords(5000);
+      const records = allRecords.filter(isNotResigned).map(record => ({
+        id: record.airtable_record_id,
+        airtable_record_id: record.airtable_record_id,
+        backend_id: record.id,
+        fields: record.fields || {},
+        full_name: record.full_name,
+        employee_code: record.employee_code,
+      }));
+      return Response.json({ records });
+    }
+
     if (action === 'list') {
       const { pageSize = 50, offset = 0, search } = body;
       const allRecords = await listMirrorRecords(5000);
