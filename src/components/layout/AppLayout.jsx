@@ -11,6 +11,8 @@ const pageTitles = {
   '/attendance': 'Attendance',
   '/attendance-upload': 'Upload Attendance',
   '/shifts': 'Shift Schedules',
+  '/schedule-proposal': 'Schedule Proposal',
+  '/schedule-requests': 'Schedule Requests',
   '/leaves': 'Leave Requests',
   '/overtime': 'Overtime',
   '/payroll': 'Payroll',

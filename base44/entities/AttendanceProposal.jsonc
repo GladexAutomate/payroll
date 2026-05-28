@@ -1,0 +1,67 @@
+{
+  "name": "AttendanceProposal",
+  "type": "object",
+  "properties": {
+    "team_name": {
+      "type": "string"
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "branch_name": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "leader_name": {
+      "type": "string"
+    },
+    "leader_email": {
+      "type": "string"
+    },
+    "period_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_hr_review",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending_hr_review"
+    },
+    "employees": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "assignments": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "object"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "reviewed_by": {
+      "type": "string"
+    },
+    "reviewed_date": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "team_name",
+    "period_start",
+    "period_end"
+  ]
+}

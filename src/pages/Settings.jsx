@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Plus, Trash2, Building2, Calendar } from 'lucide-react';
+import WebhookSettings from '@/components/schedule/WebhookSettings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -61,6 +62,8 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      <WebhookSettings />
+
       {/* Holiday Calendar */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">

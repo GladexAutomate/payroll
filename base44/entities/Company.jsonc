@@ -1,0 +1,27 @@
+{
+  "name": "Company",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Mapped Airtable department name"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "active"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

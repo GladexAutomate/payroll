@@ -23,6 +23,8 @@ import Overtime from './pages/Overtime';
 import Payroll from './pages/Payroll';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import ScheduleProposal from './pages/ScheduleProposal';
+import ScheduleRequests from './pages/ScheduleRequests';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -57,6 +59,8 @@ const AuthenticatedApp = () => {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />
         <Route path="/shifts" element={<Shifts />} />
+        <Route path="/schedule-proposal" element={<ScheduleProposal />} />
+        <Route path="/schedule-requests" element={<ScheduleRequests />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/payroll" element={<Payroll />} />

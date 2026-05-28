@@ -1,0 +1,38 @@
+{
+  "name": "Team",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "leader_name": {
+      "type": "string"
+    },
+    "leader_email": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "member_record_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "active"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
