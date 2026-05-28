@@ -106,6 +106,7 @@ export default function Payroll() {
                   <td className="py-3.5 px-4">
                     <p className="font-medium">{run.period_label}</p>
                     <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
+                    {run.branch_name && <p className="text-xs text-primary mt-0.5">{run.branch_name}</p>}
                   </td>
                   <td className="py-3.5 px-4 text-muted-foreground">{run.pay_date || '—'}</td>
                   <td className="py-3.5 px-4 text-right">{run.employee_count || '—'}</td>
@@ -189,14 +190,32 @@ function CreatePayrollModal({ onClose, onCreated }) {
     period_label: '',
     period_start: '',
     period_end: '',
-    pay_date: ''
+    pay_date: '',
+    branch_id: '',
+    branch_name: ''
   });
+  const [branches, setBranches] = useState([]);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    base44.entities.Branch.list('name', 500).then(data => {
+      setBranches(data.filter(branch => branch.status !== 'inactive'));
+    });
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await base44.entities.PayrollRun.create({ ...form, status: 'draft' });
     onCreated();
+  };
+
+  const handleBranchChange = (branchId) => {
+    const branch = branches.find(item => item.id === branchId);
+    setForm(prev => ({
+      ...prev,
+      branch_id: branch?.id || '',
+      branch_name: branch?.name || ''
+    }));
   };
 
   // Auto-fill period label
@@ -232,6 +251,20 @@ function CreatePayrollModal({ onClose, onCreated }) {
           <div>
             <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
             <Input type="date" value={form.pay_date} onChange={e => set('pay_date', e.target.value)} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Branch*</label>
+            <select
+              value={form.branch_id}
+              onChange={e => handleBranchChange(e.target.value)}
+              required
+              className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="">Choose branch...</option>
+              {branches.map(branch => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

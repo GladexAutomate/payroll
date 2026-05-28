@@ -13,6 +13,10 @@ function normalizeName(value) {
   return cleanText(value).toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeText(value) {
+  return cleanText(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function getFields(employee) {
   return employee?.fields || {};
 }
@@ -146,7 +150,12 @@ Deno.serve(async (req) => {
       await wait(80);
     }
 
-    const employees = allEmployees.filter(isActiveEmployee);
+    const selectedBranch = normalizeText(run.branch_name);
+    const employees = allEmployees.filter(employee => {
+      if (!isActiveEmployee(employee)) return false;
+      if (!selectedBranch) return true;
+      return normalizeText(employee.branch || getFields(employee).Branch) === selectedBranch;
+    });
     await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
       compute_progress: 10,
       compute_processed: 0,

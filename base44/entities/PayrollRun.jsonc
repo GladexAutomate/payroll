@@ -18,6 +18,14 @@
       "type": "string",
       "format": "date"
     },
+    "branch_id": {
+      "type": "string",
+      "description": "Branch this payroll run is for"
+    },
+    "branch_name": {
+      "type": "string",
+      "description": "Branch name shown for this payroll run"
+    },
     "status": {
       "type": "string",
       "enum": [
