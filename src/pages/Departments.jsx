@@ -11,6 +11,8 @@ export default function Departments() {
   const [activeDepartment, setActiveDepartment] = useState(null);
   const [subDepartmentName, setSubDepartmentName] = useState('');
   const [teamName, setTeamName] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [editName, setEditName] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
@@ -52,6 +54,16 @@ export default function Departments() {
       status: 'active',
     });
     setTeamName('');
+    loadData();
+  };
+
+  const updateItem = async (e) => {
+    e.preventDefault();
+    if (!editingItem || !editName.trim()) return;
+    const entity = editingItem.type === 'team' ? base44.entities.Team : base44.entities.SubDepartment;
+    await entity.update(editingItem.item.id, { name: editName.trim() });
+    setEditingItem(null);
+    setEditName('');
     loadData();
   };
 
@@ -100,6 +112,19 @@ export default function Departments() {
         ))}
       </div>
 
+      {editingItem && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
+          <form onSubmit={updateItem} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-semibold">Edit {editingItem.type === 'team' ? 'Team' : 'Sub Department'}</h3>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Name" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {activeDepartment && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-5">
@@ -128,13 +153,21 @@ export default function Departments() {
               <div className="rounded-xl border border-border p-3">
                 <p className="font-medium mb-2">Sub Departments</p>
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  {subDepartments.filter(item => item.department_id === activeDepartment.id).map(item => <p key={item.id}>{item.name}</p>)}
+                  {subDepartments.filter(item => item.department_id === activeDepartment.id).map(item => (
+                    <button key={item.id} className="block w-full text-left hover:text-foreground" onClick={() => { setEditingItem({ type: 'subDepartment', item }); setEditName(item.name); }}>
+                      {item.name}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="rounded-xl border border-border p-3">
                 <p className="font-medium mb-2">Teams</p>
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  {teams.filter(item => item.department_id === activeDepartment.id).map(item => <p key={item.id}>{item.name}</p>)}
+                  {teams.filter(item => item.department_id === activeDepartment.id).map(item => (
+                    <button key={item.id} className="block w-full text-left hover:text-foreground" onClick={() => { setEditingItem({ type: 'team', item }); setEditName(item.name); }}>
+                      {item.name}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

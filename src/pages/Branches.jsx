@@ -9,6 +9,8 @@ export default function Branches() {
   const [branches, setBranches] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [name, setName] = useState('');
+  const [editingBranch, setEditingBranch] = useState(null);
+  const [editName, setEditName] = useState('');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
 
@@ -28,6 +30,15 @@ export default function Branches() {
     if (!name.trim()) return;
     await base44.entities.Branch.create({ name: name.trim(), status: 'active' });
     setName('');
+    loadData();
+  };
+
+  const updateBranch = async (e) => {
+    e.preventDefault();
+    if (!editingBranch || !editName.trim()) return;
+    await base44.entities.Branch.update(editingBranch.id, { name: editName.trim() });
+    setEditingBranch(null);
+    setEditName('');
     loadData();
   };
 
@@ -65,9 +76,26 @@ export default function Branches() {
             title={branch.name}
             count={departments.filter(department => department.branch_id === branch.id).length}
             onManage={() => openMapping(branch)}
-          />
+          >
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingBranch(branch); setEditName(branch.name); }}>
+              Edit Branch
+            </Button>
+          </SetupCard>
         ))}
       </div>
+
+      {editingBranch && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <form onSubmit={updateBranch} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-semibold">Edit Branch</h3>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Branch name" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditingBranch(null)}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {selectedBranch && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

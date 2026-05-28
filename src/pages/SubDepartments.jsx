@@ -9,6 +9,8 @@ export default function SubDepartments() {
   const [subDepartments, setSubDepartments] = useState([]);
   const [teams, setTeams] = useState([]);
   const [name, setName] = useState('');
+  const [editingSubDepartment, setEditingSubDepartment] = useState(null);
+  const [editName, setEditName] = useState('');
   const [selectedSubDepartment, setSelectedSubDepartment] = useState(null);
   const [selectedTeams, setSelectedTeams] = useState([]);
 
@@ -28,6 +30,15 @@ export default function SubDepartments() {
     if (!name.trim()) return;
     await base44.entities.SubDepartment.create({ name: name.trim(), status: 'active' });
     setName('');
+    loadData();
+  };
+
+  const updateSubDepartment = async (e) => {
+    e.preventDefault();
+    if (!editingSubDepartment || !editName.trim()) return;
+    await base44.entities.SubDepartment.update(editingSubDepartment.id, { name: editName.trim() });
+    setEditingSubDepartment(null);
+    setEditName('');
     loadData();
   };
 
@@ -70,9 +81,26 @@ export default function SubDepartments() {
             title={subDepartment.name}
             count={teams.filter(team => team.sub_department_id === subDepartment.id).length}
             onManage={() => openMapping(subDepartment)}
-          />
+          >
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingSubDepartment(subDepartment); setEditName(subDepartment.name); }}>
+              Edit Sub Department
+            </Button>
+          </SetupCard>
         ))}
       </div>
+
+      {editingSubDepartment && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <form onSubmit={updateSubDepartment} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-semibold">Edit Sub Department</h3>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Sub department name" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditingSubDepartment(null)}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {selectedSubDepartment && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

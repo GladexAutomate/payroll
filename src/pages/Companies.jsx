@@ -9,6 +9,8 @@ export default function Companies() {
   const [companies, setCompanies] = useState([]);
   const [branches, setBranches] = useState([]);
   const [name, setName] = useState('');
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [editName, setEditName] = useState('');
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedBranches, setSelectedBranches] = useState([]);
 
@@ -28,6 +30,15 @@ export default function Companies() {
     if (!name.trim()) return;
     await base44.entities.Company.create({ name: name.trim(), status: 'active' });
     setName('');
+    loadData();
+  };
+
+  const updateCompany = async (e) => {
+    e.preventDefault();
+    if (!editingCompany || !editName.trim()) return;
+    await base44.entities.Company.update(editingCompany.id, { name: editName.trim() });
+    setEditingCompany(null);
+    setEditName('');
     loadData();
   };
 
@@ -65,9 +76,26 @@ export default function Companies() {
             title={company.name}
             count={branches.filter(branch => branch.company_id === company.id).length}
             onManage={() => openMapping(company)}
-          />
+          >
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingCompany(company); setEditName(company.name); }}>
+              Edit Company
+            </Button>
+          </SetupCard>
         ))}
       </div>
+
+      {editingCompany && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <form onSubmit={updateCompany} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-semibold">Edit Company</h3>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Company name" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {selectedCompany && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
