@@ -6,15 +6,43 @@
       "type": "string"
     },
     "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "airtable_record_id": {
+      "type": "string",
+      "description": "Original Airtable record ID"
+    },
+    "employee_code": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "is_held": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this employee salary is on hold and excluded from final payroll totals"
+    },
+    "hold_note": {
       "type": "string"
     },
     "basic_salary": {
+      "type": "number"
+    },
+    "hourly_rate": {
+      "type": "number"
+    },
+    "regular_pay": {
       "type": "number"
     },
     "days_worked": {
       "type": "number"
     },
     "days_absent": {
+      "type": "number"
+    },
+    "total_hours": {
       "type": "number"
     },
     "late_minutes": {

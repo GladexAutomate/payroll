@@ -209,6 +209,7 @@ Deno.serve(async (req) => {
         airtable_record_id: emp.airtable_record_id,
         employee_code: employeeCode,
         employee_name: employeeName,
+        is_held: false,
         basic_salary: money(monthlySalary),
         hourly_rate: money(hourlyRate),
         regular_pay: money(regularPay),
