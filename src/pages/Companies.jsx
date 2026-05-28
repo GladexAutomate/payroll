@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 
@@ -9,8 +10,11 @@ export default function Companies() {
   const [branches, setBranches] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedBranches, setSelectedBranches] = useState([]);
+  const [showCreateCompany, setShowCreateCompany] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -21,7 +25,10 @@ export default function Companies() {
       base44.functions.invoke('airtableEmployees', { action: 'branches' }),
       base44.entities.Company.list('name'),
     ]);
-    setCompanies(res.data?.companies?.length ? res.data.companies : companyData);
+    const mergedCompanies = new Map();
+    for (const company of (companyData || [])) mergedCompanies.set(company.name.toLowerCase(), company);
+    for (const company of (res.data?.companies || [])) mergedCompanies.set(company.name.toLowerCase(), company);
+    setCompanies(Array.from(mergedCompanies.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setBranches(res.data?.branches?.length ? res.data.branches : branchRes.data?.branches || []);
     setLoading(false);
   };
@@ -29,6 +36,18 @@ export default function Companies() {
   const openMapping = (company) => {
     setSelectedCompany(company);
     setSelectedBranches(branches.filter(branch => branch.company_id === company.id).map(branch => branch.id));
+  };
+
+  const createCompany = async (e) => {
+    e.preventDefault();
+    const name = newCompanyName.trim();
+    if (!name) return;
+    setCreating(true);
+    await base44.entities.Company.create({ name, status: 'active' });
+    setNewCompanyName('');
+    setShowCreateCompany(false);
+    setCreating(false);
+    await loadData();
   };
 
   const saveMapping = async () => {
@@ -49,9 +68,12 @@ export default function Companies() {
 
   return (
     <div className="space-y-5 max-w-6xl">
-      <div className="bg-card border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-lg">Companies</h2>
-        <p className="text-sm text-muted-foreground mt-1">Companies and branches are synced from Airtable. Mapping a branch updates the Company field for matching Airtable employees.</p>
+      <div className="bg-card border border-border rounded-xl p-5 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-lg">Companies</h2>
+          <p className="text-sm text-muted-foreground mt-1">Create companies manually, then map Airtable branches to them.</p>
+        </div>
+        <Button onClick={() => setShowCreateCompany(true)}>Create Company Manually</Button>
       </div>
 
       {loading ? (
@@ -69,6 +91,30 @@ export default function Companies() {
               onManage={() => openMapping(company)}
             />
           ))}
+        </div>
+      )}
+
+      {showCreateCompany && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div>
+              <h3 className="font-semibold">Create Company Manually</h3>
+              <p className="text-sm text-muted-foreground">Add a company that you can map Airtable branches to.</p>
+            </div>
+            <form onSubmit={createCompany} className="space-y-4">
+              <Input
+                value={newCompanyName}
+                onChange={(e) => setNewCompanyName(e.target.value)}
+                placeholder="Company name"
+                disabled={creating}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => { setShowCreateCompany(false); setNewCompanyName(''); }} disabled={creating}>Cancel</Button>
+                <Button type="submit" disabled={creating || !newCompanyName.trim()}>{creating ? 'Creating...' : 'Create Company'}</Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
