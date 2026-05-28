@@ -38,11 +38,11 @@ const smartNameKey = (value) => {
   return `${tokens[0]} ${tokens[tokens.length - 1]}`;
 };
 const editDistance = (a, b) => {
-  if (Math.abs(a.length - b.length) > 1) return 2;
+  if (Math.abs(a.length - b.length) > 2) return 3;
   let edits = 0, i = 0, j = 0;
   while (i < a.length && j < b.length) {
     if (a[i] === b[j]) { i += 1; j += 1; }
-    else if (++edits > 1) return edits;
+    else if (++edits > 2) return edits;
     else if (a.length > b.length) i += 1;
     else if (b.length > a.length) j += 1;
     else { i += 1; j += 1; }
@@ -54,8 +54,10 @@ const firstLastTokensMatch = (nameA, nameB) => {
   const b = nameTokens(nameB);
   if (!a.length || !b.length) return false;
   const firstClose = a[0] === b[0] || editDistance(a[0], b[0]) <= 1;
-  const lastSame = a[a.length - 1] === b[b.length - 1];
-  return firstClose && lastSame;
+  const lastA = a[a.length - 1];
+  const lastB = b[b.length - 1];
+  const lastClose = lastA === lastB || editDistance(lastA, lastB) <= 2;
+  return firstClose && lastClose;
 };
 const localEmployeeName = (employee) => [employee.first_name, employee.middle_name, employee.last_name].filter(Boolean).join(' ');
 const airtableRecordName = (record) => {
