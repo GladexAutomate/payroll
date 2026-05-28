@@ -20,12 +20,21 @@ export default function Departments() {
   const loadData = async () => {
     setLoading(true);
     const [res, subDepartmentData, teamData] = await Promise.all([
-      base44.functions.invoke('airtableEmployees', { action: 'departments' }),
+      base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.SubDepartment.list('name'),
       base44.entities.Team.list('name'),
     ]);
+
+    const mergedRoles = new Map();
+    for (const role of (res.data?.departmentRoles || [])) {
+      mergedRoles.set(`${role.name}-${role.department_id || ''}`.toLowerCase(), role);
+    }
+    for (const role of (subDepartmentData || [])) {
+      mergedRoles.set(`${role.name}-${role.department_id || ''}`.toLowerCase(), role);
+    }
+
     setDepartments(res.data?.departments || []);
-    setSubDepartments(subDepartmentData);
+    setSubDepartments(Array.from(mergedRoles.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setTeams(teamData);
     setLoading(false);
   };
@@ -102,7 +111,7 @@ export default function Departments() {
               <span className="text-xs text-primary font-medium">Airtable</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <span>{subDepartments.filter(item => item.department_id === dept.id).length} sub departments</span>
+              <span>{subDepartments.filter(item => item.department_id === dept.id).length} department roles</span>
               <span>{teams.filter(item => item.department_id === dept.id).length} teams</span>
             </div>
             <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setActiveDepartment(dept)}>
@@ -115,7 +124,7 @@ export default function Departments() {
       {editingItem && (
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
           <form onSubmit={updateItem} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
-            <h3 className="font-semibold">Edit {editingItem.type === 'team' ? 'Team' : 'Sub Department'}</h3>
+            <h3 className="font-semibold">Edit {editingItem.type === 'team' ? 'Team' : 'Department Role'}</h3>
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Name" />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
@@ -130,13 +139,13 @@ export default function Departments() {
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-5">
             <div>
               <h3 className="font-semibold">Add under {activeDepartment.name}</h3>
-              <p className="text-sm text-muted-foreground">Create sub departments and teams connected to this department.</p>
+              <p className="text-sm text-muted-foreground">Create department roles and teams connected to this department.</p>
             </div>
 
             <form onSubmit={createSubDepartment} className="space-y-2">
-              <p className="text-sm font-medium">Sub Department</p>
+              <p className="text-sm font-medium">Department Role</p>
               <div className="flex gap-2">
-                <Input value={subDepartmentName} onChange={(e) => setSubDepartmentName(e.target.value)} placeholder="Sub department name" />
+                <Input value={subDepartmentName} onChange={(e) => setSubDepartmentName(e.target.value)} placeholder="Department role name" />
                 <Button type="submit">Create</Button>
               </div>
             </form>
@@ -151,7 +160,7 @@ export default function Departments() {
 
             <div className="grid md:grid-cols-2 gap-3 text-sm">
               <div className="rounded-xl border border-border p-3">
-                <p className="font-medium mb-2">Sub Departments</p>
+                <p className="font-medium mb-2">Department Roles</p>
                 <div className="space-y-1 text-xs text-muted-foreground">
                   {subDepartments.filter(item => item.department_id === activeDepartment.id).map(item => (
                     <button key={item.id} className="block w-full text-left hover:text-foreground" onClick={() => { setEditingItem({ type: 'subDepartment', item }); setEditName(item.name); }}>
