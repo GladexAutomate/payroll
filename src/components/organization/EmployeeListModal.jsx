@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Users, GripVertical, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -28,8 +28,37 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
   const [movedEmployeeIds, setMovedEmployeeIds] = useState([]);
   const [draggingId, setDraggingId] = useState(null);
   const [poppedTarget, setPoppedTarget] = useState(null);
+  const [parentFilters, setParentFilters] = useState({ company: '', branch: '', department: '' });
 
-  const categoryItems = useMemo(() => dedupeItems(categories[category] || []), [categories, category]);
+  useEffect(() => {
+    setParentFilters({ company: '', branch: '', department: '' });
+  }, [category]);
+
+  const companies = categories.company || [];
+  const branches = categories.branch || [];
+  const departments = categories.department || [];
+
+  const availableBranches = useMemo(
+    () => parentFilters.company ? branches.filter(branch => branch.company_id === parentFilters.company) : [],
+    [branches, parentFilters.company]
+  );
+
+  const availableDepartments = useMemo(
+    () => parentFilters.branch ? departments.filter(department => department.branch_id === parentFilters.branch) : [],
+    [departments, parentFilters.branch]
+  );
+
+  const categoryItems = useMemo(() => {
+    const items = categories[category] || [];
+    if (category === 'branch') return parentFilters.company ? items.filter(item => item.company_id === parentFilters.company) : [];
+    if (category === 'department') return parentFilters.branch ? items.filter(item => item.branch_id === parentFilters.branch) : [];
+    if (category === 'department_role') return parentFilters.department ? items.filter(item => item.department_id === parentFilters.department) : [];
+    if (category === 'team') {
+      if (parentFilters.department) return items.filter(item => item.department_id === parentFilters.department);
+      return [];
+    }
+    return items;
+  }, [categories, category, parentFilters]);
   const displayEmployees = useMemo(
     () => employees.filter(employee => !movedEmployeeIds.includes(employee.airtable_record_id || employee.id)),
     [employees, movedEmployeeIds]
@@ -124,11 +153,49 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                   </div>
                 </div>
 
+                {(category === 'branch' || category === 'department' || category === 'department_role' || category === 'team') && (
+                  <div className="space-y-2 rounded-xl border border-border bg-background p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Choose parent location first</p>
+                    <select
+                      value={parentFilters.company}
+                      onChange={(e) => setParentFilters({ company: e.target.value, branch: '', department: '' })}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Select company</option>
+                      {companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+                    </select>
+                    {(category === 'department' || category === 'department_role' || category === 'team') && (
+                      <select
+                        value={parentFilters.branch}
+                        onChange={(e) => setParentFilters(prev => ({ ...prev, branch: e.target.value, department: '' }))}
+                        disabled={!parentFilters.company}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                      >
+                        <option value="">Select branch</option>
+                        {availableBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                      </select>
+                    )}
+                    {(category === 'department_role' || category === 'team') && (
+                      <select
+                        value={parentFilters.department}
+                        onChange={(e) => setParentFilters(prev => ({ ...prev, department: e.target.value }))}
+                        disabled={!parentFilters.branch}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                      >
+                        <option value="">Select department</option>
+                        {availableDepartments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
+
                 {saving && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Updating Airtable...</div>}
 
                 <div className="space-y-2">
                   {categoryItems.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground text-center">No items in this category.</div>
+                    <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground text-center">
+                      {category === 'company' ? 'No items in this category.' : 'Choose the parent location to show matching items.'}
+                    </div>
                   ) : categoryItems.map(item => (
                     <div
                       key={`${category}-${item.id || item.name}`}
