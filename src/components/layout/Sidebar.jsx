@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
@@ -6,31 +7,81 @@ import {
   ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck
 } from 'lucide-react';
 
-const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { label: 'Employees', icon: Users, path: '/employees' },
-  { label: 'Airtable Employee List', icon: Database, path: '/airtable-employees' },
-  { label: 'Organization Setup', icon: Building2, path: '/organization-setup' },
-  { label: 'Companies', icon: Building2, path: '/companies' },
-  { label: 'Branches', icon: Building2, path: '/branches' },
-  { label: 'Departments', icon: Building2, path: '/departments' },
-  { label: 'Department Roles', icon: Building2, path: '/department-roles' },
-  { label: 'Teams', icon: Users, path: '/teams' },
-  { label: 'User Management', icon: ShieldCheck, path: '/user-management' },
-  { label: 'Attendance', icon: Clock, path: '/attendance' },
-  { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },
-  { label: 'Shift Schedules', icon: CalendarDays, path: '/shifts' },
-  { label: 'Schedule Proposal', icon: Send, path: '/schedule-proposal' },
-  { label: 'Schedule Requests', icon: ClipboardCheck, path: '/schedule-requests' },
-  { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
-  { label: 'Overtime', icon: ClipboardList, path: '/overtime' },
-  { label: 'Payroll', icon: DollarSign, path: '/payroll' },
-  { label: 'Reports', icon: FileText, path: '/reports' },
-  { label: 'Settings', icon: Settings, path: '/settings' },
+const navGroups = [
+  {
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    items: [{ label: 'Dashboard', icon: LayoutDashboard, path: '/' }],
+  },
+  {
+    label: 'People',
+    icon: Users,
+    items: [
+      { label: 'Employees', icon: Users, path: '/employees' },
+      { label: 'Airtable Employee List', icon: Database, path: '/airtable-employees' },
+      { label: 'User Management', icon: ShieldCheck, path: '/user-management' },
+    ],
+  },
+  {
+    label: 'Organization',
+    icon: Building2,
+    items: [
+      { label: 'Organization Setup', icon: Building2, path: '/organization-setup' },
+      { label: 'Companies', icon: Building2, path: '/companies' },
+      { label: 'Branches', icon: Building2, path: '/branches' },
+      { label: 'Departments', icon: Building2, path: '/departments' },
+      { label: 'Department Roles', icon: Building2, path: '/department-roles' },
+      { label: 'Teams', icon: Users, path: '/teams' },
+    ],
+  },
+  {
+    label: 'Time & Attendance',
+    icon: Clock,
+    items: [
+      { label: 'Attendance', icon: Clock, path: '/attendance' },
+      { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },
+    ],
+  },
+  {
+    label: 'Scheduling',
+    icon: CalendarDays,
+    items: [
+      { label: 'Shift Schedules', icon: CalendarDays, path: '/shifts' },
+      { label: 'Schedule Proposal', icon: Send, path: '/schedule-proposal' },
+      { label: 'Schedule Requests', icon: ClipboardCheck, path: '/schedule-requests' },
+      { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
+      { label: 'Overtime', icon: ClipboardList, path: '/overtime' },
+    ],
+  },
+  {
+    label: 'Payroll',
+    icon: DollarSign,
+    items: [{ label: 'Payroll', icon: DollarSign, path: '/payroll' }],
+  },
+  {
+    label: 'Insights',
+    icon: FileText,
+    items: [{ label: 'Reports', icon: FileText, path: '/reports' }],
+  },
+  {
+    label: 'Admin',
+    icon: Settings,
+    items: [{ label: 'Settings', icon: Settings, path: '/settings' }],
+  },
 ];
 
 export default function Sidebar({ open, onClose }) {
   const location = useLocation();
+  const [openGroups, setOpenGroups] = useState(() =>
+    navGroups.reduce((groups, group) => ({
+      ...groups,
+      [group.label]: group.items.some(item => item.path === location.pathname) || group.label === 'Dashboard',
+    }), {})
+  );
+
+  const toggleGroup = (label) => {
+    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   return (
     <>
@@ -62,25 +113,51 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <div className="space-y-0.5">
-            {navItems.map(item => {
-              const active = location.pathname === item.path;
+          <div className="space-y-1">
+            {navGroups.map(group => {
+              const GroupIcon = group.icon;
+              const groupActive = group.items.some(item => item.path === location.pathname);
+              const expanded = openGroups[group.label];
+
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
-                    active
-                      ? "bg-primary text-white"
-                      : "text-white/60 hover:text-white hover:bg-white/8"
+                <div key={group.label}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.label)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150",
+                      groupActive ? "text-white bg-white/10" : "text-white/70 hover:text-white hover:bg-white/8"
+                    )}
+                  >
+                    <GroupIcon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">{group.label}</span>
+                    <ChevronRight className={cn("w-3.5 h-3.5 transition-transform opacity-70", expanded && "rotate-90")} />
+                  </button>
+
+                  {expanded && (
+                    <div className="mt-1 ml-4 space-y-0.5 border-l border-white/10 pl-2">
+                      {group.items.map(item => {
+                        const active = location.pathname === item.path;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={onClose}
+                            className={cn(
+                              "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150",
+                              active
+                                ? "bg-primary text-white"
+                                : "text-white/55 hover:text-white hover:bg-white/8"
+                            )}
+                          >
+                            <item.icon className="w-3.5 h-3.5 shrink-0" />
+                            <span className="flex-1">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   )}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  <span className="flex-1">{item.label}</span>
-                  {active && <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
-                </Link>
+                </div>
               );
             })}
           </div>
