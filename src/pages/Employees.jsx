@@ -98,10 +98,6 @@ export default function Employees() {
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee No.</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Department</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Position</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Basic Salary</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
@@ -109,14 +105,14 @@ export default function Employees() {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {[...Array(7)].map((_, j) => (
+                    {[...Array(3)].map((_, j) => (
                       <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={3} className="text-center py-12 text-muted-foreground">
                     No employees found.
                   </td>
                 </tr>
@@ -135,10 +131,6 @@ export default function Employees() {
                     </div>
                   </td>
                   <td className="py-3.5 px-4 font-medium text-muted-foreground">{emp.employee_id || '—'}</td>
-                  <td className="py-3.5 px-4 text-muted-foreground">{deptMap[emp.department_id] || '—'}</td>
-                  <td className="py-3.5 px-4 text-muted-foreground">{emp.position || '—'}</td>
-                  <td className="py-3.5 px-4 font-medium">₱{(emp.basic_salary || 0).toLocaleString('en-PH')}</td>
-                  <td className="py-3.5 px-4"><StatusBadge status={emp.status} /></td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center justify-end gap-1">
                       <button
