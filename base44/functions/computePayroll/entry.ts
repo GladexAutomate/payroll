@@ -156,6 +156,7 @@ Deno.serve(async (req) => {
       const daysAbsent = 0;
       const grossPay = Number(summary.gross) || 0;
       const lateDeduction = Number(summary.lates_deduction) || 0;
+      const allowances = 0;
       const overtimePay = overtimeHours * hourlyRate * 1.25;
       const regularPay = Math.max(grossPay - overtimePay, 0);
       const sss = getSSSContribution(monthlySalary);
