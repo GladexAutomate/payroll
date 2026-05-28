@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Search, Pencil, Trash2, ChevronDown } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import StatusBadge from '@/components/shared/StatusBadge';
 import EmployeeForm from '@/components/employees/EmployeeForm';
+import AirtableMatchCell from '@/components/employees/AirtableMatchCell';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -14,6 +14,9 @@ import {
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [airtableRecords, setAirtableRecords] = useState([]);
+  const [syncingMatches, setSyncingMatches] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [loading, setLoading] = useState(true);
@@ -24,16 +27,26 @@ export default function Employees() {
 
   const loadData = async () => {
     setLoading(true);
-    const [emps, depts] = await Promise.all([
+    const [emps, depts, savedMatches, airtableRes] = await Promise.all([
       base44.entities.Employee.list('-created_date', 200),
-      base44.entities.Department.list()
+      base44.entities.Department.list(),
+      base44.entities.EmployeeAirtableMatch.list('-updated_date', 1000),
+      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 })
     ]);
     setEmployees(emps);
     setDepartments(depts);
+    setMatches(savedMatches);
+    setAirtableRecords(airtableRes.data?.records || []);
     setLoading(false);
   };
 
-  const deptMap = departments.reduce((m, d) => ({ ...m, [d.id]: d.name }), {});
+  const normalizeName = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ');
+  const employeeFullName = (employee) => [employee.first_name, employee.last_name].filter(Boolean).join(' ').trim();
+  const airtableFullName = (record) => {
+    const fields = record.fields || {};
+    return record.full_name || fields['Full Name'] || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' ').trim();
+  };
+  const matchMap = matches.reduce((map, match) => ({ ...map, [match.employee_record_id]: match }), {});
 
   const filtered = employees.filter(e => {
     const matchSearch = !search || 
@@ -53,6 +66,30 @@ export default function Employees() {
     setShowForm(false);
     setEditingEmployee(null);
     loadData();
+  };
+
+  const connectMatch = async (employee, airtableRecord, matchStatus = 'manual') => {
+    const res = await base44.functions.invoke('airtableEmployees', {
+      action: 'syncBiometricsMatch',
+      employeeRecordId: employee.id,
+      employeeNumber: employee.employee_id,
+      employeeName: employeeFullName(employee),
+      airtableRecordId: airtableRecord.airtable_record_id || airtableRecord.id,
+      matchStatus,
+    });
+    setMatches(prev => [...prev.filter(match => match.employee_record_id !== employee.id), res.data.match]);
+  };
+
+  const autoMatchEmployees = async () => {
+    setSyncingMatches(true);
+    const existingEmployeeIds = new Set(matches.map(match => match.employee_record_id));
+    for (const employee of employees) {
+      if (existingEmployeeIds.has(employee.id) || !employee.employee_id) continue;
+      const localName = normalizeName(employeeFullName(employee));
+      const matchedRecord = airtableRecords.find(record => normalizeName(airtableFullName(record)) === localName);
+      if (matchedRecord) await connectMatch(employee, matchedRecord, 'matched');
+    }
+    setSyncingMatches(false);
   };
 
   const handleDelete = async (id) => {
@@ -85,9 +122,14 @@ export default function Employees() {
             <option value="terminated">Terminated</option>
           </select>
         </div>
-        <Button onClick={() => { setEditingEmployee(null); setShowForm(true); }} className="shrink-0">
-          <Plus className="w-4 h-4 mr-1.5" /> Add Employee
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={autoMatchEmployees} disabled={loading || syncingMatches} className="shrink-0">
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${syncingMatches ? 'animate-spin' : ''}`} /> Match Airtable
+          </Button>
+          <Button onClick={() => { setEditingEmployee(null); setShowForm(true); }} className="shrink-0">
+            <Plus className="w-4 h-4 mr-1.5" /> Add Employee
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -96,6 +138,7 @@ export default function Employees() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Airtable Match</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee No.</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
@@ -105,19 +148,27 @@ export default function Employees() {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {[...Array(3)].map((_, j) => (
+                    {[...Array(4)].map((_, j) => (
                       <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={4} className="text-center py-12 text-muted-foreground">
                     No employees found.
                   </td>
                 </tr>
               ) : filtered.map(emp => (
-                <tr key={emp.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                <tr key={emp.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors align-top">
+                  <td className="py-3.5 px-4">
+                    <AirtableMatchCell
+                      employee={emp}
+                      match={matchMap[emp.id]}
+                      airtableRecords={airtableRecords}
+                      onConnect={connectMatch}
+                    />
+                  </td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">

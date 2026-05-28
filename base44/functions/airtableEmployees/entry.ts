@@ -230,6 +230,43 @@ Deno.serve(async (req) => {
       return Response.json({ count: allRecords.filter(isActive).length });
     }
 
+    if (action === 'syncBiometricsMatch') {
+      const { employeeRecordId, employeeNumber, employeeName, airtableRecordId, matchStatus = 'manual' } = body;
+      if (!employeeRecordId || !employeeNumber || !airtableRecordId) return Response.json({ error: 'employeeRecordId, employeeNumber, and airtableRecordId are required' }, { status: 400 });
+
+      const orgFields = await getOrgFields();
+      const table = await getTableSchema();
+      const biometricsField = pickField(table.fields || [], ['Biometrics Number', 'BIOMETRICS NUMBER', 'Biometric Number', 'Biometrics No']);
+      if (!biometricsField) return Response.json({ error: 'Biometrics Number column was not found in Airtable.' }, { status: 404 });
+
+      const res = await fetch(`${AIRTABLE_URL}/${airtableRecordId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ fields: { [biometricsField]: String(employeeNumber) }, typecast: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable biometrics update failed', details: data }, { status: res.status });
+      const mirrored = await upsertMirrorRecord(data, orgFields);
+
+      const fields = data.fields || {};
+      const matchData = {
+        employee_record_id: employeeRecordId,
+        employee_number: String(employeeNumber),
+        employee_name: employeeName,
+        airtable_record_id: data.id,
+        airtable_employee_code: valueText(fields[orgFields.employeeCode]).trim(),
+        airtable_full_name: valueText(fields[orgFields.fullName]).trim() || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' '),
+        match_status: matchStatus,
+        biometrics_synced: true,
+        synced_at: new Date().toISOString(),
+      };
+      const existing = await base44.asServiceRole.entities.EmployeeAirtableMatch.filter({ employee_record_id: employeeRecordId }, '-updated_date', 1);
+      const match = existing.length
+        ? await base44.asServiceRole.entities.EmployeeAirtableMatch.update(existing[0].id, matchData)
+        : await base44.asServiceRole.entities.EmployeeAirtableMatch.create(matchData);
+      return Response.json({ match, record: { id: data.id, fields: data.fields, backend_id: mirrored.id } });
+    }
+
     if (action === 'employeeAccounts') {
       await syncFromAirtable();
       const allRecords = await listMirrorRecords(5000);

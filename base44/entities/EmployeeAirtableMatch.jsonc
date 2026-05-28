@@ -1,0 +1,46 @@
+{
+  "name": "EmployeeAirtableMatch",
+  "type": "object",
+  "properties": {
+    "employee_record_id": {
+      "type": "string",
+      "description": "Local Employee record ID"
+    },
+    "employee_number": {
+      "type": "string",
+      "description": "Local employee number / biometric number"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "airtable_record_id": {
+      "type": "string",
+      "description": "Matched Airtable employee record ID"
+    },
+    "airtable_employee_code": {
+      "type": "string"
+    },
+    "airtable_full_name": {
+      "type": "string"
+    },
+    "match_status": {
+      "type": "string",
+      "enum": [
+        "matched",
+        "manual",
+        "unmatched"
+      ],
+      "default": "unmatched"
+    },
+    "biometrics_synced": {
+      "type": "boolean",
+      "default": false
+    },
+    "synced_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_record_id"
+  ]
+}
