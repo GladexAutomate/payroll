@@ -83,9 +83,13 @@ export default function AirtableEmployees() {
   };
 
   const handleAddColumn = async ({ name, type, options }) => {
-    await base44.functions.invoke('airtableEmployees', {
+    const res = await base44.functions.invoke('airtableEmployees', {
       action: 'createField', name, type, options,
     });
+    setFieldsMeta(prev => ({
+      ...prev,
+      [res.data?.field?.name || name]: { type },
+    }));
     setShowAddColumn(false);
     await loadSchema();
     const currentOffset = offsetStack[pageIdx];
@@ -120,23 +124,28 @@ export default function AirtableEmployees() {
     await loadPage(offset, search);
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setOffsetStack([null]);
     setPageIdx(0);
-    loadPage(null, search);
+    await loadSchema();
+    await loadPage(null, search);
   };
 
   const handleSave = async (fields, recordId) => {
-    if (recordId) {
-      await base44.functions.invoke('airtableEmployees', { action: 'update', recordId, fields });
-    } else {
-      await base44.functions.invoke('airtableEmployees', { action: 'create', fields });
+    const res = recordId
+      ? await base44.functions.invoke('airtableEmployees', { action: 'update', recordId, fields })
+      : await base44.functions.invoke('airtableEmployees', { action: 'create', fields });
+
+    if (res.data?.record) {
+      setRecords(prev => recordId
+        ? prev.map(record => record.id === recordId ? res.data.record : record)
+        : [res.data.record, ...prev.filter(record => record.id !== res.data.record.id)].slice(0, PAGE_SIZE)
+      );
     }
+
     setShowForm(false);
     setEditing(null);
-    // Refresh current page
-    const currentOffset = offsetStack[pageIdx];
-    await loadPage(currentOffset, search);
+    await loadSchema();
   };
 
   const handleDelete = async (recordId) => {
@@ -154,10 +163,10 @@ export default function AirtableEmployees() {
       for (const k of Object.keys(r.fields || {})) cols.add(k);
     }
     const arr = Array.from(cols);
-    const priority = ['Employee Code ID', 'Full Name', 'First Name', 'Last Name', 'Company', 'Branch', 'Department', 'Department Role', 'Job Title', 'Status'];
+    const priority = ['Employee Code ID', 'Full Name', 'First Name', 'Last Name', 'Company', 'COMPANY', 'Branch', 'BRANCH', 'Department', 'DEPARTMENT', 'Department Role', 'DEPARTMENT ROLE', 'Job Title', 'Status'];
     arr.sort((a, b) => {
-      const ia = priority.indexOf(a);
-      const ib = priority.indexOf(b);
+      const ia = priority.findIndex(item => item.toLowerCase() === a.toLowerCase());
+      const ib = priority.findIndex(item => item.toLowerCase() === b.toLowerCase());
       if (ia >= 0 && ib >= 0) return ia - ib;
       if (ia >= 0) return -1;
       if (ib >= 0) return 1;
