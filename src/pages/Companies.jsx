@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Companies() {
   const [companies, setCompanies] = useState([]);
@@ -34,7 +35,7 @@ export default function Companies() {
     for (const company of (res.data?.companies || [])) mergedCompanies.set(company.name.toLowerCase(), company);
     setCompanies(Array.from(mergedCompanies.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setBranches(res.data?.branches?.length ? res.data.branches : branchRes.data?.branches || []);
-    setEmployees(employeeData || []);
+    setEmployees((employeeData || []).filter(isNotResigned));
     setLoading(false);
   };
 

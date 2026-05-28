@@ -16,6 +16,7 @@ const sanitizeForStorage = (value) => {
   }
   return value;
 };
+const isNotResigned = (record) => String(record?.fields?.Status || record?.Status || '').trim().toLowerCase() !== 'resigned';
 
 Deno.serve(async (req) => {
   try {
@@ -152,6 +153,7 @@ Deno.serve(async (req) => {
       const departmentRoles = new Map();
 
       for (const record of records) {
+        if (!isNotResigned(record)) continue;
         const companyName = String(record.company || '').trim();
         const branchName = String(record.branch || '').trim();
         const departmentName = String(record.department || '').trim();
@@ -228,9 +230,10 @@ Deno.serve(async (req) => {
     if (action === 'list') {
       const { pageSize = 50, offset = 0, search } = body;
       const allRecords = await listMirrorRecords(5000);
+      const activeRecords = allRecords.filter(isNotResigned);
       const filtered = search?.trim()
-        ? allRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
-        : allRecords;
+        ? activeRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
+        : activeRecords;
       const start = Number(offset) || 0;
       const records = filtered.slice(start, start + Math.min(pageSize, 100)).map(record => ({
         id: record.airtable_record_id,

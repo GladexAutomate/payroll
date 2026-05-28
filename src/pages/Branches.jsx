@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Branches() {
   const [branches, setBranches] = useState([]);
@@ -37,7 +38,7 @@ export default function Branches() {
     setCompanies(hierarchyResponse.data?.companies || []);
     setBranches(hierarchyResponse.data?.branches || []);
     setDepartments(Array.from(mergedDepartments.values()).sort((a, b) => a.name.localeCompare(b.name)));
-    setEmployees(employeeData || []);
+    setEmployees((employeeData || []).filter(isNotResigned));
     setLoading(false);
   };
 

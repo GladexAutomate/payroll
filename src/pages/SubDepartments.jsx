@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function DepartmentRoles() {
   const [departmentRoles, setDepartmentRoles] = useState([]);
@@ -33,7 +34,7 @@ export default function DepartmentRoles() {
     setDepartments(hierarchy.departments || []);
     setDepartmentRoles(hierarchy.departmentRoles || []);
     setTeams(teamData);
-    setEmployees(employeeData || []);
+    setEmployees((employeeData || []).filter(isNotResigned));
   };
 
   const openMapping = (departmentRole) => {

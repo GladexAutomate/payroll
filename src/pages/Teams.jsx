@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import SetupCard from '@/components/organization/SetupCard';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Teams() {
   const [teams, setTeams] = useState([]);
@@ -35,7 +36,7 @@ export default function Teams() {
     setDepartments(hierarchy.departments || []);
     setDepartmentRoles(hierarchy.departmentRoles || []);
     setTeams(teamData);
-    setEmployees(employeeData);
+    setEmployees((employeeData || []).filter(isNotResigned));
   };
 
   const createTeam = async (e) => {

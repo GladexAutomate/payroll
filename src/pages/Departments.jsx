@@ -4,6 +4,7 @@ import { Building2, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
@@ -46,7 +47,7 @@ export default function Departments() {
     setDepartments(res.data?.departments || []);
     setSubDepartments(Array.from(mergedRoles.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setTeams(teamData);
-    setEmployees(employeeData || []);
+    setEmployees((employeeData || []).filter(isNotResigned));
     setLoading(false);
   };
 
