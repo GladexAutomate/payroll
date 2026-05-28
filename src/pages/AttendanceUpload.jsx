@@ -12,6 +12,18 @@ import {
 } from '@/components/ui/alert-dialog';
 import NewEmployeesList from '@/components/attendance/NewEmployeesList';
 
+const APP_TIME_ZONE = 'Asia/Manila';
+const phDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: APP_TIME_ZONE,
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+const formatPhilippineDateTime = (dateValue) => dateValue ? phDateTimeFormatter.format(new Date(dateValue)) : '—';
+
 export default function AttendanceUpload() {
   const { uploadState, startUpload, updateProgress, finishUpload, clearUpload } = useUpload();
   const uploading = uploadState?.uploading || false;
@@ -540,7 +552,7 @@ export default function AttendanceUpload() {
                   <p className="font-medium text-sm truncate">{upload.filename}</p>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                     <span className="text-xs text-muted-foreground">
-                      {upload.created_date ? format(new Date(upload.created_date), 'MMM d, yyyy h:mm a') : '—'}
+                      {formatPhilippineDateTime(upload.created_date)}
                     </span>
                     {upload.period_label && <span className="text-xs text-muted-foreground">· {upload.period_label}</span>}
                     <span className="text-xs font-medium text-green-700">{upload.records_imported || 0} records</span>
