@@ -226,8 +226,19 @@ Deno.serve(async (req) => {
     // ── CREATE FIELD: add a new column ────────────────────────────────────────
     if (action === 'createField') {
       const { name, type = 'singleLineText', options } = body;
-      if (!name) return Response.json({ error: 'name required' }, { status: 400 });
-      const payload = { name, type };
+      const cleanName = String(name || '').trim();
+      if (!cleanName) return Response.json({ error: 'Column name is required' }, { status: 400 });
+
+      const metaRes = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`, { headers });
+      const metaData = await metaRes.json();
+      if (!metaRes.ok) return Response.json({ error: metaData.error?.message || 'Schema check failed', details: metaData }, { status: metaRes.status });
+      const table = (metaData.tables || []).find(t => t.id === TABLE_ID);
+      const existingField = (table?.fields || []).find(f => f.name.toLowerCase() === cleanName.toLowerCase());
+      if (existingField) {
+        return Response.json({ error: `A column named "${existingField.name}" already exists in Airtable.` }, { status: 409 });
+      }
+
+      const payload = { name: cleanName, type };
       if (options) payload.options = options;
 
       const res = await fetch(
@@ -235,7 +246,12 @@ Deno.serve(async (req) => {
         { method: 'POST', headers, body: JSON.stringify(payload) }
       );
       const data = await res.json();
-      if (!res.ok) return Response.json({ error: data.error?.message || 'Create field failed', details: data }, { status: res.status });
+      if (!res.ok) {
+        return Response.json({
+          error: data.error?.message || data.error?.type || 'Create field failed. Please check that your Airtable token has schema write permission.',
+          details: data
+        }, { status: res.status });
+      }
       return Response.json({ field: data });
     }
 

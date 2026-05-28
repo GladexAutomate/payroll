@@ -58,7 +58,7 @@ export default function AddColumnDialog({ onCancel, onCreate }) {
     try {
       await onCreate({ name: name.trim(), type, options: buildOptions() });
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || 'Failed to create column');
+      setError(err?.response?.data?.error || err?.response?.data?.details?.error?.message || err.message || 'Failed to create column');
       setSaving(false);
     }
   };
