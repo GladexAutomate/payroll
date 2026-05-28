@@ -72,7 +72,11 @@ export default function Branches() {
               subtitle={`${branch.employee_count} Airtable employees`}
               count={departments.filter(department => department.branch_id === branch.id).length}
               onManage={() => openMapping(branch)}
-            />
+            >
+              <span className="inline-flex w-fit max-w-full items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary truncate">
+                Company: {branch.company_name || 'Unassigned'}
+              </span>
+            </SetupCard>
           ))}
         </div>
       )}
