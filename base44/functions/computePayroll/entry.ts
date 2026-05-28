@@ -89,8 +89,8 @@ Deno.serve(async (req) => {
 
     const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
     const holidays = await base44.asServiceRole.entities.HolidayCalendar.filter({});
-    const hiddenUploads = await base44.asServiceRole.entities.AttendanceUpload.filter({ status: 'deleting' });
-    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    const hiddenUploads = await base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200);
+    const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
 
     const holidayDates = new Set(holidays.map(h => h.date));
     const regularHolidays = new Set(holidays.filter(h => h.type === 'regular').map(h => h.date));

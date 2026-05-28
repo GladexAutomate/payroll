@@ -29,10 +29,10 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
           5000
         ),
         base44.entities.Employee.list('last_name', 2000),
-        base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
+        base44.entities.AttendanceUpload.list('-created_date', 200),
       ]);
       if (cancelled) return;
-      const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+      const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
       setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
       setEmployees(empsData);
       setLoading(false);
@@ -135,9 +135,9 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         'date',
         5000
       ),
-      base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
+      base44.entities.AttendanceUpload.list('-created_date', 200),
     ]);
-    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
     setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
   };
 

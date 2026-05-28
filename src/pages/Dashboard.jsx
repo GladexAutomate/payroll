@@ -23,9 +23,9 @@ export default function Dashboard() {
       base44.entities.AttendanceLog.filter({ date: today }),
       base44.entities.LeaveRequest.filter({ status: 'pending' }),
       base44.entities.OvertimeRequest.filter({ status: 'pending' }),
-      base44.entities.AttendanceUpload.filter({ status: 'deleting' }),
+      base44.entities.AttendanceUpload.list('-created_date', 200),
     ]);
-    const hiddenUploadIds = new Set(hiddenUploads.map(upload => upload.id));
+    const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
     const todayLogs = todayLogsRaw.filter(log => !hiddenUploadIds.has(log.upload_id));
 
     const present = todayLogs.filter(l => l.status === 'present').length;
