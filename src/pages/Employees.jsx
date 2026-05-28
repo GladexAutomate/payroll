@@ -96,13 +96,20 @@ export default function Employees() {
   const employeeSmartMatchName = (employee) => smartNameKey(employeeFullName(employee));
   const airtableSmartMatchName = (record) => smartNameKey(airtableFullName(record));
   const matchMap = matches.reduce((map, match) => ({ ...map, [match.employee_record_id]: match }), {});
+  const airtableRecordMap = airtableRecords.reduce((map, record) => ({ ...map, [record.airtable_record_id || record.id]: record }), {});
+  const getEmployeeStatus = (employee) => {
+    const match = matchMap[employee.id];
+    const airtableRecord = match ? airtableRecordMap[match.airtable_record_id] : null;
+    return String(airtableRecord?.fields?.Status || employee.status || 'inactive').toLowerCase();
+  };
 
   const filtered = employees.filter(e => {
     const matchSearch = !search || 
       `${e.first_name} ${e.last_name}`.toLowerCase().includes(search.toLowerCase()) ||
       e.employee_id?.toLowerCase().includes(search.toLowerCase()) ||
       e.position?.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'all' || e.status === filterStatus;
+    const employeeStatus = getEmployeeStatus(e);
+    const matchStatus = filterStatus === 'all' || employeeStatus === filterStatus;
     return matchSearch && matchStatus;
   });
 
@@ -190,6 +197,7 @@ export default function Employees() {
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Airtable Match</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee No.</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
               </tr>
@@ -198,14 +206,14 @@ export default function Employees() {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {[...Array(4)].map((_, j) => (
+                    {[...Array(5)].map((_, j) => (
                       <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={5} className="text-center py-12 text-muted-foreground">
                     No employees found.
                   </td>
                 </tr>
@@ -230,6 +238,11 @@ export default function Employees() {
                         <p className="font-medium">{emp.first_name} {emp.last_name}</p>
                       </div>
                     </div>
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getEmployeeStatus(emp) === 'active' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {getEmployeeStatus(emp) === 'active' ? 'Active' : 'Inactive'}
+                    </span>
                   </td>
                   <td className="py-3.5 px-4 font-medium text-muted-foreground">{emp.employee_id || '—'}</td>
                   <td className="py-3.5 px-4">
