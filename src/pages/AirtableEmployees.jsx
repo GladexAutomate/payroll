@@ -64,12 +64,10 @@ export default function AirtableEmployees() {
 
   useEffect(() => {
     loadPage(null);
-    base44.functions.invoke('airtableEmployees', { action: 'syncFromAirtable' })
-      .then(() => loadPage(null, search));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch Airtable schema once to get dropdown choices for single/multi-select fields
+  // Fetch schema once to get dropdown choices for single/multi-select fields
   const loadSchema = async () => {
     try {
       const res = await base44.functions.invoke('airtableEmployees', { action: 'schema' });
@@ -212,7 +210,7 @@ export default function AirtableEmployees() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search all Airtable records..."
+            placeholder="Search backend employee records..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9"
@@ -258,7 +256,7 @@ export default function AirtableEmployees() {
                 <tr>
                   <td colSpan={columns.length + 1} className="text-center py-16 text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
-                    Loading records from Airtable...
+                    Loading records from backend database...
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
