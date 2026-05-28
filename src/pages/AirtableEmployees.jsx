@@ -10,8 +10,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import AirtableRecordForm from '@/components/airtable/AirtableRecordForm';
 import TableWithTopScrollbar from '@/components/airtable/TableWithTopScrollbar';
-import EditableColumnHeader from '@/components/airtable/EditableColumnHeader';
 import AddColumnDialog from '@/components/airtable/AddColumnDialog';
+import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
 
 // Fields that are computed by Airtable — we hide them from the create/edit form
 const READ_ONLY_FIELDS = new Set([
@@ -44,6 +44,8 @@ export default function AirtableEmployees() {
   const [fieldsMeta, setFieldsMeta] = useState({}); // schema: { fieldName: { type, choices } }
   const [companyChoices, setCompanyChoices] = useState([]);
   const [showAddColumn, setShowAddColumn] = useState(false);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortConfig, setSortConfig] = useState({ column: null, direction: null });
 
   const loadPage = async (offset = null, searchQuery = '') => {
     setLoading(true);
@@ -188,8 +190,38 @@ export default function AirtableEmployees() {
     return arr;
   }, [records, fieldsMeta]);
 
-  // Server-side search means records returned are already filtered
-  const filteredRecords = records;
+  const valueText = (value) => {
+    if (value == null) return '';
+    if (Array.isArray(value)) return value.map(item => item?.filename || item?.name || item?.url || String(item)).join(', ');
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
+  const handleColumnFilterChange = (column, value) => {
+    setColumnFilters(prev => ({ ...prev, [column]: value }));
+  };
+
+  const handleColumnSortChange = (column, direction) => {
+    setSortConfig(direction ? { column, direction } : { column: null, direction: null });
+  };
+
+  const filteredRecords = useMemo(() => {
+    const activeFilters = Object.entries(columnFilters).filter(([, value]) => value?.trim());
+    let result = records.filter(record => activeFilters.every(([column, value]) =>
+      valueText(record.fields?.[column]).toLowerCase().includes(value.trim().toLowerCase())
+    ));
+
+    if (sortConfig.column && sortConfig.direction) {
+      result = [...result].sort((a, b) => {
+        const left = valueText(a.fields?.[sortConfig.column]);
+        const right = valueText(b.fields?.[sortConfig.column]);
+        const comparison = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+        return sortConfig.direction === 'asc' ? comparison : -comparison;
+      });
+    }
+
+    return result;
+  }, [records, columnFilters, sortConfig]);
 
   const renderCell = (value) => {
     if (value == null || value === '') return <span className="text-muted-foreground/40">—</span>;
@@ -255,8 +287,15 @@ export default function AirtableEmployees() {
                   Actions
                 </th>
                 {columns.map(col => (
-                  <th key={col} className="py-2.5 px-3 text-left font-medium text-muted-foreground uppercase tracking-wide border-b border-border whitespace-nowrap min-w-[140px]">
-                    <EditableColumnHeader name={col} onRename={handleRenameColumn} />
+                  <th key={col} className="py-2.5 px-3 text-left font-medium text-muted-foreground uppercase tracking-wide border-b border-border whitespace-nowrap min-w-[220px] align-top">
+                    <ColumnSortFilter
+                      name={col}
+                      filterValue={columnFilters[col]}
+                      sortDirection={sortConfig.column === col ? sortConfig.direction : null}
+                      onRename={handleRenameColumn}
+                      onFilterChange={handleColumnFilterChange}
+                      onSortChange={handleColumnSortChange}
+                    />
                   </th>
                 ))}
               </tr>
