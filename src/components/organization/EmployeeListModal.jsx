@@ -26,6 +26,8 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
   const [saving, setSaving] = useState(false);
   const [pendingRefresh, setPendingRefresh] = useState(false);
   const [movedEmployeeIds, setMovedEmployeeIds] = useState([]);
+  const [draggingId, setDraggingId] = useState(null);
+  const [poppedTarget, setPoppedTarget] = useState(null);
 
   const categoryItems = useMemo(() => dedupeItems(categories[category] || []), [categories, category]);
   const displayEmployees = useMemo(
@@ -35,6 +37,9 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
 
   const moveEmployee = async (target) => {
     if (!draggingEmployee?.airtable_record_id || !target?.name) return;
+    const targetKey = `${category}-${target.id || itemKey(target)}`;
+    setPoppedTarget(targetKey);
+    setTimeout(() => setPoppedTarget(null), 450);
     setSaving(true);
     await base44.functions.invoke('airtableEmployees', {
       action: 'reassignEmployeeCategory',
@@ -45,6 +50,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
     setMovedEmployeeIds(prev => [...prev, draggingEmployee.airtable_record_id || draggingEmployee.id]);
     setPendingRefresh(true);
     setDraggingEmployee(null);
+    setDraggingId(null);
     setSaving(false);
   };
 
@@ -83,8 +89,14 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                   <div
                     key={employee.id || employee.airtable_record_id || index}
                     draggable
-                    onDragStart={() => setDraggingEmployee(employee)}
-                    className="rounded-xl border border-border p-3 cursor-grab active:cursor-grabbing bg-background hover:border-primary/50"
+                    onDragStart={(event) => {
+                      setDraggingEmployee(employee);
+                      setDraggingId(employee.airtable_record_id || employee.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setDragImage(event.currentTarget, 24, 24);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
+                    className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing bg-background transition-all duration-200 hover:border-primary/50 ${draggingId === (employee.airtable_record_id || employee.id) ? 'border-primary bg-primary/10 shadow-lg scale-[1.01]' : 'border-border'}`}
                   >
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-4 h-4 text-muted-foreground" />
@@ -122,7 +134,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                       key={`${category}-${item.id || item.name}`}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => moveEmployee(item)}
-                      className="rounded-xl border border-border bg-card p-3 text-sm hover:border-primary hover:bg-primary/5 transition-colors"
+                      className={`rounded-xl border bg-card p-3 text-sm hover:border-primary hover:bg-primary/5 transition-all duration-200 ${poppedTarget === `${category}-${item.id || itemKey(item)}` ? 'border-primary bg-primary/10 scale-105 shadow-lg' : 'border-border'}`}
                     >
                       <p className="font-medium">{item.name}</p>
                       {(item.company_name || item.branch_name || item.department_name) && (
