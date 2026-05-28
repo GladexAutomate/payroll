@@ -233,7 +233,9 @@ export default function Attendance() {
                           {emp ? `${emp.first_name} ${emp.last_name}` : (log.employee_name || log.employee_id)}
                           {log.is_manually_edited && <span className="ml-2 text-xs text-orange-600">(edited)</span>}
                         </p>
-                        <p className="text-xs text-muted-foreground">{log.biometric_id || log.employee_id}</p>
+                        {emp?.employee_id && (
+                          <p className="text-xs text-muted-foreground">{emp.employee_id}</p>
+                        )}
                       </div>
                     </td>
                     <td className="py-3.5 px-4 font-mono text-sm">{fmtTime(log.time_in)}</td>

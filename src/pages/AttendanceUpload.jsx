@@ -10,6 +10,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
+import UnmatchedCodesList from '@/components/attendance/UnmatchedCodesList';
 
 export default function AttendanceUpload() {
   const { uploadState, startUpload, updateProgress, finishUpload, clearUpload } = useUpload();
@@ -179,6 +180,7 @@ export default function AttendanceUpload() {
 
     let dataRowsFound = 0;
     let emptyCellsSkipped = 0;
+    const unmatchedMap = {}; // code -> { code, name, rowCount }
 
     // Parse all records locally — no DB calls here
     const records = [];
@@ -192,9 +194,16 @@ export default function AttendanceUpload() {
       dataRowsFound++;
 
       const emp = byBioId[code] || byName[rawName.toLowerCase()];
-      const employeeId = emp?.id || code || rawName;
-      const biometricId = emp?.biometric_id || code;
-      const employeeName = emp ? `${emp.first_name} ${emp.last_name}` : rawName;
+
+      // Skip rows for employees not in our Employee list — collect for reporting
+      if (!emp) {
+        const key = code || rawName;
+        if (!unmatchedMap[key]) unmatchedMap[key] = { code, name: rawName, rowCount: 0 };
+        unmatchedMap[key].rowCount++;
+        continue;
+      }
+
+      const employeeId = emp.id;
 
       for (const { idx, label } of dateCols) {
         const rawCell = row[idx];
@@ -225,8 +234,6 @@ export default function AttendanceUpload() {
 
         records.push({
           employee_id: employeeId,
-          biometric_id: biometricId,
-          employee_name: employeeName,
           date: dateStr,
           time_in: timeInISO,
           time_out: timeOutISO,
@@ -237,8 +244,10 @@ export default function AttendanceUpload() {
       }
     }
 
+    const unmatched = Object.values(unmatchedMap);
+
     if (records.length === 0) {
-      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, unmatched });
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
@@ -306,7 +315,7 @@ export default function AttendanceUpload() {
       totalUpdated,
     });
 
-    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length });
+    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, unmatched });
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -443,6 +452,7 @@ export default function AttendanceUpload() {
                   )}
                 </>
               )}
+              <UnmatchedCodesList unmatched={uploadResult.unmatched} />
             </div>
             <button onClick={clearUpload} className="ml-2 shrink-0 text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
           </div>
