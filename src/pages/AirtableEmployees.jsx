@@ -147,15 +147,14 @@ export default function AirtableEmployees() {
     await loadPage(currentOffset, search);
   };
 
-  // Discover all column keys across loaded records
+  // Show all Airtable schema columns, including empty/new columns not returned on records
   const columns = useMemo(() => {
-    const cols = new Set();
+    const cols = new Set(Object.keys(fieldsMeta));
     for (const r of records) {
       for (const k of Object.keys(r.fields || {})) cols.add(k);
     }
-    // Prefer Employee Code ID and Full Name first if present
     const arr = Array.from(cols);
-    const priority = ['Employee Code ID', 'Full Name', 'First Name', 'Last Name', 'Department', 'Job Title', 'Status'];
+    const priority = ['Employee Code ID', 'Full Name', 'First Name', 'Last Name', 'Company', 'Branch', 'Department', 'Department Role', 'Job Title', 'Status'];
     arr.sort((a, b) => {
       const ia = priority.indexOf(a);
       const ib = priority.indexOf(b);
@@ -165,7 +164,7 @@ export default function AirtableEmployees() {
       return a.localeCompare(b);
     });
     return arr;
-  }, [records]);
+  }, [records, fieldsMeta]);
 
   // Server-side search means records returned are already filtered
   const filteredRecords = records;
