@@ -10,7 +10,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
-import UnmatchedCodesList from '@/components/attendance/UnmatchedCodesList';
+import NewEmployeesList from '@/components/attendance/NewEmployeesList';
 
 export default function AttendanceUpload() {
   const { uploadState, startUpload, updateProgress, finishUpload, clearUpload } = useUpload();
@@ -180,7 +180,38 @@ export default function AttendanceUpload() {
 
     let dataRowsFound = 0;
     let emptyCellsSkipped = 0;
-    const unmatchedMap = {}; // code -> { code, name, rowCount }
+    const newEmployeesMap = {}; // code -> { code, name } for auto-creation
+
+    // First pass: identify new employee codes that need to be auto-created
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const code = String(row[personCodeIdx] ?? '').trim();
+      const rawName = String(row[nameIdx] ?? '').trim();
+      if (!code || !rawName) continue;
+      const emp = byBioId[code] || byName[rawName.toLowerCase()];
+      if (!emp && !newEmployeesMap[code]) {
+        newEmployeesMap[code] = { code, name: rawName };
+      }
+    }
+
+    // Auto-create missing employees so their attendance can be imported
+    const newEmployees = Object.values(newEmployeesMap);
+    const createdEmployees = [];
+    for (const ne of newEmployees) {
+      const parts = ne.name.split(/\s+/);
+      const last_name = parts.length > 1 ? parts[parts.length - 1] : '';
+      const first_name = parts.length > 1 ? parts.slice(0, -1).join(' ') : ne.name;
+      const created = await base44.entities.Employee.create({
+        employee_id: ne.code,
+        biometric_id: ne.code,
+        first_name,
+        last_name,
+        status: 'active',
+      });
+      createdEmployees.push(created);
+      byBioId[ne.code] = created;
+      byName[ne.name.toLowerCase()] = created;
+    }
 
     // Parse all records locally — no DB calls here
     const records = [];
@@ -194,14 +225,7 @@ export default function AttendanceUpload() {
       dataRowsFound++;
 
       const emp = byBioId[code] || byName[rawName.toLowerCase()];
-
-      // Skip rows for employees not in our Employee list — collect for reporting
-      if (!emp) {
-        const key = code || rawName;
-        if (!unmatchedMap[key]) unmatchedMap[key] = { code, name: rawName, rowCount: 0 };
-        unmatchedMap[key].rowCount++;
-        continue;
-      }
+      if (!emp) continue; // shouldn't happen now — we auto-created above
 
       const employeeId = emp.id;
 
@@ -244,10 +268,8 @@ export default function AttendanceUpload() {
       }
     }
 
-    const unmatched = Object.values(unmatchedMap);
-
     if (records.length === 0) {
-      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, unmatched });
+      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, createdEmployees });
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
@@ -313,7 +335,7 @@ export default function AttendanceUpload() {
       totalUpdated,
     });
 
-    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, unmatched });
+    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, createdEmployees });
     loadUploads();
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -450,7 +472,7 @@ export default function AttendanceUpload() {
                   )}
                 </>
               )}
-              <UnmatchedCodesList unmatched={uploadResult.unmatched} />
+              <NewEmployeesList employees={uploadResult.createdEmployees} />
             </div>
             <button onClick={clearUpload} className="ml-2 shrink-0 text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
           </div>
