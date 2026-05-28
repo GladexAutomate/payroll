@@ -12,10 +12,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const isActiveAirtableEmployee = (employee) => {
-    const status = employee?.fields?.Status || employee?.fields?.status || '';
-    return String(status).trim().toLowerCase() === 'active';
-  };
 
   useEffect(() => {
     loadDashboard();
@@ -23,14 +19,15 @@ export default function Dashboard() {
 
   const loadDashboard = async () => {
     setLoading(true);
-    const [employees, todayLogsRaw, pendingLeaves, pendingOT, hiddenUploads] = await Promise.all([
-      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+    const [activeCountRes, employeesRes, todayLogsRaw, pendingLeaves, pendingOT, hiddenUploads] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'activeCount' }),
+      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 5000 }),
       base44.entities.AttendanceLog.filter({ date: today }),
       base44.entities.LeaveRequest.filter({ status: 'pending' }),
       base44.entities.OvertimeRequest.filter({ status: 'pending' }),
       base44.entities.AttendanceUpload.list('-created_date', 200),
     ]);
-    const activeEmployees = employees.filter(isActiveAirtableEmployee);
+    const activeEmployees = employeesRes.data?.records || [];
     const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
     const todayLogs = todayLogsRaw.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id));
 
@@ -39,7 +36,7 @@ export default function Dashboard() {
     const onLeave = todayLogs.filter(l => l.status === 'on_leave').length;
 
     setStats({
-      employees: activeEmployees.length,
+      employees: activeCountRes.data?.count || 0,
       present,
       absent,
       onLeave,

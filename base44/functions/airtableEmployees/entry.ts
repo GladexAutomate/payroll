@@ -16,7 +16,9 @@ const sanitizeForStorage = (value) => {
   }
   return value;
 };
-const isNotResigned = (record) => String(record?.fields?.Status || record?.Status || '').trim().toLowerCase() !== 'resigned';
+const getStatus = (record) => String(record?.fields?.Status || record?.Status || '').trim().toLowerCase();
+const isActive = (record) => getStatus(record) === 'active';
+const isNotResigned = (record) => getStatus(record) !== 'resigned';
 
 Deno.serve(async (req) => {
   try {
@@ -211,6 +213,11 @@ Deno.serve(async (req) => {
         departmentRoles: Array.from(departmentRoles.values()).sort((a, b) => a.name.localeCompare(b.name)),
       };
     };
+
+    if (action === 'activeCount') {
+      const allRecords = await listMirrorRecords(5000);
+      return Response.json({ count: allRecords.filter(isActive).length });
+    }
 
     if (action === 'schema') {
       const table = await getTableSchema();
