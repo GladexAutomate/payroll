@@ -22,28 +22,27 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { payroll_run_id } = await req.json();
-    if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
-
-    const runs = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id }, '-created_date', 1));
-    if (runs?.length) {
-      await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.delete(payroll_run_id));
-      await wait(1000);
-    }
-
+    const runs = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.list('-created_date', 5000));
+    const activeRunIds = new Set((runs || []).map(run => run.id));
     let deletedRecords = 0;
-    let records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
-    while (records?.length > 0) {
-      for (const record of records) {
+    let checkedRecords = 0;
+
+    while (true) {
+      const records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.list('-created_date', 100));
+      const orphanRecords = (records || []).filter(record => record.payroll_run_id && !activeRunIds.has(record.payroll_run_id));
+      checkedRecords += records?.length || 0;
+
+      if (!orphanRecords.length) break;
+
+      for (const record of orphanRecords) {
         await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
         deletedRecords += 1;
         await wait(250);
       }
       await wait(1500);
-      records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
     }
 
-    return Response.json({ success: true, deleted_records: deletedRecords });
+    return Response.json({ success: true, deleted_records: deletedRecords, checked_records: checkedRecords });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
