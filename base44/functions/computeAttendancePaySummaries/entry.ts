@@ -24,14 +24,14 @@ function buildEmployeeKeys(employee) {
     .map(key => String(key).trim());
 }
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-async function withRetry(operation, attempts = 4) {
+async function withRetry(operation, attempts = 8) {
   let lastError;
   for (let i = 0; i < attempts; i += 1) {
     try { return await operation(); } catch (error) {
       lastError = error;
       const message = String(error?.message || '');
       if (!message.includes('429') && !message.toLowerCase().includes('rate limit')) throw error;
-      await wait(700 * (i + 1));
+      await wait(1200 * (i + 1));
     }
   }
   throw lastError;
@@ -53,8 +53,10 @@ Deno.serve(async (req) => {
     const { period_start, period_end, period_label } = body;
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
 
-    const [allEmployees, hiddenUploads, allLogs, existingSummaries] = await Promise.all([
+    const [allEmployees, localEmployees, savedMatches, hiddenUploads, allLogs, existingSummaries] = await Promise.all([
       withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000)),
+      withRetry(() => base44.asServiceRole.entities.Employee.list('-updated_date', 5000)),
+      withRetry(() => base44.asServiceRole.entities.EmployeeAirtableMatch.list('-updated_date', 5000)),
       withRetry(() => base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200)),
       withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ date: { $gte: period_start, $lte: period_end } }, 'date', 5000)),
       withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start, period_end }, '-created_date', 5000)),
@@ -64,6 +66,14 @@ Deno.serve(async (req) => {
     const logs = allLogs.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id));
     const employees = allEmployees.filter(isActiveEmployee);
     const existingByEmployeeId = existingSummaries.reduce((map, record) => ({ ...map, [record.employee_id]: record }), {});
+    const localEmployeeMap = localEmployees.reduce((map, employee) => ({ ...map, [employee.id]: employee }), {});
+    const airtableByLocalId = savedMatches.reduce((map, match) => ({ ...map, [match.employee_record_id]: match.airtable_record_id }), {});
+    for (const local of localEmployees) {
+      const localName = normalizeName([local.first_name, local.middle_name, local.last_name].filter(Boolean).join(' '));
+      const matched = employees.find(employee => normalizeName(getEmployeeName(employee)) === localName);
+      if (matched) airtableByLocalId[local.id] = matched.airtable_record_id;
+    }
+    const airtableEmployeeMap = employees.reduce((map, employee) => ({ ...map, [employee.airtable_record_id]: employee }), {});
     const recordsToCreate = [];
     const recordsToUpdate = [];
     const computedAt = new Date().toISOString();
@@ -73,6 +83,14 @@ Deno.serve(async (req) => {
       const monthlySalary = parseMoney(fields['Monthly Salary'] || fields['Basic Salary'] || fields.Salary);
       const hourlyRate = monthlySalary > 0 ? monthlySalary / 26 / 8 : 0;
       const keys = new Set(buildEmployeeKeys(employee));
+      for (const [localId, airtableId] of Object.entries(airtableByLocalId)) {
+        if (airtableId !== employee.airtable_record_id) continue;
+        const local = localEmployeeMap[localId];
+        keys.add(localId);
+        if (local?.employee_id) keys.add(cleanText(local.employee_id));
+        if (local?.biometric_id) keys.add(cleanText(local.biometric_id));
+        if (local) keys.add(normalizeName([local.first_name, local.middle_name, local.last_name].filter(Boolean).join(' ')));
+      }
       const employeeLogs = logs.filter(log =>
         keys.has(cleanText(log.employee_id)) ||
         keys.has(cleanText(log.biometric_id)) ||

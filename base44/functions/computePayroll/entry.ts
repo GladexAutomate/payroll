@@ -90,7 +90,7 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry(operation, attempts = 4) {
+async function withRetry(operation, attempts = 8) {
   let lastError;
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -99,7 +99,7 @@ async function withRetry(operation, attempts = 4) {
       lastError = error;
       const message = String(error?.message || '');
       if (!message.includes('429') && !message.toLowerCase().includes('rate limit')) throw error;
-      await wait(800 * (i + 1));
+      await wait(1200 * (i + 1));
     }
   }
   throw lastError;

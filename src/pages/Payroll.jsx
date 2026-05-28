@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Play, CheckCircle, Eye, DollarSign, Users, TrendingDown } from 'lucide-react';
+import { Plus, Play, CheckCircle, Eye, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -13,6 +13,7 @@ export default function Payroll() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
   const [computing, setComputing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => { loadRuns(); }, []);
 
@@ -35,6 +36,14 @@ export default function Payroll() {
       status: 'approved',
       approved_date: new Date().toISOString()
     });
+    loadRuns();
+  };
+
+  const handleDelete = async (run) => {
+    if (!window.confirm(`Delete ${run.period_label}? This will also delete all payroll records inside this run.`)) return;
+    setDeleting(run.id);
+    await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
+    setDeleting(null);
     loadRuns();
   };
 
@@ -117,6 +126,14 @@ export default function Payroll() {
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(run)}
+                        disabled={deleting === run.id}
+                        className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
+                        title="Delete payroll run"
+                      >
+                        <Trash2 className={`w-3.5 h-3.5 ${deleting === run.id ? 'animate-pulse' : ''}`} />
+                      </button>
                     </div>
                   </td>
                 </tr>

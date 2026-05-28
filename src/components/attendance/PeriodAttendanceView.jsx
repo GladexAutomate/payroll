@@ -22,6 +22,8 @@ import {
 export default function PeriodAttendanceView({ startDate, endDate, periodLabel }) {
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [localEmployees, setLocalEmployees] = useState([]);
+  const [employeeMatches, setEmployeeMatches] = useState([]);
   const [paySummaries, setPaySummaries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [computingPay, setComputingPay] = useState(false);
@@ -32,13 +34,15 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     const load = async () => {
       setLoading(true);
       // Fetch all logs in the date range. Filter API supports $gte/$lte.
-      const [logsData, empsData, hiddenUploads, summariesData] = await Promise.all([
+      const [logsData, empsData, localEmpsData, matchesData, hiddenUploads, summariesData] = await Promise.all([
         base44.entities.AttendanceLog.filter(
           { date: { $gte: startDate, $lte: endDate } },
           'date',
           5000
         ),
         base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+        base44.entities.Employee.list('-updated_date', 5000),
+        base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
         base44.entities.AttendanceUpload.list('-created_date', 200),
         base44.entities.AttendancePaySummary.filter({ period_start: startDate, period_end: endDate }, '-updated_date', 5000),
       ]);
@@ -46,6 +50,8 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
       const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
       setLogs(logsData.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id)));
       setEmployees(empsData.filter(isActiveAirtableEmployee));
+      setLocalEmployees(localEmpsData);
+      setEmployeeMatches(matchesData);
       setPaySummaries(summariesData);
       setLoading(false);
     };
@@ -58,7 +64,22 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     [startDate, endDate]
   );
 
-  const empMap = useMemo(() => buildAirtableEmployeeLookup(employees), [employees]);
+  const empMap = useMemo(() => {
+    const map = buildAirtableEmployeeLookup(employees);
+    const byAirtableId = employees.reduce((acc, emp) => ({ ...acc, [emp.airtable_record_id]: emp }), {});
+    const matchByLocalId = employeeMatches.reduce((acc, match) => ({ ...acc, [match.employee_record_id]: match.airtable_record_id }), {});
+
+    for (const local of localEmployees) {
+      const localName = normalizeEmployeeName([local.first_name, local.middle_name, local.last_name].filter(Boolean).join(' '));
+      const matched = byAirtableId[matchByLocalId[local.id]] || employees.find(emp => normalizeEmployeeName(getAirtableEmployeeName(emp)) === localName);
+      if (!matched) continue;
+      [local.id, local.employee_id, local.biometric_id, localName].filter(Boolean).forEach(key => {
+        map[String(key).trim()] = matched;
+      });
+    }
+
+    return map;
+  }, [employees, localEmployees, employeeMatches]);
 
   const paySummaryMap = useMemo(
     () => paySummaries.reduce((map, item) => ({ ...map, [item.employee_id]: item }), {}),
