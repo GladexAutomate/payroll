@@ -13,48 +13,9 @@ Deno.serve(async (req) => {
       const { uploadId } = body;
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
-      // Delete records directly by this upload batch ID.
-      // Always fetch from the beginning because deleting changes the result set.
-      const PAGE_SIZE = 500;
-      const PARALLEL = 50;
-      let deleted = 0;
-
-      const deleteOne = async (log) => {
-        let attempts = 0;
-        while (attempts < 4) {
-          try {
-            await base44.asServiceRole.entities.AttendanceLog.delete(log.id);
-            return true;
-          } catch (err) {
-            const msg = String(err?.message || err);
-            if (msg.includes('not found') || msg.includes('404')) return true;
-            if (msg.includes('429') || msg.includes('Rate limit')) {
-              attempts++;
-              await new Promise(r => setTimeout(r, 500 * attempts));
-              continue;
-            }
-            return false;
-          }
-        }
-        return false;
-      };
-
-      while (true) {
-        const batch = await base44.asServiceRole.entities.AttendanceLog.filter(
-          { upload_id: uploadId }, '-date', PAGE_SIZE
-        );
-        if (batch.length === 0) break;
-
-        for (let i = 0; i < batch.length; i += PARALLEL) {
-          const results = await Promise.all(batch.slice(i, i + PARALLEL).map(deleteOne));
-          deleted += results.filter(Boolean).length;
-        }
-
-        if (batch.length < PAGE_SIZE) break;
-      }
-
+      const result = await base44.asServiceRole.entities.AttendanceLog.deleteMany({ upload_id: uploadId });
       await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
-      return Response.json({ deleted });
+      return Response.json({ deleted: result.deleted || 0 });
     }
 
     // ── CREATE UPLOAD RECORD (first call before chunking) ────────────────────
