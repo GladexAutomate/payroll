@@ -309,11 +309,15 @@ Deno.serve(async (req) => {
         ? activeRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
         : activeRecords;
       const start = Number(offset) || 0;
-      const records = filtered.slice(start, start + Math.min(pageSize, 100)).map(record => ({
-        id: record.airtable_record_id,
-        fields: record.fields || {},
-        backend_id: record.id,
-      }));
+      const records = filtered.slice(start, start + Math.min(pageSize, 100)).map(record => {
+        const fields = { ...(record.fields || {}) };
+        if (!fields.Company && !fields.COMPANY && record.company) fields.Company = record.company;
+        return {
+          id: record.airtable_record_id,
+          fields,
+          backend_id: record.id,
+        };
+      });
       const nextOffset = start + records.length < filtered.length ? String(start + records.length) : null;
       return Response.json({ records, offset: nextOffset, source: 'backend' });
     }

@@ -5,7 +5,7 @@ import { useRef, useEffect } from 'react';
  * one fixed at the top, one (the natural one) at the bottom of the table.
  * Scrolling either bar keeps both in sync.
  */
-export default function TableWithTopScrollbar({ children }) {
+export default function TableWithTopScrollbar({ children, resetKey }) {
   const topRef = useRef(null);
   const bodyRef = useRef(null);
   const bottomRef = useRef(null);
@@ -34,6 +34,12 @@ export default function TableWithTopScrollbar({ children }) {
       window.removeEventListener('resize', updateWidth);
     };
   }, [children]);
+
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollLeft = 0;
+    if (topRef.current) topRef.current.scrollLeft = 0;
+    if (bottomRef.current) bottomRef.current.scrollLeft = 0;
+  }, [resetKey]);
 
   // Keep all three scrollers in sync without infinite loops
   const syncFrom = (sourceLeft, sourceEl) => {

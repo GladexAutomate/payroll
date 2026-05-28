@@ -166,7 +166,7 @@ export default function AirtableEmployees() {
       for (const k of Object.keys(r.fields || {})) cols.add(k);
     }
     const arr = Array.from(cols);
-    const priority = ['Employee Code ID', 'Full Name', 'First Name', 'Last Name', 'Company', 'COMPANY', 'Branch', 'BRANCH', 'Department', 'DEPARTMENT', 'Department Role', 'DEPARTMENT ROLE', 'Job Title', 'Status'];
+    const priority = ['Employee Code ID', 'Company', 'COMPANY', 'Full Name', 'First Name', 'Last Name', 'Branch', 'BRANCH', 'Department', 'DEPARTMENT', 'Department Role', 'DEPARTMENT ROLE', 'Job Title', 'Status'];
     arr.sort((a, b) => {
       const ia = priority.findIndex(item => item.toLowerCase() === a.toLowerCase());
       const ib = priority.findIndex(item => item.toLowerCase() === b.toLowerCase());
@@ -237,7 +237,7 @@ export default function AirtableEmployees() {
       )}
 
       {/* Table */}
-      <TableWithTopScrollbar>
+      <TableWithTopScrollbar resetKey={`${pageIdx}-${records[0]?.id || 'empty'}-${columns.join('|')}`}>
           <table className="text-xs min-w-full">
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
