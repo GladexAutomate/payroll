@@ -4,19 +4,16 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry(operation, attempts = 8) {
-  let lastError;
-  for (let i = 0; i < attempts; i += 1) {
+async function withRetryUntilDone(operation) {
+  while (true) {
     try {
       return await operation();
     } catch (error) {
-      lastError = error;
-      const message = String(error?.message || '');
-      if (!message.includes('429') && !message.toLowerCase().includes('rate limit')) throw error;
-      await wait(1500 * (i + 1));
+      const message = String(error?.message || '').toLowerCase();
+      if (message.includes('object not found')) return null;
+      await wait(message.includes('429') || message.includes('rate limit') ? 3000 : 1500);
     }
   }
-  throw lastError;
 }
 
 Deno.serve(async (req) => {
@@ -28,22 +25,22 @@ Deno.serve(async (req) => {
     const { payroll_run_id } = await req.json();
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
 
-    const runs = await withRetry(() => base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id }, '-created_date', 1));
-    if (!runs.length) return Response.json({ error: 'Payroll run not found' }, { status: 404 });
+    const runs = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id }, '-created_date', 1));
+    if (!runs?.length) return Response.json({ success: true, deleted_records: 0, already_deleted: true });
 
     let deletedRecords = 0;
-    let records = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 100));
-    while (records.length > 0) {
+    let records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
+    while (records?.length > 0) {
       for (const record of records) {
-        await withRetry(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
+        await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
         deletedRecords += 1;
-        await wait(120);
+        await wait(250);
       }
-      await wait(800);
-      records = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 100));
+      await wait(1500);
+      records = await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 50));
     }
 
-    await withRetry(() => base44.asServiceRole.entities.PayrollRun.delete(payroll_run_id));
+    await withRetryUntilDone(() => base44.asServiceRole.entities.PayrollRun.delete(payroll_run_id));
 
     return Response.json({ success: true, deleted_records: deletedRecords });
   } catch (error) {
