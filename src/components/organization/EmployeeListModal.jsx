@@ -24,8 +24,14 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
   const [category, setCategory] = useState('company');
   const [draggingEmployee, setDraggingEmployee] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [pendingRefresh, setPendingRefresh] = useState(false);
+  const [movedEmployeeIds, setMovedEmployeeIds] = useState([]);
 
   const categoryItems = useMemo(() => dedupeItems(categories[category] || []), [categories, category]);
+  const displayEmployees = useMemo(
+    () => employees.filter(employee => !movedEmployeeIds.includes(employee.airtable_record_id || employee.id)),
+    [employees, movedEmployeeIds]
+  );
 
   const moveEmployee = async (target) => {
     if (!draggingEmployee?.airtable_record_id || !target?.name) return;
@@ -36,9 +42,15 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
       category,
       target,
     });
+    setMovedEmployeeIds(prev => [...prev, draggingEmployee.airtable_record_id || draggingEmployee.id]);
+    setPendingRefresh(true);
     setDraggingEmployee(null);
     setSaving(false);
-    onUpdated?.();
+  };
+
+  const handleClose = () => {
+    if (pendingRefresh) onUpdated?.();
+    onClose();
   };
 
   return (
@@ -58,16 +70,16 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">Drag employee names to a category item to update Airtable.</p>
               </div>
-              <Button variant="ghost" size="icon" onClick={onClose}>
+              <Button variant="ghost" size="icon" onClick={handleClose}>
                 <X className="w-4 h-4" />
               </Button>
             </div>
 
             <div className="grid md:grid-cols-[1fr_320px] min-h-0">
               <div className="p-5 overflow-y-auto space-y-2 border-r border-border">
-                {count === 0 ? (
+                {displayEmployees.length === 0 ? (
                   <div className="rounded-xl border border-border p-6 text-center text-sm text-muted-foreground">No employees found.</div>
-                ) : employees.map((employee, index) => (
+                ) : displayEmployees.map((employee, index) => (
                   <div
                     key={employee.id || employee.airtable_record_id || index}
                     draggable
