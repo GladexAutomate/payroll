@@ -58,7 +58,8 @@ export default function PayrollRunDetail({ run, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card">
+        <div className="sticky top-0 z-20 bg-card border-b border-border shadow-sm">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h2 className="font-semibold text-lg">{run.period_label}</h2>
             <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
@@ -69,8 +70,8 @@ export default function PayrollRunDetail({ run, onClose }) {
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 border-b border-border">
+          {/* Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6">
           <div className="text-center">
             <p className="text-xs text-muted-foreground">Employees</p>
             <p className="text-2xl font-bold mt-1">{activeRecords.length}</p>
@@ -87,6 +88,7 @@ export default function PayrollRunDetail({ run, onClose }) {
           <div className="text-center">
             <p className="text-xs text-muted-foreground">Total Net Pay</p>
             <p className="text-2xl font-bold mt-1 text-green-600">{fmt(totals.net)}</p>
+          </div>
           </div>
         </div>
 
