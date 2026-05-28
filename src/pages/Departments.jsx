@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Building2, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import EmployeeListModal from '@/components/organization/EmployeeListModal';
 
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
@@ -10,6 +11,7 @@ export default function Departments() {
   const [branches, setBranches] = useState([]);
   const [subDepartments, setSubDepartments] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [activeDepartment, setActiveDepartment] = useState(null);
   const [subDepartmentName, setSubDepartmentName] = useState('');
   const [teamName, setTeamName] = useState('');
@@ -18,15 +20,17 @@ export default function Departments() {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [employeeModal, setEmployeeModal] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [res, subDepartmentData, teamData] = await Promise.all([
+    const [res, subDepartmentData, teamData, employeeData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.SubDepartment.list('name'),
       base44.entities.Team.list('name'),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
     ]);
 
     const mergedRoles = new Map();
@@ -42,6 +46,7 @@ export default function Departments() {
     setDepartments(res.data?.departments || []);
     setSubDepartments(Array.from(mergedRoles.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setTeams(teamData);
+    setEmployees(employeeData || []);
     setLoading(false);
   };
 
@@ -145,7 +150,13 @@ export default function Departments() {
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{dept.employee_count || 0} employees</span>
+              <EmployeeListModal
+                employees={employees.filter(employee => employee.company === dept.company_name && employee.branch === dept.branch_name && employee.department === dept.name)}
+                title={`${dept.name} Employees`}
+                open={employeeModal === dept.id}
+                onOpen={() => setEmployeeModal(dept.id)}
+                onClose={() => setEmployeeModal(null)}
+              />
               <span className="text-xs text-primary font-medium">Airtable</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">

@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
+import EmployeeListModal from '@/components/organization/EmployeeListModal';
 
 export default function DepartmentRoles() {
   const [departmentRoles, setDepartmentRoles] = useState([]);
@@ -10,18 +11,21 @@ export default function DepartmentRoles() {
   const [branches, setBranches] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedDepartmentRole, setSelectedDepartmentRole] = useState(null);
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
+  const [employeeModal, setEmployeeModal] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    const [hierarchyRes, teamData] = await Promise.all([
+    const [hierarchyRes, teamData, employeeData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Team.list('name'),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
     ]);
     const hierarchy = hierarchyRes.data || {};
     setCompanies(hierarchy.companies || []);
@@ -29,6 +33,7 @@ export default function DepartmentRoles() {
     setDepartments(hierarchy.departments || []);
     setDepartmentRoles(hierarchy.departmentRoles || []);
     setTeams(teamData);
+    setEmployees(employeeData || []);
   };
 
   const openMapping = (departmentRole) => {
@@ -98,7 +103,15 @@ export default function DepartmentRoles() {
           <SetupCard
             key={departmentRole.id}
             title={departmentRole.name}
-            subtitle={`${departmentRole.employee_count || 0} employees in Airtable`}
+            subtitle={
+              <EmployeeListModal
+                employees={employees.filter(employee => employee.company === departmentRole.company_name && employee.branch === departmentRole.branch_name && employee.department === departmentRole.department_name && employee.department_role === departmentRole.name)}
+                title={`${departmentRole.name} Employees`}
+                open={employeeModal === departmentRole.id}
+                onOpen={() => setEmployeeModal(departmentRole.id)}
+                onClose={() => setEmployeeModal(null)}
+              />
+            }
             count={teams.filter(team => team.sub_department_id === departmentRole.id).length}
             onManage={() => openMapping(departmentRole)}
           >

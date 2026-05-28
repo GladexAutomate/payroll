@@ -3,23 +3,27 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
+import EmployeeListModal from '@/components/organization/EmployeeListModal';
 
 export default function Branches() {
   const [branches, setBranches] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [employeeModal, setEmployeeModal] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [hierarchyResponse, departmentData] = await Promise.all([
+    const [hierarchyResponse, departmentData, employeeData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Department.list('name'),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
     ]);
 
     const mergedDepartments = new Map();
@@ -33,6 +37,7 @@ export default function Branches() {
     setCompanies(hierarchyResponse.data?.companies || []);
     setBranches(hierarchyResponse.data?.branches || []);
     setDepartments(Array.from(mergedDepartments.values()).sort((a, b) => a.name.localeCompare(b.name)));
+    setEmployees(employeeData || []);
     setLoading(false);
   };
 
@@ -88,7 +93,15 @@ export default function Branches() {
             <SetupCard
               key={branch.id}
               title={branch.name}
-              subtitle={`${branch.employee_count} Airtable employees`}
+              subtitle={
+                <EmployeeListModal
+                  employees={employees.filter(employee => employee.company === branch.company_name && employee.branch === branch.name)}
+                  title={`${branch.name} Employees`}
+                  open={employeeModal === branch.id}
+                  onOpen={() => setEmployeeModal(branch.id)}
+                  onClose={() => setEmployeeModal(null)}
+                />
+              }
               count={departments.filter(department => department.branch_id === branch.id).length}
               onManage={() => openMapping(branch)}
             >

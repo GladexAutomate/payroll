@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
+import EmployeeListModal from '@/components/organization/EmployeeListModal';
 
 export default function Companies() {
   const [companies, setCompanies] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedBranches, setSelectedBranches] = useState([]);
   const [showCreateCompany, setShowCreateCompany] = useState(false);
@@ -15,21 +17,24 @@ export default function Companies() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [employeeModal, setEmployeeModal] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [res, branchRes, companyData] = await Promise.all([
+    const [res, branchRes, companyData, employeeData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.functions.invoke('airtableEmployees', { action: 'branches' }),
       base44.entities.Company.list('name'),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
     ]);
     const mergedCompanies = new Map();
     for (const company of (companyData || [])) mergedCompanies.set(company.name.toLowerCase(), company);
     for (const company of (res.data?.companies || [])) mergedCompanies.set(company.name.toLowerCase(), company);
     setCompanies(Array.from(mergedCompanies.values()).sort((a, b) => a.name.localeCompare(b.name)));
     setBranches(res.data?.branches?.length ? res.data.branches : branchRes.data?.branches || []);
+    setEmployees(employeeData || []);
     setLoading(false);
   };
 
@@ -86,7 +91,15 @@ export default function Companies() {
             <SetupCard
               key={company.id}
               title={company.name}
-              subtitle={`${company.employee_count || 0} Airtable employees`}
+              subtitle={
+                <EmployeeListModal
+                  employees={employees.filter(employee => employee.company === company.name)}
+                  title={`${company.name} Employees`}
+                  open={employeeModal === company.id}
+                  onOpen={() => setEmployeeModal(company.id)}
+                  onClose={() => setEmployeeModal(null)}
+                />
+              }
               count={branches.filter(branch => branch.company_id === company.id).length}
               onManage={() => openMapping(company)}
             />

@@ -11,7 +11,7 @@ export default function SetupCard({ title, subtitle, count, onManage, children }
           </div>
           <div className="min-w-0">
             <p className="font-semibold truncate">{title}</p>
-            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+            {subtitle && <div className="text-xs text-muted-foreground truncate">{subtitle}</div>}
           </div>
         </div>
         {typeof count === 'number' && <span className="text-xs rounded-full bg-muted px-2 py-1 text-muted-foreground shrink-0">{count}</span>}

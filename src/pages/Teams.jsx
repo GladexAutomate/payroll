@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import SetupCard from '@/components/organization/SetupCard';
+import EmployeeListModal from '@/components/organization/EmployeeListModal';
 
 export default function Teams() {
   const [teams, setTeams] = useState([]);
@@ -18,6 +19,7 @@ export default function Teams() {
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [employeeModal, setEmployeeModal] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -121,7 +123,15 @@ export default function Teams() {
           <SetupCard
             key={team.id}
             title={team.name}
-            subtitle="Employees added from Organization Setup"
+            subtitle={
+              <EmployeeListModal
+                employees={employees.filter(employee => employee.team_id === team.id)}
+                title={`${team.name} Employees`}
+                open={employeeModal === team.id}
+                onOpen={() => setEmployeeModal(team.id)}
+                onClose={() => setEmployeeModal(null)}
+              />
+            }
             count={employees.filter(employee => employee.team_id === team.id).length}
           >
             <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingTeam(team); setEditName(team.name); }}>
