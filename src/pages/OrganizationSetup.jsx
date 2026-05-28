@@ -13,16 +13,18 @@ export default function OrganizationSetup() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [departmentRoles, setDepartmentRoles] = useState([]);
+  const [employeeMatches, setEmployeeMatches] = useState([]);
   const [selected, setSelected] = useState({ companyId: '', branchId: '', departmentId: '', roleId: '', teamId: '' });
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [hierarchyRes, teamData, employeeData] = await Promise.all([
+    const [hierarchyRes, teamData, employeeData, matchData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Team.list('name'),
       base44.entities.Employee.list('first_name'),
+      base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
     ]);
     const hierarchy = hierarchyRes.data || {};
     setCompanies(hierarchy.companies || []);
@@ -31,6 +33,7 @@ export default function OrganizationSetup() {
     setDepartmentRoles(hierarchy.departmentRoles || []);
     setTeams(teamData);
     setEmployees(employeeData);
+    setEmployeeMatches(matchData);
     setLoading(false);
   };
 
@@ -66,14 +69,34 @@ export default function OrganizationSetup() {
   };
 
   const assignEmployee = async (employee) => {
+    const company = companies.find(item => item.id === selected.companyId);
+    const branch = branches.find(item => item.id === selected.branchId);
+    const department = departments.find(item => item.id === selected.departmentId);
+    const team = teams.find(item => item.id === selected.teamId);
     const updated = {
       company_id: selected.companyId,
       branch_id: selected.branchId,
       department_id: selected.departmentId,
       team_id: selected.teamId,
-      department_name: departments.find(item => item.id === selected.departmentId)?.name || employee.department_name,
+      department_name: department?.name || employee.department_name,
     };
     await base44.entities.Employee.update(employee.id, updated);
+
+    const match = employeeMatches.find(item => item.employee_record_id === employee.id);
+    if (match?.airtable_record_id && team?.name) {
+      await base44.functions.invoke('airtableEmployees', {
+        action: 'reassignEmployeeCategory',
+        recordId: match.airtable_record_id,
+        category: 'team',
+        target: {
+          name: team.name,
+          company_name: company?.name,
+          branch_name: branch?.name,
+          department_name: department?.name,
+        },
+      });
+    }
+
     setEmployees(prev => prev.map(item => item.id === employee.id ? { ...item, ...updated } : item));
   };
 
