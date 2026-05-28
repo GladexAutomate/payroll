@@ -18,23 +18,23 @@ export default function OrganizationSetup() {
 
   const loadData = async () => {
     setLoading(true);
-    const [companyData, branchData, departmentData, teamData, employeeData] = await Promise.all([
+    const [companyData, branchData, departmentRes, teamData, employeeData] = await Promise.all([
       base44.entities.Company.list('name'),
       base44.entities.Branch.list('name'),
-      base44.entities.Department.list('name'),
+      base44.functions.invoke('airtableEmployees', { action: 'departments' }),
       base44.entities.Team.list('name'),
       base44.entities.Employee.list('first_name'),
     ]);
     setCompanies(companyData);
     setBranches(branchData);
-    setDepartments(departmentData);
+    setDepartments(departmentRes.data?.departments || []);
     setTeams(teamData);
     setEmployees(employeeData);
     setLoading(false);
   };
 
   const filteredBranches = useMemo(() => branches.filter(branch => branch.company_id === selected.companyId), [branches, selected.companyId]);
-  const filteredDepartments = useMemo(() => departments.filter(department => department.branch_id === selected.branchId), [departments, selected.branchId]);
+  const filteredDepartments = useMemo(() => selected.branchId ? departments : [], [departments, selected.branchId]);
   const filteredTeams = useMemo(() => teams.filter(team => team.department_id === selected.departmentId), [teams, selected.departmentId]);
   const selectedTeam = teams.find(team => team.id === selected.teamId);
 
@@ -56,12 +56,6 @@ export default function OrganizationSetup() {
     const created = await base44.entities.Branch.create({ name, company_id: selected.companyId, status: 'active' });
     setBranches(prev => [...prev, created]);
     updateSelected('branchId', created.id);
-  };
-
-  const createDepartment = async (name) => {
-    const created = await base44.entities.Department.create({ name, company_id: selected.companyId, branch_id: selected.branchId });
-    setDepartments(prev => [...prev, created]);
-    updateSelected('departmentId', created.id);
   };
 
   const createTeam = async (name) => {
@@ -128,12 +122,13 @@ export default function OrganizationSetup() {
         />
         <HierarchyColumn
           title="Department"
-          subtitle="Belongs to the selected branch"
+          subtitle="Select from Airtable departments"
           items={filteredDepartments}
           selectedId={selected.departmentId}
           onSelect={(id) => updateSelected('departmentId', id)}
-          onCreate={createDepartment}
+          onCreate={() => {}}
           disabled={!selected.branchId}
+          allowCreate={false}
         />
         <HierarchyColumn
           title="Team"
