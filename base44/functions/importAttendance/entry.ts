@@ -13,23 +13,15 @@ Deno.serve(async (req) => {
       const { uploadId } = body;
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
-      let page = 0;
+      // Delete records directly by this upload batch ID.
+      // Always fetch from the beginning because deleting changes the result set.
       const PAGE_SIZE = 500;
-      let allLogs = [];
-      while (true) {
-        const batch = await base44.asServiceRole.entities.AttendanceLog.filter(
-          { upload_id: uploadId }, '-date', PAGE_SIZE, page * PAGE_SIZE
-        );
-        allLogs = allLogs.concat(batch);
-        if (batch.length < PAGE_SIZE) break;
-        page++;
-        await new Promise(r => setTimeout(r, 200));
-      }
+      const PARALLEL = 50;
+      let deleted = 0;
 
-      // Delete in parallel batches with rate-limit retry
       const deleteOne = async (log) => {
         let attempts = 0;
-        while (attempts < 5) {
+        while (attempts < 4) {
           try {
             await base44.asServiceRole.entities.AttendanceLog.delete(log.id);
             return true;
@@ -38,7 +30,7 @@ Deno.serve(async (req) => {
             if (msg.includes('not found') || msg.includes('404')) return true;
             if (msg.includes('429') || msg.includes('Rate limit')) {
               attempts++;
-              await new Promise(r => setTimeout(r, 1000 * attempts));
+              await new Promise(r => setTimeout(r, 500 * attempts));
               continue;
             }
             return false;
@@ -47,17 +39,21 @@ Deno.serve(async (req) => {
         return false;
       };
 
-      let deleted = 0;
-      const PARALLEL = 10;
-      for (let i = 0; i < allLogs.length; i += PARALLEL) {
-        const results = await Promise.all(allLogs.slice(i, i + PARALLEL).map(deleteOne));
-        deleted += results.filter(Boolean).length;
-        if (i + PARALLEL < allLogs.length) await new Promise(r => setTimeout(r, 200));
+      while (true) {
+        const batch = await base44.asServiceRole.entities.AttendanceLog.filter(
+          { upload_id: uploadId }, '-date', PAGE_SIZE
+        );
+        if (batch.length === 0) break;
+
+        for (let i = 0; i < batch.length; i += PARALLEL) {
+          const results = await Promise.all(batch.slice(i, i + PARALLEL).map(deleteOne));
+          deleted += results.filter(Boolean).length;
+        }
+
+        if (batch.length < PAGE_SIZE) break;
       }
 
-      try {
-        await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
-      } catch (_) { /* already deleted */ }
+      await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
       return Response.json({ deleted });
     }
 
