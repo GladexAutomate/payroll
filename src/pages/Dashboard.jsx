@@ -12,6 +12,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const today = format(new Date(), 'yyyy-MM-dd');
 
+  const isActiveAirtableEmployee = (employee) => {
+    const status = employee?.fields?.Status || employee?.fields?.status || '';
+    return String(status).trim().toLowerCase() === 'active';
+  };
+
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -19,12 +24,13 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     setLoading(true);
     const [employees, todayLogsRaw, pendingLeaves, pendingOT, hiddenUploads] = await Promise.all([
-      base44.entities.Employee.filter({ status: 'active' }),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
       base44.entities.AttendanceLog.filter({ date: today }),
       base44.entities.LeaveRequest.filter({ status: 'pending' }),
       base44.entities.OvertimeRequest.filter({ status: 'pending' }),
       base44.entities.AttendanceUpload.list('-created_date', 200),
     ]);
+    const activeEmployees = employees.filter(isActiveAirtableEmployee);
     const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
     const todayLogs = todayLogsRaw.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id));
 
@@ -33,7 +39,7 @@ export default function Dashboard() {
     const onLeave = todayLogs.filter(l => l.status === 'on_leave').length;
 
     setStats({
-      employees: employees.length,
+      employees: activeEmployees.length,
       present,
       absent,
       onLeave,
@@ -42,11 +48,13 @@ export default function Dashboard() {
     });
     // Build a lookup map: try id, employee_id, biometric_id → full name
     const map = {};
-    for (const emp of employees) {
-      const fullName = `${emp.first_name} ${emp.last_name}`.trim();
+    for (const emp of activeEmployees) {
+      const fields = emp.fields || {};
+      const fullName = emp.full_name || fields['Full Name'] || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' ').trim();
       if (emp.id) map[emp.id] = fullName;
-      if (emp.employee_id) map[emp.employee_id] = fullName;
-      if (emp.biometric_id) map[emp.biometric_id] = fullName;
+      if (emp.employee_code) map[emp.employee_code] = fullName;
+      if (fields['Employee Code ID']) map[fields['Employee Code ID']] = fullName;
+      if (fields['Employee Code']) map[fields['Employee Code']] = fullName;
     }
     setEmployeeMap(map);
     setRecentLogs(todayLogs.slice(0, 8));
