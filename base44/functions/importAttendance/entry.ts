@@ -13,9 +13,54 @@ Deno.serve(async (req) => {
       const { uploadId } = body;
       if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
 
-      const result = await base44.asServiceRole.entities.AttendanceLog.deleteMany({ upload_id: uploadId });
-      await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
-      return Response.json({ deleted: result.deleted || 0 });
+      let deleted = 0;
+      let bulkDeleted = false;
+
+      for (let attempts = 1; attempts <= 3; attempts++) {
+        try {
+          const result = await base44.asServiceRole.entities.AttendanceLog.deleteMany({ upload_id: uploadId });
+          deleted = result.deleted || 0;
+          bulkDeleted = true;
+          break;
+        } catch (err) {
+          const msg = String(err?.message || err);
+          if (attempts < 3 && (msg.includes('connection error') || msg.includes('429') || msg.includes('Rate limit'))) {
+            await new Promise(r => setTimeout(r, 2000 * attempts));
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (!bulkDeleted) {
+        const PAGE_SIZE = 200;
+        const PARALLEL = 25;
+        while (true) {
+          const batch = await base44.asServiceRole.entities.AttendanceLog.filter({ upload_id: uploadId }, '-date', PAGE_SIZE);
+          if (batch.length === 0) break;
+
+          for (let i = 0; i < batch.length; i += PARALLEL) {
+            const results = await Promise.all(batch.slice(i, i + PARALLEL).map(async (log) => {
+              try {
+                await base44.asServiceRole.entities.AttendanceLog.delete(log.id);
+                return true;
+              } catch (err) {
+                const msg = String(err?.message || err);
+                return msg.includes('not found') || msg.includes('404');
+              }
+            }));
+            deleted += results.filter(Boolean).length;
+          }
+        }
+      }
+
+      try {
+        await base44.asServiceRole.entities.AttendanceUpload.delete(uploadId);
+      } catch (err) {
+        const msg = String(err?.message || err);
+        if (!msg.includes('not found') && !msg.includes('404')) throw err;
+      }
+      return Response.json({ deleted });
     }
 
     // ── CREATE UPLOAD RECORD (first call before chunking) ────────────────────
