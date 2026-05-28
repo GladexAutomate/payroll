@@ -27,6 +27,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
   const [pendingRefresh, setPendingRefresh] = useState(false);
   const [movedEmployeeIds, setMovedEmployeeIds] = useState([]);
   const [draggingId, setDraggingId] = useState(null);
+  const [dragPreviewPosition, setDragPreviewPosition] = useState(null);
   const [poppedTarget, setPoppedTarget] = useState(null);
   const [parentFilters, setParentFilters] = useState({ company: '', branch: '', department: '' });
 
@@ -80,6 +81,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
     setPendingRefresh(true);
     setDraggingEmployee(null);
     setDraggingId(null);
+    setDragPreviewPosition(null);
     setSaving(false);
   };
 
@@ -121,10 +123,19 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                     onDragStart={(event) => {
                       setDraggingEmployee(employee);
                       setDraggingId(employee.airtable_record_id || employee.id);
+                      setDragPreviewPosition({ x: event.clientX, y: event.clientY });
                       event.dataTransfer.effectAllowed = 'move';
-                      event.dataTransfer.setDragImage(event.currentTarget, 24, 24);
+                      const dragImage = new Image();
+                      dragImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+                      event.dataTransfer.setDragImage(dragImage, 0, 0);
                     }}
-                    onDragEnd={() => setDraggingId(null)}
+                    onDrag={(event) => {
+                      if (event.clientX && event.clientY) setDragPreviewPosition({ x: event.clientX, y: event.clientY });
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDragPreviewPosition(null);
+                    }}
                     className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing bg-background transition-all duration-200 hover:border-primary/50 ${draggingId === (employee.airtable_record_id || employee.id) ? 'border-primary bg-primary/10 shadow-lg scale-[1.01]' : 'border-border'}`}
                   >
                     <div className="flex items-center gap-2">
@@ -214,6 +225,23 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {draggingEmployee && dragPreviewPosition && (
+        <div
+          className="fixed z-[100] pointer-events-none w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-primary bg-primary/10 p-3 shadow-2xl scale-[1.02]"
+          style={{ left: dragPreviewPosition.x + 12, top: dragPreviewPosition.y + 12 }}
+        >
+          <div className="flex items-center gap-2">
+            <GripVertical className="w-4 h-4 text-primary" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm truncate">{employeeName(draggingEmployee)}</p>
+              {(draggingEmployee.employee_code || draggingEmployee.employee_id || draggingEmployee.email) && (
+                <p className="text-xs text-muted-foreground mt-1 truncate">{draggingEmployee.employee_code || draggingEmployee.employee_id || draggingEmployee.email}</p>
+              )}
             </div>
           </div>
         </div>
