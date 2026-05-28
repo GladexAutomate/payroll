@@ -29,7 +29,7 @@ export default function Employees() {
     if (!loading && employees.length && airtableRecords.length && !syncingMatches) {
       const hasPendingAutoMatch = employees.some(employee => {
         if (matchMap[employee.id] || !employee.employee_id) return false;
-        return airtableRecords.some(record => airtableMatchName(record) === employeeMatchName(employee));
+        return airtableRecords.some(record => airtableMatchName(record) === employeeMatchName(employee) || airtableSmartMatchName(record) === employeeSmartMatchName(employee));
       });
       if (hasPendingAutoMatch) autoMatchEmployees();
     }
@@ -56,6 +56,12 @@ export default function Employees() {
     const fields = record.fields || {};
     return record.full_name || fields['Full Name'] || [fields['First Name'], fields['Last Name']].filter(Boolean).join(' ').trim();
   };
+  const nameTokens = (value) => normalizeName(value).split(' ').filter(Boolean);
+  const smartNameKey = (value) => {
+    const tokens = nameTokens(value);
+    if (tokens.length <= 2) return tokens.join(' ');
+    return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+  };
   const employeeMatchName = (employee) => {
     const first = String(employee.first_name || '').trim();
     const last = String(employee.last_name || '').trim();
@@ -65,6 +71,8 @@ export default function Employees() {
     const fields = record.fields || {};
     return normalizeName([fields['First Name'], fields['Last Name']].filter(Boolean).join(' '));
   };
+  const employeeSmartMatchName = (employee) => smartNameKey(employeeFullName(employee));
+  const airtableSmartMatchName = (record) => smartNameKey(airtableFullName(record));
   const matchMap = matches.reduce((map, match) => ({ ...map, [match.employee_record_id]: match }), {});
 
   const filtered = employees.filter(e => {
@@ -105,7 +113,8 @@ export default function Employees() {
     for (const employee of employees) {
       if (existingEmployeeIds.has(employee.id) || !employee.employee_id) continue;
       const localName = employeeMatchName(employee);
-      const matchedRecord = airtableRecords.find(record => airtableMatchName(record) === localName);
+      const smartLocalName = employeeSmartMatchName(employee);
+      const matchedRecord = airtableRecords.find(record => airtableMatchName(record) === localName || airtableSmartMatchName(record) === smartLocalName);
       if (matchedRecord) await connectMatch(employee, matchedRecord, 'matched');
     }
     setSyncingMatches(false);
