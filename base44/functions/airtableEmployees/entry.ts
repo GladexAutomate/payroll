@@ -133,6 +133,43 @@ Deno.serve(async (req) => {
       return Response.json({ departments });
     }
 
+    // ── BRANCHES: unique Branch values from Airtable employee records ───────
+    if (action === 'branches') {
+      const counts = new Map();
+      let offset = null;
+
+      do {
+        const params = new URLSearchParams({ pageSize: '100' });
+        params.append('fields[]', 'Branch');
+        if (offset) params.set('offset', offset);
+
+        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+
+        for (const record of (data.records || [])) {
+          const value = record.fields?.Branch;
+          const names = Array.isArray(value) ? value : [value];
+          for (const rawName of names) {
+            const name = String(rawName || '').trim();
+            if (!name) continue;
+            counts.set(name, (counts.get(name) || 0) + 1);
+          }
+        }
+        offset = data.offset || null;
+      } while (offset);
+
+      const branches = Array.from(counts.entries())
+        .map(([name, employee_count]) => ({
+          id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          name,
+          employee_count,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return Response.json({ branches });
+    }
+
     // ── DEPARTMENT ROLES: unique Department Role values from Airtable ─────────
     if (action === 'departmentRoles') {
       const counts = new Map();

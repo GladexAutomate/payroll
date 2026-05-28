@@ -1,45 +1,27 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 
 export default function Branches() {
   const [branches, setBranches] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [name, setName] = useState('');
-  const [editingBranch, setEditingBranch] = useState(null);
-  const [editName, setEditName] = useState('');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    const [branchData, departmentData] = await Promise.all([
-      base44.entities.Branch.list('name'),
+    setLoading(true);
+    const [branchResponse, departmentData] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'branches' }),
       base44.entities.Department.list('name'),
     ]);
-    setBranches(branchData);
+    setBranches(branchResponse.data?.branches || []);
     setDepartments(departmentData);
-  };
-
-  const createBranch = async (e) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    await base44.entities.Branch.create({ name: name.trim(), status: 'active' });
-    setName('');
-    loadData();
-  };
-
-  const updateBranch = async (e) => {
-    e.preventDefault();
-    if (!editingBranch || !editName.trim()) return;
-    await base44.entities.Branch.update(editingBranch.id, { name: editName.trim() });
-    setEditingBranch(null);
-    setEditName('');
-    loadData();
+    setLoading(false);
   };
 
   const openMapping = (branch) => {
@@ -49,8 +31,12 @@ export default function Branches() {
 
   const saveMapping = async () => {
     for (const department of departments) {
-      if (selectedDepartments.includes(department.id) && department.branch_id !== selectedBranch.id) {
-        await base44.entities.Department.update(department.id, { branch_id: selectedBranch.id, company_id: selectedBranch.company_id || '' });
+      const shouldBeMapped = selectedDepartments.includes(department.id);
+      if (shouldBeMapped && department.branch_id !== selectedBranch.id) {
+        await base44.entities.Department.update(department.id, { branch_id: selectedBranch.id });
+      }
+      if (!shouldBeMapped && department.branch_id === selectedBranch.id) {
+        await base44.entities.Department.update(department.id, { branch_id: '' });
       }
     }
     setSelectedBranch(null);
@@ -61,39 +47,24 @@ export default function Branches() {
     <div className="space-y-5 max-w-6xl">
       <div className="bg-card border border-border rounded-xl p-5">
         <h2 className="font-semibold text-lg">Branches</h2>
-        <p className="text-sm text-muted-foreground mt-1">Create branches and choose which departments are under each branch.</p>
+        <p className="text-sm text-muted-foreground mt-1">Branches are synced from the existing Branch column in Airtable.</p>
       </div>
 
-      <form onSubmit={createBranch} className="bg-card border border-border rounded-xl p-4 flex gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Branch name" />
-        <Button type="submit">Create Branch</Button>
-      </form>
-
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {branches.map(branch => (
-          <SetupCard
-            key={branch.id}
-            title={branch.name}
-            count={departments.filter(department => department.branch_id === branch.id).length}
-            onManage={() => openMapping(branch)}
-          >
-            <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingBranch(branch); setEditName(branch.name); }}>
-              Edit Branch
-            </Button>
-          </SetupCard>
-        ))}
-      </div>
-
-      {editingBranch && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <form onSubmit={updateBranch} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
-            <h3 className="font-semibold">Edit Branch</h3>
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Branch name" />
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setEditingBranch(null)}>Cancel</Button>
-              <Button type="submit">Save</Button>
-            </div>
-          </form>
+      {loading ? (
+        <div className="bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
+          Loading branches from Airtable...
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {branches.map(branch => (
+            <SetupCard
+              key={branch.id}
+              title={branch.name}
+              subtitle={`${branch.employee_count} Airtable employees`}
+              count={departments.filter(department => department.branch_id === branch.id).length}
+              onManage={() => openMapping(branch)}
+            />
+          ))}
         </div>
       )}
 
@@ -102,7 +73,7 @@ export default function Branches() {
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4">
             <div>
               <h3 className="font-semibold">Map Departments to {selectedBranch.name}</h3>
-              <p className="text-sm text-muted-foreground">Select existing departments under this branch.</p>
+              <p className="text-sm text-muted-foreground">Select existing departments under this Airtable branch.</p>
             </div>
             <MultiSelectList items={departments} selectedIds={selectedDepartments} onToggle={(id) => setSelectedDepartments(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id])} />
             <div className="flex justify-end gap-2">
