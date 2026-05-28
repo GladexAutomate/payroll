@@ -97,8 +97,8 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-5xl max-h-[86vh] flex flex-col">
+        <div className="fixed inset-0 z-[70] bg-black/40 p-3">
+          <div className="bg-card rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
             <div className="p-5 border-b border-border flex items-start justify-between gap-4">
               <div>
                 <h3 className="font-semibold flex items-center gap-2">
@@ -112,8 +112,8 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
               </Button>
             </div>
 
-            <div className="grid md:grid-cols-[1fr_320px] min-h-0">
-              <div className="p-5 overflow-y-auto space-y-2 border-r border-border">
+            <div className="grid md:grid-cols-[minmax(0,1fr)_420px] min-h-0 flex-1 overflow-hidden">
+              <div className="p-5 overflow-y-auto overflow-x-hidden space-y-2 border-r border-border min-w-0">
                 {displayEmployees.length === 0 ? (
                   <div className="rounded-xl border border-border p-6 text-center text-sm text-muted-foreground">No employees found.</div>
                 ) : displayEmployees.map((employee, index) => (
@@ -151,7 +151,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                 ))}
               </div>
 
-              <div className="p-5 space-y-3 overflow-y-auto bg-muted/20">
+              <div className="p-5 space-y-3 overflow-y-auto overflow-x-hidden bg-muted/20 min-w-0">
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground">Move to category</label>
                   <div className="mt-2 grid grid-cols-1 gap-2">
