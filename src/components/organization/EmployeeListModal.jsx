@@ -113,7 +113,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
             </div>
 
             <div className="grid md:grid-cols-[minmax(0,1fr)_420px] min-h-0 flex-1 overflow-hidden">
-              <div className="p-5 overflow-y-auto overflow-x-hidden space-y-2 border-r border-border min-w-0">
+              <div className="p-5 overflow-y-auto overflow-x-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 content-start border-r border-border min-w-0">
                 {displayEmployees.length === 0 ? (
                   <div className="rounded-xl border border-border p-6 text-center text-sm text-muted-foreground">No employees found.</div>
                 ) : displayEmployees.map((employee, index) => (
@@ -165,12 +165,12 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                 </div>
 
                 {(category === 'branch' || category === 'department' || category === 'department_role' || category === 'team') && (
-                  <div className="space-y-2 rounded-xl border border-border bg-background p-3">
+                  <div className="flex flex-col gap-2 rounded-xl border border-border bg-background p-3 overflow-hidden">
                     <p className="text-xs font-semibold text-muted-foreground">Choose parent location first</p>
                     <select
                       value={parentFilters.company}
                       onChange={(e) => setParentFilters({ company: e.target.value, branch: '', department: '' })}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      className="block h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">Select company</option>
                       {companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
@@ -180,7 +180,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                         value={parentFilters.branch}
                         onChange={(e) => setParentFilters(prev => ({ ...prev, branch: e.target.value, department: '' }))}
                         disabled={!parentFilters.company}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                        className="block h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
                       >
                         <option value="">Select branch</option>
                         {availableBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
@@ -191,7 +191,7 @@ export default function EmployeeListModal({ employees, label = 'employees', titl
                         value={parentFilters.department}
                         onChange={(e) => setParentFilters(prev => ({ ...prev, department: e.target.value }))}
                         disabled={!parentFilters.branch}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                        className="block h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
                       >
                         <option value="">Select department</option>
                         {availableDepartments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
