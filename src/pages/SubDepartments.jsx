@@ -43,7 +43,7 @@ export default function DepartmentRoles() {
     <div className="space-y-5 max-w-6xl">
       <div className="bg-card border border-border rounded-xl p-5">
         <h2 className="font-semibold text-lg">Department Roles</h2>
-        <p className="text-sm text-muted-foreground mt-1">Department roles are pulled from Airtable’s Department Role column.</p>
+        <p className="text-sm text-muted-foreground mt-1">Department roles load from the saved backend copy of Airtable records.</p>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

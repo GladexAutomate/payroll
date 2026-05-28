@@ -62,7 +62,12 @@ export default function AirtableEmployees() {
     setLoading(false);
   };
 
-  useEffect(() => { loadPage(null); }, []);
+  useEffect(() => {
+    loadPage(null);
+    base44.functions.invoke('airtableEmployees', { action: 'syncFromAirtable' })
+      .then(() => loadPage(null, search));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch Airtable schema once to get dropdown choices for single/multi-select fields
   const loadSchema = async () => {

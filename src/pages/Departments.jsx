@@ -80,8 +80,8 @@ export default function Departments() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-base">Departments from Airtable</h2>
-          <p className="text-sm text-muted-foreground">These departments are pulled from the Airtable Employee List.</p>
+          <h2 className="font-semibold text-base">Departments</h2>
+          <p className="text-sm text-muted-foreground">These departments load from the saved backend copy of Airtable records.</p>
         </div>
         <Button variant="outline" onClick={loadData} disabled={loading}>
           <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh

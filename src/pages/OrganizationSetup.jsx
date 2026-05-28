@@ -91,7 +91,7 @@ export default function OrganizationSetup() {
     <div className="space-y-6 max-w-7xl">
       <div className="bg-card border border-border rounded-xl p-5">
         <h2 className="font-semibold text-lg">Organization Setup</h2>
-        <p className="text-sm text-muted-foreground mt-1">Company, Branch, Department, and Department Role are synced from Airtable. Create teams and assign employees under that structure.</p>
+        <p className="text-sm text-muted-foreground mt-1">Company, Branch, Department, and Department Role load from the saved backend copy for faster app performance.</p>
       </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">

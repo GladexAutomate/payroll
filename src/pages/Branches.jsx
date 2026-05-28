@@ -56,12 +56,12 @@ export default function Branches() {
     <div className="space-y-5 max-w-6xl">
       <div className="bg-card border border-border rounded-xl p-5">
         <h2 className="font-semibold text-lg">Branches</h2>
-        <p className="text-sm text-muted-foreground mt-1">Branches are synced from the existing Branch column in Airtable.</p>
+        <p className="text-sm text-muted-foreground mt-1">Branches load from the saved backend copy of Airtable records.</p>
       </div>
 
       {loading ? (
         <div className="bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
-          Loading branches from Airtable...
+          Loading branches from backend records...
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

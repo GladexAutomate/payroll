@@ -71,14 +71,14 @@ export default function Companies() {
       <div className="bg-card border border-border rounded-xl p-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="font-semibold text-lg">Companies</h2>
-          <p className="text-sm text-muted-foreground mt-1">Create companies manually, then map Airtable branches to them.</p>
+          <p className="text-sm text-muted-foreground mt-1">Create companies manually, then map saved backend branches to them.</p>
         </div>
         <Button onClick={() => setShowCreateCompany(true)}>Create Company Manually</Button>
       </div>
 
       {loading ? (
         <div className="bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
-          Loading companies from Airtable...
+          Loading companies from backend records...
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

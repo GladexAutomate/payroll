@@ -1,0 +1,41 @@
+{
+  "name": "AirtableEmployeeRecord",
+  "type": "object",
+  "properties": {
+    "airtable_record_id": {
+      "type": "string",
+      "description": "Original Airtable record ID"
+    },
+    "fields": {
+      "type": "object",
+      "description": "Copied Airtable field values"
+    },
+    "company": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string"
+    },
+    "department_role": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "employee_code": {
+      "type": "string"
+    },
+    "search_text": {
+      "type": "string"
+    },
+    "synced_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "airtable_record_id"
+  ]
+}
