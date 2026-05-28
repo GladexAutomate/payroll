@@ -126,17 +126,22 @@ Deno.serve(async (req) => {
     if (!runs.length) return Response.json({ error: 'Payroll run not found' }, { status: 404 });
     const run = runs[0];
 
-    const [allEmployees, paySummaries, existingRecords] = await Promise.all([
-      withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000)),
-      withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-updated_date', 5000)),
-      withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000)),
-    ]);
+    const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
+    await wait(600);
+    const paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
+    await wait(600);
+    const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
+    for (const record of oldRecords) {
+      await withRetry(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
+      await wait(80);
+    }
 
     const employees = allEmployees.filter(isActiveEmployee);
-    const summaryByEmployeeId = paySummaries.reduce((map, summary) => ({ ...map, [summary.employee_id]: summary }), {});
-    const existingByEmployeeId = existingRecords.reduce((map, record) => ({ ...map, [record.employee_id]: record }), {});
+    const summaryByEmployeeId = paySummaries.reduce((map, summary) => {
+      if (!map[summary.employee_id]) map[summary.employee_id] = summary;
+      return map;
+    }, {});
     const recordsToCreate = [];
-    const recordsToUpdate = [];
     let totalGross = 0;
     let totalDeductions = 0;
     let totalNet = 0;
@@ -206,9 +211,7 @@ Deno.serve(async (req) => {
         status: 'computed',
       };
 
-      const existingRecord = existingByEmployeeId[emp.id];
-      if (existingRecord) recordsToUpdate.push({ id: existingRecord.id, data: payrollRecord });
-      else recordsToCreate.push(payrollRecord);
+      recordsToCreate.push(payrollRecord);
 
       totalGross += grossPay;
       totalDeductions += totalDeductionsForEmp;
@@ -216,10 +219,6 @@ Deno.serve(async (req) => {
     }
 
     await bulkCreateInChunks(base44.asServiceRole.entities.PayrollRecord, recordsToCreate);
-    for (const record of recordsToUpdate) {
-      await withRetry(() => base44.asServiceRole.entities.PayrollRecord.update(record.id, record.data));
-      await wait(150);
-    }
 
     await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
       total_gross: money(totalGross),
