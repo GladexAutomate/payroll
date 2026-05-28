@@ -37,6 +37,26 @@ const smartNameKey = (value) => {
   if (tokens.length <= 2) return tokens.join(' ');
   return `${tokens[0]} ${tokens[tokens.length - 1]}`;
 };
+const editDistance = (a, b) => {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  let edits = 0, i = 0, j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i += 1; j += 1; }
+    else if (++edits > 1) return edits;
+    else if (a.length > b.length) i += 1;
+    else if (b.length > a.length) j += 1;
+    else { i += 1; j += 1; }
+  }
+  return edits + (i < a.length || j < b.length ? 1 : 0);
+};
+const firstLastTokensMatch = (nameA, nameB) => {
+  const a = nameTokens(nameA);
+  const b = nameTokens(nameB);
+  if (!a.length || !b.length) return false;
+  const firstClose = a[0] === b[0] || editDistance(a[0], b[0]) <= 1;
+  const lastSame = a[a.length - 1] === b[b.length - 1];
+  return firstClose && lastSame;
+};
 const localEmployeeName = (employee) => [employee.first_name, employee.middle_name, employee.last_name].filter(Boolean).join(' ');
 const airtableRecordName = (record) => {
   const fields = record.fields || {};
@@ -45,7 +65,7 @@ const airtableRecordName = (record) => {
 const namesMatch = (employee, record) => {
   const localName = localEmployeeName(employee);
   const remoteName = airtableRecordName(record);
-  return normalizeName(localName) === normalizeName(remoteName) || smartNameKey(localName) === smartNameKey(remoteName);
+  return normalizeName(localName) === normalizeName(remoteName) || smartNameKey(localName) === smartNameKey(remoteName) || firstLastTokensMatch(localName, remoteName);
 };
 
 Deno.serve(async (req) => {

@@ -29,7 +29,7 @@ export default function Employees() {
     if (!loading && employees.length && airtableRecords.length && !syncingMatches) {
       const hasPendingAutoMatch = employees.some(employee => {
         if (matchMap[employee.id] || !employee.employee_id) return false;
-        return airtableRecords.some(record => airtableMatchName(record) === employeeMatchName(employee) || airtableSmartMatchName(record) === employeeSmartMatchName(employee));
+        return airtableRecords.some(record => airtableMatchName(record) === employeeMatchName(employee) || airtableSmartMatchName(record) === employeeSmartMatchName(employee) || firstLastTokensMatch(employeeFullName(employee), airtableFullName(record)));
       });
       if (hasPendingAutoMatch) autoMatchEmployees();
     }
@@ -61,6 +61,26 @@ export default function Employees() {
     const tokens = nameTokens(value);
     if (tokens.length <= 2) return tokens.join(' ');
     return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+  };
+  const editDistance = (a, b) => {
+    if (Math.abs(a.length - b.length) > 1) return 2;
+    let edits = 0, i = 0, j = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i += 1; j += 1; }
+      else if (++edits > 1) return edits;
+      else if (a.length > b.length) i += 1;
+      else if (b.length > a.length) j += 1;
+      else { i += 1; j += 1; }
+    }
+    return edits + (i < a.length || j < b.length ? 1 : 0);
+  };
+  const firstLastTokensMatch = (nameA, nameB) => {
+    const a = nameTokens(nameA);
+    const b = nameTokens(nameB);
+    if (!a.length || !b.length) return false;
+    const firstClose = a[0] === b[0] || editDistance(a[0], b[0]) <= 1;
+    const lastSame = a[a.length - 1] === b[b.length - 1];
+    return firstClose && lastSame;
   };
   const employeeMatchName = (employee) => {
     const first = String(employee.first_name || '').trim();
@@ -114,7 +134,7 @@ export default function Employees() {
       if (existingEmployeeIds.has(employee.id) || !employee.employee_id) continue;
       const localName = employeeMatchName(employee);
       const smartLocalName = employeeSmartMatchName(employee);
-      const matchedRecord = airtableRecords.find(record => airtableMatchName(record) === localName || airtableSmartMatchName(record) === smartLocalName);
+      const matchedRecord = airtableRecords.find(record => airtableMatchName(record) === localName || airtableSmartMatchName(record) === smartLocalName || firstLastTokensMatch(employeeFullName(employee), airtableFullName(record)));
       if (matchedRecord) await connectMatch(employee, matchedRecord, 'matched');
     }
     setSyncingMatches(false);
