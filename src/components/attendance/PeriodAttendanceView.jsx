@@ -44,18 +44,6 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     [startDate, endDate]
   );
 
-  // Group logs by employee key, then by date
-  const grid = useMemo(() => {
-    const byEmp = {};
-    for (const log of logs) {
-      const key = log.employee_id || log.biometric_id;
-      if (!key) continue;
-      if (!byEmp[key]) byEmp[key] = {};
-      byEmp[key][log.date] = log;
-    }
-    return byEmp;
-  }, [logs]);
-
   const empMap = useMemo(() => {
     const m = {};
     for (const e of employees) {
@@ -65,6 +53,22 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     }
     return m;
   }, [employees]);
+
+  // Group logs by canonical employee key (Employee.id when resolvable),
+  // so old logs stored under Person Code and new logs stored under Employee.id
+  // collapse into a single row per person.
+  const grid = useMemo(() => {
+    const byEmp = {};
+    for (const log of logs) {
+      const rawKey = log.employee_id || log.biometric_id;
+      if (!rawKey) continue;
+      const emp = empMap[rawKey];
+      const key = emp?.id || rawKey;
+      if (!byEmp[key]) byEmp[key] = {};
+      byEmp[key][log.date] = log;
+    }
+    return byEmp;
+  }, [logs, empMap]);
 
   // Build display rows: one per employee key seen in logs
   const rows = useMemo(() => {

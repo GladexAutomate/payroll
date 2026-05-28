@@ -255,11 +255,9 @@ export default function AttendanceUpload() {
     // Upload file for record-keeping
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
-    // Step 1: Check if existing attendance logs cover any of these dates
-    // If none exist, we can skip the duplicate-check phase entirely (much faster)
-    const sampleDate = records[0].date;
-    const existingForDate = await base44.entities.AttendanceLog.filter({ date: sampleDate }, '-date', 1);
-    const skipDuplicateCheck = existingForDate.length === 0;
+    // Always run the duplicate check — re-uploads of the same period must
+    // update existing records, not create new ones.
+    const skipDuplicateCheck = false;
 
     // Step 2: Create the upload record to get an uploadId
     const createRes = await base44.functions.invoke('importAttendance', {
