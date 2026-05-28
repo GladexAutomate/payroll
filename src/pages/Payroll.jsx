@@ -42,9 +42,14 @@ export default function Payroll() {
   const handleDelete = async (run) => {
     if (!window.confirm(`Delete ${run.period_label}? This will also delete all payroll records inside this run.`)) return;
     setDeleting(run.id);
-    await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
-    setDeleting(null);
-    loadRuns();
+    try {
+      await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
+      loadRuns();
+    } catch (error) {
+      alert('Delete failed because the system is busy. Please wait a moment and try again.');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   return (
@@ -128,7 +133,7 @@ export default function Payroll() {
                       )}
                       <button
                         onClick={() => handleDelete(run)}
-                        disabled={deleting === run.id}
+                        disabled={!!deleting}
                         className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
                         title="Delete payroll run"
                       >
