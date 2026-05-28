@@ -6,6 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { UploadProvider } from '@/context/UploadContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import EmployeeAccessGate from '@/components/auth/EmployeeAccessGate';
 
 // Layout
 import AppLayout from '@/components/layout/AppLayout';
@@ -30,6 +31,7 @@ import Companies from './pages/Companies';
 import Branches from './pages/Branches';
 import DepartmentRoles from './pages/SubDepartments';
 import Teams from './pages/Teams';
+import UserManagement from './pages/UserManagement';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -55,7 +57,8 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
+    <EmployeeAccessGate>
+      <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
@@ -66,6 +69,7 @@ const AuthenticatedApp = () => {
         <Route path="/departments" element={<Departments />} />
         <Route path="/department-roles" element={<DepartmentRoles />} />
         <Route path="/teams" element={<Teams />} />
+        <Route path="/user-management" element={<UserManagement />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />
         <Route path="/shifts" element={<Shifts />} />
@@ -78,7 +82,8 @@ const AuthenticatedApp = () => {
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
-    </Routes>
+      </Routes>
+    </EmployeeAccessGate>
   );
 };
 

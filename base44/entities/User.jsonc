@@ -1,0 +1,31 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "employee_code": {
+      "type": "string"
+    },
+    "employee_airtable_record_id": {
+      "type": "string"
+    },
+    "employee_access_verified": {
+      "type": "boolean",
+      "default": false
+    },
+    "employee_account_status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        "disabled"
+      ],
+      "default": "inactive"
+    },
+    "internal_role": {
+      "type": "string"
+    },
+    "employee_password_last_verified_at": {
+      "type": "string"
+    }
+  }
+}

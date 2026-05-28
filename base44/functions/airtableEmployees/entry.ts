@@ -19,6 +19,17 @@ const sanitizeForStorage = (value) => {
 const getStatus = (record) => String(record?.fields?.Status || record?.Status || '').trim().toLowerCase();
 const isActive = (record) => getStatus(record) === 'active';
 const isNotResigned = (record) => getStatus(record) !== 'resigned';
+const clean = (value) => String(value || '').trim();
+const digitsOnly = (value) => clean(value).replace(/[^0-9]/g, '');
+const employeeInitials = (fields) => {
+  const first = clean(fields['First Name']);
+  const middle = clean(fields['Middle Name']);
+  const last = clean(fields['Last Name']);
+  const names = [first, middle, last].filter(Boolean);
+  if (!names.length && fields['Full Name']) return clean(fields['Full Name']).split(/\s+/).map(part => part[0]).join('').toUpperCase();
+  return names.map(name => name[0]).join('').toUpperCase();
+};
+const generatedPassword = (fields) => `${employeeInitials(fields)}${digitsOnly(fields['Date Hired']).slice(0, 8)}`;
 
 Deno.serve(async (req) => {
   try {
@@ -217,6 +228,57 @@ Deno.serve(async (req) => {
     if (action === 'activeCount') {
       const allRecords = await listMirrorRecords(5000);
       return Response.json({ count: allRecords.filter(isActive).length });
+    }
+
+    if (action === 'employeeAccounts') {
+      const allRecords = await listMirrorRecords(5000);
+      const accounts = allRecords.map(record => {
+        const fields = record.fields || {};
+        return {
+          airtable_record_id: record.airtable_record_id,
+          full_name: record.full_name || fields['Full Name'],
+          email: fields['Email'] || fields['Business email'],
+          employee_code: fields['Employee Code'] || fields['Employee Code ID'] || record.employee_code,
+          generated_password: generatedPassword(fields),
+          job_title: fields['Job Title'],
+          status: isActive(record) ? 'active' : 'inactive',
+        };
+      });
+      return Response.json({ accounts });
+    }
+
+    if (action === 'employeeAccessStatus') {
+      const currentUser = await base44.auth.me();
+      if (currentUser.role === 'admin') return Response.json({ allowed: true, admin: true });
+      if (!currentUser.employee_access_verified || !currentUser.employee_code) return Response.json({ allowed: false });
+      const allRecords = await listMirrorRecords(5000);
+      const matched = allRecords.find(record => clean(record.fields?.['Employee Code'] || record.fields?.['Employee Code ID'] || record.employee_code).toLowerCase() === clean(currentUser.employee_code).toLowerCase());
+      if (!matched || !isActive(matched)) {
+        await base44.auth.updateMe({ employee_access_verified: false, employee_account_status: 'disabled' });
+        return Response.json({ allowed: false, message: 'Your employee account is no longer active. Please contact HR.' });
+      }
+      return Response.json({ allowed: true });
+    }
+
+    if (action === 'validateEmployeeAccess') {
+      const { employeeCode, password } = body;
+      const currentUser = await base44.auth.me();
+      const allRecords = await listMirrorRecords(5000);
+      const matched = allRecords.find(record => clean(record.fields?.['Employee Code'] || record.fields?.['Employee Code ID'] || record.employee_code).toLowerCase() === clean(employeeCode).toLowerCase());
+      if (!matched || !isActive(matched)) return Response.json({ allowed: false, message: 'Employee account is inactive or not found.' });
+      const fields = matched.fields || {};
+      const recordEmail = clean(fields['Email'] || fields['Business email']).toLowerCase();
+      if (recordEmail && recordEmail !== clean(currentUser.email).toLowerCase()) return Response.json({ allowed: false, message: 'This employee code does not match your logged-in email.' });
+      if (clean(password).toUpperCase() !== generatedPassword(fields).toUpperCase()) return Response.json({ allowed: false, message: 'Invalid employee code or password.' });
+      await base44.auth.updateMe({
+        employee_code: clean(employeeCode),
+        employee_airtable_record_id: matched.airtable_record_id,
+        employee_access_verified: true,
+        employee_account_status: 'active',
+        internal_role: clean(fields['Job Title']),
+        employee_password_last_verified_at: new Date().toISOString(),
+      });
+      return Response.json({ allowed: true });
     }
 
     if (action === 'schema') {

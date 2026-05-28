@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, ChevronRight, Building2, Fingerprint,
-  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send
+  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck
 } from 'lucide-react';
 
 const navItems = [
@@ -16,6 +16,7 @@ const navItems = [
   { label: 'Departments', icon: Building2, path: '/departments' },
   { label: 'Department Roles', icon: Building2, path: '/department-roles' },
   { label: 'Teams', icon: Users, path: '/teams' },
+  { label: 'User Management', icon: ShieldCheck, path: '/user-management' },
   { label: 'Attendance', icon: Clock, path: '/attendance' },
   { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },
   { label: 'Shift Schedules', icon: CalendarDays, path: '/shifts' },

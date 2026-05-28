@@ -13,6 +13,7 @@ const pageTitles = {
   '/departments': 'Departments',
   '/department-roles': 'Department Roles',
   '/teams': 'Teams',
+  '/user-management': 'User Management',
   '/attendance': 'Attendance',
   '/attendance-upload': 'Upload Attendance',
   '/shifts': 'Shift Schedules',
