@@ -8,7 +8,7 @@ import AirtableSelectField from './AirtableSelectField';
  * Generic Airtable record form.
  * Renders an input for each editable column. Excludes computed/formula fields.
  */
-export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, onCancel, onSave }) {
+export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], onCancel, onSave }) {
   const isEditing = !!record?.id;
   const initialFields = record?.fields || {};
 
@@ -123,6 +123,7 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
               {editableCols.map(col => {
                 const isAttachment = Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
                 const meta = fieldsMeta[col];
+                const isCompanyField = col.toLowerCase() === 'company';
                 const isSingleSelect = meta?.type === 'singleSelect';
                 const isMultiSelect = meta?.type === 'multipleSelects';
                 return (
@@ -133,6 +134,13 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
                         Attachment(s): {initialFields[col].map(a => a.filename).join(', ')}
                         <p className="mt-1 text-[10px]">Attachments must be managed directly in Airtable.</p>
                       </div>
+                    ) : (isCompanyField && companyChoices.length > 0) ? (
+                      <AirtableSelectField
+                        value={values[col]}
+                        onChange={(v) => handleChange(col, v)}
+                        choices={companyChoices}
+                        multi={false}
+                      />
                     ) : (isSingleSelect || isMultiSelect) ? (
                       <AirtableSelectField
                         value={values[col]}

@@ -42,6 +42,7 @@ export default function AirtableEmployees() {
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [fieldsMeta, setFieldsMeta] = useState({}); // schema: { fieldName: { type, choices } }
+  const [companyChoices, setCompanyChoices] = useState([]);
   const [showAddColumn, setShowAddColumn] = useState(false);
 
   const loadPage = async (offset = null, searchQuery = '') => {
@@ -74,13 +75,22 @@ export default function AirtableEmployees() {
       setFieldsMeta(res.data?.fieldsMeta || {});
     } catch {}
   };
-  useEffect(() => { loadSchema(); }, []);
+
+  const loadCompanyChoices = async () => {
+    const res = await base44.functions.invoke('airtableEmployees', { action: 'companies' });
+    setCompanyChoices((res.data?.companies || []).map(company => ({ name: company.name })));
+  };
+
+  useEffect(() => {
+    loadSchema();
+    loadCompanyChoices();
+  }, []);
 
   const handleRenameColumn = async (oldName, newName) => {
     await base44.functions.invoke('airtableEmployees', {
       action: 'renameField', fieldName: oldName, newName,
     });
-    await loadSchema();
+    await Promise.all([loadSchema(), loadCompanyChoices()]);
     const currentOffset = offsetStack[pageIdx];
     await loadPage(currentOffset, search);
   };
@@ -94,7 +104,7 @@ export default function AirtableEmployees() {
       [res.data?.field?.name || name]: { type },
     }));
     setShowAddColumn(false);
-    await loadSchema();
+    await Promise.all([loadSchema(), loadCompanyChoices()]);
     const currentOffset = offsetStack[pageIdx];
     await loadPage(currentOffset, search);
   };
@@ -130,7 +140,7 @@ export default function AirtableEmployees() {
   const handleRefresh = async () => {
     setOffsetStack([null]);
     setPageIdx(0);
-    await loadSchema();
+    await Promise.all([loadSchema(), loadCompanyChoices()]);
     await loadPage(null, search);
   };
 
@@ -148,7 +158,7 @@ export default function AirtableEmployees() {
 
     setShowForm(false);
     setEditing(null);
-    await loadSchema();
+    await Promise.all([loadSchema(), loadCompanyChoices()]);
   };
 
   const handleDelete = async (recordId) => {
@@ -342,6 +352,7 @@ export default function AirtableEmployees() {
           allColumns={columns}
           readOnlyFields={READ_ONLY_FIELDS}
           fieldsMeta={fieldsMeta}
+          companyChoices={companyChoices}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
         />
