@@ -1,0 +1,56 @@
+export const cleanText = (value) => String(value || '').trim();
+
+export const normalizeEmployeeName = (value) => cleanText(value)
+  .toLowerCase()
+  .replace(/[^a-z\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+export const parseMoney = (value) => {
+  const number = Number(cleanText(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(number) ? number : 0;
+};
+
+export const getAirtableEmployeeFields = (employee) => employee?.fields || employee?.data?.fields || {};
+
+export const getAirtableEmployeeName = (employee) => {
+  const fields = getAirtableEmployeeFields(employee);
+  return cleanText(
+    employee?.full_name ||
+    fields['Full Name'] ||
+    [fields['First Name'], fields['Middle Name'], fields['Last Name']].filter(Boolean).join(' ')
+  );
+};
+
+export const getAirtableEmployeeCode = (employee) => {
+  const fields = getAirtableEmployeeFields(employee);
+  return cleanText(employee?.employee_code || fields['Employee Code ID'] || fields['Employee Code']);
+};
+
+export const getAirtableBiometricNumber = (employee) => {
+  const fields = getAirtableEmployeeFields(employee);
+  return cleanText(fields['Biometrics Number']);
+};
+
+export const getAirtableEmployeeStatus = (employee) => {
+  const fields = getAirtableEmployeeFields(employee);
+  return cleanText(fields.Status || employee?.status).toLowerCase();
+};
+
+export const isActiveAirtableEmployee = (employee) => getAirtableEmployeeStatus(employee) === 'active';
+
+export const buildAirtableEmployeeLookup = (employees = []) => {
+  const map = {};
+  for (const employee of employees) {
+    const keys = [
+      employee.id,
+      employee.airtable_record_id,
+      getAirtableEmployeeCode(employee),
+      getAirtableBiometricNumber(employee),
+      normalizeEmployeeName(getAirtableEmployeeName(employee)),
+    ].filter(Boolean);
+
+    for (const key of keys) map[String(key).trim()] = employee;
+  }
+  return map;
+};

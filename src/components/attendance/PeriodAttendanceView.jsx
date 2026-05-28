@@ -5,6 +5,14 @@ import { Search, Download, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import * as XLSX from 'xlsx';
+import {
+  buildAirtableEmployeeLookup,
+  getAirtableBiometricNumber,
+  getAirtableEmployeeCode,
+  getAirtableEmployeeName,
+  isActiveAirtableEmployee,
+  normalizeEmployeeName,
+} from '@/utils/airtableEmployee';
 
 /**
  * PeriodAttendanceView
@@ -14,7 +22,9 @@ import * as XLSX from 'xlsx';
 export default function PeriodAttendanceView({ startDate, endDate, periodLabel }) {
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [paySummaries, setPaySummaries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [computingPay, setComputingPay] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -22,19 +32,21 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     const load = async () => {
       setLoading(true);
       // Fetch all logs in the date range. Filter API supports $gte/$lte.
-      const [logsData, empsData, hiddenUploads] = await Promise.all([
+      const [logsData, empsData, hiddenUploads, summariesData] = await Promise.all([
         base44.entities.AttendanceLog.filter(
           { date: { $gte: startDate, $lte: endDate } },
           'date',
           5000
         ),
-        base44.entities.Employee.list('last_name', 2000),
+        base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
         base44.entities.AttendanceUpload.list('-created_date', 200),
+        base44.entities.AttendancePaySummary.filter({ period_start: startDate, period_end: endDate }, '-updated_date', 5000),
       ]);
       if (cancelled) return;
       const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
       setLogs(logsData.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id)));
-      setEmployees(empsData);
+      setEmployees(empsData.filter(isActiveAirtableEmployee));
+      setPaySummaries(summariesData);
       setLoading(false);
     };
     load();
@@ -46,15 +58,12 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     [startDate, endDate]
   );
 
-  const empMap = useMemo(() => {
-    const m = {};
-    for (const e of employees) {
-      if (e.id) m[e.id] = e;
-      if (e.employee_id) m[e.employee_id] = e;
-      if (e.biometric_id) m[e.biometric_id] = e;
-    }
-    return m;
-  }, [employees]);
+  const empMap = useMemo(() => buildAirtableEmployeeLookup(employees), [employees]);
+
+  const paySummaryMap = useMemo(
+    () => paySummaries.reduce((map, item) => ({ ...map, [item.employee_id]: item }), {}),
+    [paySummaries]
+  );
 
   // Group logs by canonical employee key (Employee.id when resolvable),
   // so old logs stored under Person Code and new logs stored under Employee.id
@@ -64,7 +73,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     for (const log of logs) {
       const rawKey = log.employee_id || log.biometric_id;
       if (!rawKey) continue;
-      const emp = empMap[rawKey];
+      const emp = empMap[rawKey] || empMap[log.biometric_id] || empMap[normalizeEmployeeName(log.employee_name)];
       const key = emp?.id || rawKey;
       if (!byEmp[key]) byEmp[key] = {};
       byEmp[key][log.date] = log;
@@ -75,12 +84,11 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   // Build display rows: start with all active employees, then include any unmatched imported logs.
   const rows = useMemo(() => {
     const items = employees
-      .filter(emp => emp.status !== 'inactive' && emp.status !== 'terminated')
       .map(emp => ({
         key: emp.id,
         emp,
-        name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_id || emp.id,
-        logs: grid[emp.id] || grid[emp.employee_id] || grid[emp.biometric_id] || {},
+        name: getAirtableEmployeeName(emp) || getAirtableEmployeeCode(emp) || emp.id,
+        logs: grid[emp.id] || grid[emp.airtable_record_id] || grid[getAirtableEmployeeCode(emp)] || grid[getAirtableBiometricNumber(emp)] || {},
       }));
 
     const existingKeys = new Set(items.map(item => item.key));
@@ -88,7 +96,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
       if (existingKeys.has(key)) continue;
       const emp = empMap[key];
       const name = emp
-        ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
+        ? getAirtableEmployeeName(emp)
         : (Object.values(grid[key])[0]?.employee_name || key);
       items.push({ key, emp, name, logs: grid[key] });
     }
@@ -98,8 +106,8 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     if (!q) return items;
     return items.filter(r =>
       r.name.toLowerCase().includes(q) ||
-      (r.emp?.employee_id || '').toLowerCase().includes(q) ||
-      (r.emp?.biometric_id || '').toLowerCase().includes(q) ||
+      getAirtableEmployeeCode(r.emp).toLowerCase().includes(q) ||
+      getAirtableBiometricNumber(r.emp).toLowerCase().includes(q) ||
       (r.key || '').toLowerCase().includes(q)
     );
   }, [employees, grid, empMap, search]);
@@ -135,6 +143,10 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   // Reset to first page whenever search changes
   useEffect(() => { setPage(1); }, [search]);
 
+  useEffect(() => {
+    if (!loading && logs.some(log => Number(log.total_hours) > 0)) computePaySummaries();
+  }, [loading, logs.length, startDate, endDate]);
+
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = useMemo(
     () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
@@ -152,6 +164,22 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     ]);
     const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
     setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
+  };
+
+  const refreshPaySummaries = async () => {
+    const summariesData = await base44.entities.AttendancePaySummary.filter({ period_start: startDate, period_end: endDate }, '-updated_date', 5000);
+    setPaySummaries(summariesData);
+  };
+
+  const computePaySummaries = async () => {
+    setComputingPay(true);
+    await base44.functions.invoke('computeAttendancePaySummaries', {
+      period_start: startDate,
+      period_end: endDate,
+      period_label: periodLabel,
+    });
+    await refreshPaySummaries();
+    setComputingPay(false);
   };
 
   const savePunch = async ({ timeIn, timeOut }) => {
@@ -174,7 +202,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     } else {
       await base44.entities.AttendanceLog.create({
         employee_id: row.emp?.id || row.key,
-        biometric_id: row.emp?.biometric_id || row.key,
+        biometric_id: getAirtableBiometricNumber(row.emp) || row.key,
         employee_name: row.name,
         date: dateStr,
         time_in: timeInISO,
@@ -187,6 +215,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     }
     setEditCell(null);
     await reloadLogs();
+    await computePaySummaries();
   };
 
   const summarize = (empLogs) => {
@@ -257,6 +286,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         </div>
         <div className="text-sm text-muted-foreground">
           <strong className="text-foreground">{periodLabel}</strong> · {days.length} days · {rows.length} employees
+          {computingPay && <span className="ml-2 text-primary">computing pay…</span>}
         </div>
         <div className="ml-auto">
           <Button variant="outline" size="sm" onClick={exportToExcel} disabled={loading || rows.length === 0}>
@@ -294,23 +324,30 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                 <th className="py-2 px-3 font-medium text-center text-muted-foreground border-b border-border min-w-[60px]">
                   Late
                 </th>
+                <th className="py-2 px-3 font-medium text-right text-muted-foreground border-b border-border min-w-[90px]">
+                  Gross
+                </th>
+                <th className="py-2 px-3 font-medium text-right text-muted-foreground border-b border-border min-w-[110px]">
+                  Lates Deduction
+                </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={days.length + 5} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={days.length + 7} className="text-center py-12 text-muted-foreground">
                     Loading attendance records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={days.length + 5} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={days.length + 7} className="text-center py-12 text-muted-foreground">
                     No attendance records found for this period.
                   </td>
                 </tr>
               ) : pagedRows.map(r => {
                 const s = summarize(r.logs);
+                const pay = paySummaryMap[r.key];
                 return (
                   <tr key={r.key} className="border-b border-border/50 hover:bg-muted/20">
                     <td className="sticky left-0 z-10 bg-card hover:bg-muted/20 py-2 px-3 border-r border-border">
@@ -344,6 +381,12 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                     </td>
                     <td className="py-1.5 px-3 text-center text-orange-600 text-xs">
                       {s.late > 0 ? `${s.late}m` : '—'}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono text-xs font-semibold">
+                      ₱{Number(pay?.gross || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono text-xs text-red-600">
+                      ₱{Number(pay?.lates_deduction || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 );

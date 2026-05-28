@@ -1,0 +1,58 @@
+{
+  "name": "AttendancePaySummary",
+  "type": "object",
+  "properties": {
+    "period_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_label": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "airtable_record_id": {
+      "type": "string"
+    },
+    "employee_code": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "hours": {
+      "type": "number",
+      "default": 0
+    },
+    "overtime_hours": {
+      "type": "number",
+      "default": 0
+    },
+    "late_minutes": {
+      "type": "number",
+      "default": 0
+    },
+    "gross": {
+      "type": "number",
+      "default": 0
+    },
+    "lates_deduction": {
+      "type": "number",
+      "default": 0
+    },
+    "computed_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "period_start",
+    "period_end",
+    "employee_id"
+  ]
+}

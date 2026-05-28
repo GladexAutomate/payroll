@@ -126,16 +126,14 @@ Deno.serve(async (req) => {
     if (!runs.length) return Response.json({ error: 'Payroll run not found' }, { status: 404 });
     const run = runs[0];
 
-    const [allEmployees, hiddenUploads, allLogs, existingRecords] = await Promise.all([
+    const [allEmployees, paySummaries, existingRecords] = await Promise.all([
       withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000)),
-      withRetry(() => base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200)),
-      withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ date: { $gte: run.period_start, $lte: run.period_end } }, 'date', 5000)),
+      withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-updated_date', 5000)),
       withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000)),
     ]);
 
     const employees = allEmployees.filter(isActiveEmployee);
-    const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
-    const logs = allLogs.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id));
+    const summaryByEmployeeId = paySummaries.reduce((map, summary) => ({ ...map, [summary.employee_id]: summary }), {});
     const existingByEmployeeId = existingRecords.reduce((map, record) => ({ ...map, [record.employee_id]: record }), {});
     const recordsToCreate = [];
     const recordsToUpdate = [];
@@ -149,40 +147,17 @@ Deno.serve(async (req) => {
       const employeeCode = getEmployeeCode(emp);
       const monthlySalary = parseMoney(fields['Monthly Salary']);
       const hourlyRate = monthlySalary > 0 ? monthlySalary / 26 / 8 : 0;
-      const allowances = parseMoney(fields.Allowances || fields['Allowance']);
-      const employeeKeys = new Set(buildEmployeeKeys(emp));
-
-      const periodLogs = logs.filter(log =>
-        employeeKeys.has(cleanText(log.employee_id)) ||
-        employeeKeys.has(cleanText(log.biometric_id)) ||
-        employeeKeys.has(normalizeName(log.employee_name))
-      );
-
-      let daysWorked = 0;
-      let daysAbsent = 0;
-      let totalHours = 0;
-      let regularHours = 0;
-      let overtimeHours = 0;
-      let totalLateMin = 0;
-      let totalUndertimeMin = 0;
-
-      for (const log of periodLogs) {
-        const workedHours = Number(log.total_hours) || 0;
-        if (log.time_in && log.time_out && workedHours > 0) {
-          daysWorked += 1;
-          totalHours += workedHours;
-          regularHours += Math.min(workedHours, 8);
-          overtimeHours += Math.max(workedHours - 8, 0);
-        } else if (log.status === 'absent') {
-          daysAbsent += 1;
-        }
-        totalLateMin += Number(log.late_minutes) || 0;
-        totalUndertimeMin += Number(log.undertime_minutes) || 0;
-      }
-
-      const regularPay = regularHours * hourlyRate;
+      const summary = summaryByEmployeeId[emp.id] || {};
+      const totalHours = Number(summary.hours) || 0;
+      const overtimeHours = Number(summary.overtime_hours) || 0;
+      const totalLateMin = Number(summary.late_minutes) || 0;
+      const totalUndertimeMin = 0;
+      const daysWorked = totalHours > 0 ? Math.ceil(totalHours / 8) : 0;
+      const daysAbsent = 0;
+      const grossPay = Number(summary.gross) || 0;
+      const lateDeduction = Number(summary.lates_deduction) || 0;
       const overtimePay = overtimeHours * hourlyRate * 1.25;
-      const grossPay = regularPay + overtimePay + allowances;
+      const regularPay = Math.max(grossPay - overtimePay, 0);
       const sss = getSSSContribution(monthlySalary);
       const ph = getPhilHealthContribution(monthlySalary);
       const pi = getPagIBIGContribution(monthlySalary);
@@ -194,7 +169,7 @@ Deno.serve(async (req) => {
       const piER = pi.employer / 2;
       const annualTaxable = (monthlySalary * 12) - (sss.employee * 12) - (ph.employee * 12) - (pi.employee * 12);
       const periodTax = computeWithholdingTax(annualTaxable) / 24;
-      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax;
+      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction;
       const netPay = grossPay - totalDeductionsForEmp;
 
       const payrollRecord = {
@@ -222,7 +197,7 @@ Deno.serve(async (req) => {
         pagibig_employee: money(piEE),
         pagibig_employer: money(piER),
         withholding_tax: money(periodTax),
-        late_deduction: 0,
+        late_deduction: money(lateDeduction),
         absent_deduction: 0,
         other_deductions: 0,
         total_deductions: money(totalDeductionsForEmp),
@@ -258,7 +233,7 @@ Deno.serve(async (req) => {
       employee_count: employees.length,
       total_gross: money(totalGross),
       total_net: money(totalNet),
-      message: `Payroll computed from Airtable employees for ${employees.length} employees.`,
+      message: `Payroll computed from saved attendance pay summaries for ${employees.length} employees.`,
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
