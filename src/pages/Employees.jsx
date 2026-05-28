@@ -199,21 +199,20 @@ export default function Employees() {
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee No.</th>
-                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {[...Array(5)].map((_, j) => (
+                    {[...Array(4)].map((_, j) => (
                       <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={4} className="text-center py-12 text-muted-foreground">
                     No employees found.
                   </td>
                 </tr>
@@ -249,40 +248,6 @@ export default function Employees() {
                     )}
                   </td>
                   <td className="py-3.5 px-4 font-medium text-muted-foreground">{emp.employee_id || '—'}</td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => { setEditingEmployee(emp); setShowForm(true); }}
-                        className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Terminate Employee</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Mark {emp.first_name} {emp.last_name} as terminated? This won't delete their records.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground"
-                              onClick={() => handleDelete(emp.id)}
-                            >
-                              Terminate
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </td>
                 </tr>
               ))}
             </tbody>
