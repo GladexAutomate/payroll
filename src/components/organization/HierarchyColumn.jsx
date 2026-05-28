@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-export default function HierarchyColumn({ title, subtitle, items, selectedId, onSelect, onCreate, disabled }) {
+export default function HierarchyColumn({ title, subtitle, items, selectedId, onSelect, onCreate, disabled, readOnly = false }) {
   const [name, setName] = useState('');
 
   const handleCreate = async () => {
@@ -20,18 +20,20 @@ export default function HierarchyColumn({ title, subtitle, items, selectedId, on
         <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
       </div>
 
-      <div className="flex gap-2">
-        <Input
-          value={name}
-          disabled={disabled}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          placeholder={`Add ${title.toLowerCase()}`}
-        />
-        <Button size="icon" disabled={disabled || !name.trim()} onClick={handleCreate}>
-          <Plus className="w-4 h-4" />
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex gap-2">
+          <Input
+            value={name}
+            disabled={disabled}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            placeholder={`Add ${title.toLowerCase()}`}
+          />
+          <Button size="icon" disabled={disabled || !name.trim()} onClick={handleCreate}>
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
 
       <div className="space-y-2 max-h-72 overflow-auto pr-1">
         {items.length === 0 ? (

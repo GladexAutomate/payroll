@@ -21,6 +21,32 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action } = body;
 
+    const getTableSchema = async () => {
+      const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`, { headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Schema fetch failed');
+      const table = (data.tables || []).find(t => t.id === TABLE_ID);
+      if (!table) throw new Error('Table not found in schema');
+      return table;
+    };
+
+    const normalizeField = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const pickField = (fields, candidates) => {
+      const names = fields.map(field => field.name);
+      return names.find(name => candidates.map(normalizeField).includes(normalizeField(name))) || null;
+    };
+
+    const getOrgFields = async () => {
+      const table = await getTableSchema();
+      const fields = table.fields || [];
+      return {
+        company: pickField(fields, ['Company', 'COMPANY']),
+        branch: pickField(fields, ['Branch', 'BRANCH']),
+        department: pickField(fields, ['Department', 'DEPARTMENT']),
+        role: pickField(fields, ['Department Role', 'DEPARTMENT ROLE']),
+      };
+    };
+
     // ── SCHEMA: fetch field metadata to detect computed/read-only fields ──────
     if (action === 'schema') {
       const res = await fetch(
@@ -133,14 +159,16 @@ Deno.serve(async (req) => {
       return Response.json({ departments });
     }
 
-    // ── BRANCHES: unique Branch values from Airtable employee records ───────
-    if (action === 'branches') {
+    // ── COMPANIES: unique Company values from Airtable employee records ─────
+    if (action === 'companies') {
       const counts = new Map();
+      const orgFields = await getOrgFields();
+      if (!orgFields.company) return Response.json({ error: 'Company column was not found in Airtable.' }, { status: 404 });
       let offset = null;
 
       do {
         const params = new URLSearchParams({ pageSize: '100' });
-        params.append('fields[]', 'Branch');
+        params.append('fields[]', orgFields.company);
         if (offset) params.set('offset', offset);
 
         const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
@@ -148,7 +176,166 @@ Deno.serve(async (req) => {
         if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
 
         for (const record of (data.records || [])) {
-          const value = record.fields?.Branch;
+          const value = record.fields?.[orgFields.company];
+          const names = Array.isArray(value) ? value : [value];
+          for (const rawName of names) {
+            const name = String(rawName || '').trim();
+            if (!name) continue;
+            counts.set(name, (counts.get(name) || 0) + 1);
+          }
+        }
+        offset = data.offset || null;
+      } while (offset);
+
+      const companies = Array.from(counts.entries())
+        .map(([name, employee_count]) => ({
+          id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          name,
+          employee_count,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return Response.json({ companies });
+    }
+
+    // ── ORGANIZATION: hierarchy from Company, Branch, Department, Role ───────
+    if (action === 'organizationHierarchy') {
+      const companies = new Map();
+      const branches = new Map();
+      const departments = new Map();
+      const departmentRoles = new Map();
+      const orgFields = await getOrgFields();
+      if (!orgFields.company || !orgFields.branch || !orgFields.department || !orgFields.role) {
+        return Response.json({ error: 'One or more Airtable columns were not found: Company, Branch, Department, Department Role.' }, { status: 404 });
+      }
+      let offset = null;
+
+      const slug = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+      do {
+        const params = new URLSearchParams({ pageSize: '100' });
+        params.append('fields[]', orgFields.company);
+        params.append('fields[]', orgFields.branch);
+        params.append('fields[]', orgFields.department);
+        params.append('fields[]', orgFields.role);
+        if (offset) params.set('offset', offset);
+
+        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+
+        for (const record of (data.records || [])) {
+          const companyName = String(record.fields?.[orgFields.company] || '').trim();
+          const branchName = String(record.fields?.[orgFields.branch] || '').trim();
+          const departmentName = String(record.fields?.[orgFields.department] || '').trim();
+          const roleName = String(record.fields?.[orgFields.role] || '').trim();
+
+          if (companyName) {
+            const companyId = slug(companyName);
+            companies.set(companyId, { id: companyId, name: companyName, employee_count: (companies.get(companyId)?.employee_count || 0) + 1 });
+          }
+          if (branchName) {
+            const branchId = slug(`${companyName || 'unassigned'}-${branchName}`);
+            branches.set(branchId, {
+              id: branchId,
+              name: branchName,
+              company_id: companyName ? slug(companyName) : '',
+              company_name: companyName,
+              employee_count: (branches.get(branchId)?.employee_count || 0) + 1,
+            });
+          }
+          if (departmentName) {
+            const departmentId = slug(`${companyName || 'unassigned'}-${branchName || 'unassigned'}-${departmentName}`);
+            departments.set(departmentId, {
+              id: departmentId,
+              name: departmentName,
+              company_id: companyName ? slug(companyName) : '',
+              branch_id: branchName ? slug(`${companyName || 'unassigned'}-${branchName}`) : '',
+              branch_name: branchName,
+              employee_count: (departments.get(departmentId)?.employee_count || 0) + 1,
+            });
+          }
+          if (roleName) {
+            const roleId = slug(`${companyName || 'unassigned'}-${branchName || 'unassigned'}-${departmentName || 'unassigned'}-${roleName}`);
+            departmentRoles.set(roleId, {
+              id: roleId,
+              name: roleName,
+              company_id: companyName ? slug(companyName) : '',
+              branch_id: branchName ? slug(`${companyName || 'unassigned'}-${branchName}`) : '',
+              department_id: departmentName ? slug(`${companyName || 'unassigned'}-${branchName || 'unassigned'}-${departmentName}`) : '',
+              department_name: departmentName,
+              employee_count: (departmentRoles.get(roleId)?.employee_count || 0) + 1,
+            });
+          }
+        }
+        offset = data.offset || null;
+      } while (offset);
+
+      return Response.json({
+        companies: Array.from(companies.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        branches: Array.from(branches.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        departments: Array.from(departments.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        departmentRoles: Array.from(departmentRoles.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      });
+    }
+
+    // ── UPDATE COMPANY FOR BRANCH: sync mapped company to Airtable rows ───────
+    if (action === 'updateCompanyForBranch') {
+      const { branchName, companyName } = body;
+      const cleanBranch = String(branchName || '').trim();
+      const cleanCompany = String(companyName || '').trim();
+      if (!cleanBranch || !cleanCompany) return Response.json({ error: 'branchName and companyName are required' }, { status: 400 });
+
+      const orgFields = await getOrgFields();
+      if (!orgFields.company || !orgFields.branch) return Response.json({ error: 'Company or Branch column was not found in Airtable.' }, { status: 404 });
+      const recordsToUpdate = [];
+      let offset = null;
+      do {
+        const params = new URLSearchParams({ pageSize: '100' });
+        params.append('fields[]', orgFields.branch);
+        params.append('fields[]', orgFields.company);
+        params.set('filterByFormula', `{${orgFields.branch}} = "${cleanBranch.replace(/"/g, '\\"')}"`);
+        if (offset) params.set('offset', offset);
+
+        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+        recordsToUpdate.push(...(data.records || []).filter(record => record.fields?.[orgFields.company] !== cleanCompany));
+        offset = data.offset || null;
+      } while (offset);
+
+      for (let i = 0; i < recordsToUpdate.length; i += 10) {
+        const batch = recordsToUpdate.slice(i, i + 10).map(record => ({ id: record.id, fields: { [orgFields.company]: cleanCompany } }));
+        const res = await fetch(AIRTABLE_URL, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ records: batch, typecast: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable update failed', details: data }, { status: res.status });
+      }
+
+      return Response.json({ updated: recordsToUpdate.length });
+    }
+
+    // ── BRANCHES: unique Branch values from Airtable employee records ───────
+    if (action === 'branches') {
+      const counts = new Map();
+      const orgFields = await getOrgFields();
+      if (!orgFields.branch) return Response.json({ error: 'Branch column was not found in Airtable.' }, { status: 404 });
+      let offset = null;
+
+      do {
+        const params = new URLSearchParams({ pageSize: '100' });
+        params.append('fields[]', orgFields.branch);
+        if (offset) params.set('offset', offset);
+
+        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
+        const data = await res.json();
+        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
+
+        for (const record of (data.records || [])) {
+          const value = record.fields?.[orgFields.branch];
           const names = Array.isArray(value) ? value : [value];
           for (const rawName of names) {
             const name = String(rawName || '').trim();
