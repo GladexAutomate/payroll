@@ -1,117 +1,73 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 
-export default function SubDepartments() {
-  const [subDepartments, setSubDepartments] = useState([]);
+export default function DepartmentRoles() {
+  const [departmentRoles, setDepartmentRoles] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [name, setName] = useState('');
-  const [editingSubDepartment, setEditingSubDepartment] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [selectedSubDepartment, setSelectedSubDepartment] = useState(null);
+  const [selectedDepartmentRole, setSelectedDepartmentRole] = useState(null);
   const [selectedTeams, setSelectedTeams] = useState([]);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    const [subDepartmentData, teamData] = await Promise.all([
-      base44.entities.SubDepartment.list('name'),
+    const [roleRes, teamData] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'departmentRoles' }),
       base44.entities.Team.list('name'),
     ]);
-    setSubDepartments(subDepartmentData);
+    setDepartmentRoles(roleRes.data?.departmentRoles || []);
     setTeams(teamData);
   };
 
-  const createSubDepartment = async (e) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    await base44.entities.SubDepartment.create({ name: name.trim(), status: 'active' });
-    setName('');
-    loadData();
-  };
-
-  const updateSubDepartment = async (e) => {
-    e.preventDefault();
-    if (!editingSubDepartment || !editName.trim()) return;
-    await base44.entities.SubDepartment.update(editingSubDepartment.id, { name: editName.trim() });
-    setEditingSubDepartment(null);
-    setEditName('');
-    loadData();
-  };
-
-  const openMapping = (subDepartment) => {
-    setSelectedSubDepartment(subDepartment);
-    setSelectedTeams(teams.filter(team => team.sub_department_id === subDepartment.id).map(team => team.id));
+  const openMapping = (departmentRole) => {
+    setSelectedDepartmentRole(departmentRole);
+    setSelectedTeams(teams.filter(team => team.sub_department_id === departmentRole.id).map(team => team.id));
   };
 
   const saveMapping = async () => {
     for (const team of teams) {
-      if (selectedTeams.includes(team.id) && team.sub_department_id !== selectedSubDepartment.id) {
+      if (selectedTeams.includes(team.id) && team.sub_department_id !== selectedDepartmentRole.id) {
         await base44.entities.Team.update(team.id, {
-          sub_department_id: selectedSubDepartment.id,
-          department_id: selectedSubDepartment.department_id || team.department_id || '',
-          branch_id: selectedSubDepartment.branch_id || team.branch_id || '',
-          company_id: selectedSubDepartment.company_id || team.company_id || '',
+          sub_department_id: selectedDepartmentRole.id,
+          department_name: selectedDepartmentRole.name,
         });
       }
     }
-    setSelectedSubDepartment(null);
+    setSelectedDepartmentRole(null);
     loadData();
   };
 
   return (
     <div className="space-y-5 max-w-6xl">
       <div className="bg-card border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-lg">Sub Departments</h2>
-        <p className="text-sm text-muted-foreground mt-1">Create sub departments and choose which teams are under each one.</p>
+        <h2 className="font-semibold text-lg">Department Roles</h2>
+        <p className="text-sm text-muted-foreground mt-1">Department roles are pulled from Airtable’s Department Role column.</p>
       </div>
 
-      <form onSubmit={createSubDepartment} className="bg-card border border-border rounded-xl p-4 flex gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Sub department name" />
-        <Button type="submit">Create Sub Department</Button>
-      </form>
-
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {subDepartments.map(subDepartment => (
+        {departmentRoles.map(departmentRole => (
           <SetupCard
-            key={subDepartment.id}
-            title={subDepartment.name}
-            count={teams.filter(team => team.sub_department_id === subDepartment.id).length}
-            onManage={() => openMapping(subDepartment)}
-          >
-            <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingSubDepartment(subDepartment); setEditName(subDepartment.name); }}>
-              Edit Sub Department
-            </Button>
-          </SetupCard>
+            key={departmentRole.id}
+            title={departmentRole.name}
+            subtitle={`${departmentRole.employee_count || 0} employees in Airtable`}
+            count={teams.filter(team => team.sub_department_id === departmentRole.id).length}
+            onManage={() => openMapping(departmentRole)}
+          />
         ))}
       </div>
 
-      {editingSubDepartment && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <form onSubmit={updateSubDepartment} className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
-            <h3 className="font-semibold">Edit Sub Department</h3>
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Sub department name" />
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setEditingSubDepartment(null)}>Cancel</Button>
-              <Button type="submit">Save</Button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {selectedSubDepartment && (
+      {selectedDepartmentRole && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4">
             <div>
-              <h3 className="font-semibold">Map Teams to {selectedSubDepartment.name}</h3>
-              <p className="text-sm text-muted-foreground">Select existing teams under this sub department.</p>
+              <h3 className="font-semibold">Map Teams to {selectedDepartmentRole.name}</h3>
+              <p className="text-sm text-muted-foreground">Select existing teams under this department role.</p>
             </div>
             <MultiSelectList items={teams} selectedIds={selectedTeams} onToggle={(id) => setSelectedTeams(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id])} />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSelectedSubDepartment(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setSelectedDepartmentRole(null)}>Cancel</Button>
               <Button onClick={saveMapping}>Save Mapping</Button>
             </div>
           </div>

@@ -14,7 +14,7 @@ const navItems = [
   { label: 'Companies', icon: Building2, path: '/companies' },
   { label: 'Branches', icon: Building2, path: '/branches' },
   { label: 'Departments', icon: Building2, path: '/departments' },
-  { label: 'Sub Departments', icon: Building2, path: '/sub-departments' },
+  { label: 'Department Roles', icon: Building2, path: '/department-roles' },
   { label: 'Teams', icon: Users, path: '/teams' },
   { label: 'Attendance', icon: Clock, path: '/attendance' },
   { label: 'Upload Attendance', icon: Upload, path: '/attendance-upload' },

@@ -28,7 +28,7 @@ import ScheduleRequests from './pages/ScheduleRequests';
 import OrganizationSetup from './pages/OrganizationSetup';
 import Companies from './pages/Companies';
 import Branches from './pages/Branches';
-import SubDepartments from './pages/SubDepartments';
+import DepartmentRoles from './pages/SubDepartments';
 import Teams from './pages/Teams';
 
 const AuthenticatedApp = () => {
@@ -64,7 +64,7 @@ const AuthenticatedApp = () => {
         <Route path="/companies" element={<Companies />} />
         <Route path="/branches" element={<Branches />} />
         <Route path="/departments" element={<Departments />} />
-        <Route path="/sub-departments" element={<SubDepartments />} />
+        <Route path="/department-roles" element={<DepartmentRoles />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />

@@ -11,7 +11,7 @@ const pageTitles = {
   '/companies': 'Companies',
   '/branches': 'Branches',
   '/departments': 'Departments',
-  '/sub-departments': 'Sub Departments',
+  '/department-roles': 'Department Roles',
   '/teams': 'Teams',
   '/attendance': 'Attendance',
   '/attendance-upload': 'Upload Attendance',
