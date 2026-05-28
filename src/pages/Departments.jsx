@@ -104,6 +104,8 @@ export default function Departments() {
               <div className="min-w-0">
                 <p className="font-semibold truncate">{dept.name}</p>
                 {dept.code && <p className="text-xs text-muted-foreground">{dept.code}</p>}
+                <p className="text-xs text-muted-foreground truncate mt-1">Company: {dept.company_name || 'Unassigned'}</p>
+                <p className="text-xs text-muted-foreground truncate">Branch: {dept.branch_name || 'Unassigned'}</p>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">

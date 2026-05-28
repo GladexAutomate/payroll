@@ -51,7 +51,7 @@ export default function DepartmentRoles() {
           <SetupCard
             key={departmentRole.id}
             title={departmentRole.name}
-            subtitle={`${departmentRole.employee_count || 0} employees in Airtable`}
+            subtitle={`${departmentRole.employee_count || 0} employees in Airtable · ${departmentRole.company_name || 'Unassigned company'} / ${departmentRole.branch_name || 'Unassigned branch'} / ${departmentRole.department_name || 'Unassigned department'}`}
             count={teams.filter(team => team.sub_department_id === departmentRole.id).length}
             onManage={() => openMapping(departmentRole)}
           />
