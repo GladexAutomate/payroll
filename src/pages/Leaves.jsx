@@ -19,7 +19,7 @@ export default function Leaves() {
     setLoading(true);
     const [reqs, emps] = await Promise.all([
       base44.entities.LeaveRequest.list('-created_date', 100),
-      base44.entities.Employee.filter({ status: 'active' })
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000)
     ]);
     setRequests(reqs);
     setEmployees(emps);
@@ -82,7 +82,7 @@ export default function Leaves() {
                 const emp = empMap[req.employee_id];
                 return (
                   <tr key={req.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="py-3.5 px-4 font-medium">{emp ? `${emp.first_name} ${emp.last_name}` : req.employee_id}</td>
+                    <td className="py-3.5 px-4 font-medium">{emp ? (emp.full_name || emp.fields?.['Full Name'] || req.employee_id) : req.employee_id}</td>
                     <td className="py-3.5 px-4 capitalize text-muted-foreground">{req.leave_type?.replace('_', ' ')}</td>
                     <td className="py-3.5 px-4">{req.date_from}</td>
                     <td className="py-3.5 px-4">{req.date_to}</td>
@@ -142,7 +142,7 @@ function LeaveForm({ employees, onClose, onSaved }) {
             <label className="text-xs font-medium text-muted-foreground">Employee*</label>
             <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
               <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              {employees.map(e => <option key={e.id} value={e.id}>{e.full_name || e.fields?.['Full Name'] || e.employee_code}</option>)}
             </select>
           </div>
           <div>
