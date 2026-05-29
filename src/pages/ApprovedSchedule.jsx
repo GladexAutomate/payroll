@@ -59,6 +59,7 @@ export default function ApprovedSchedule() {
 
   const employees = useMemo(() => records.map(record => ({
     id: record.id,
+    backend_id: record.backend_id,
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
     department: record.fields?.Department || record.fields?.['Department Role'] || '',
