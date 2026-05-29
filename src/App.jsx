@@ -26,6 +26,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import ScheduleProposal from './pages/ScheduleProposal';
 import ScheduleRequests from './pages/ScheduleRequests';
+import ApprovedSchedule from './pages/ApprovedSchedule';
 import OrganizationSetup from './pages/OrganizationSetup';
 import Companies from './pages/Companies';
 import Branches from './pages/Branches';
@@ -75,6 +76,7 @@ const AuthenticatedApp = () => {
         <Route path="/shifts" element={<Shifts />} />
         <Route path="/schedule-proposal" element={<ScheduleProposal />} />
         <Route path="/schedule-requests" element={<ScheduleRequests />} />
+        <Route path="/approved-schedule" element={<ApprovedSchedule />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/payroll" element={<Payroll />} />

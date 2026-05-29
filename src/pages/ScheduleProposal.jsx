@@ -8,7 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
+import ScheduleLegend from '@/components/schedule/ScheduleLegend';
+import LeaveNotices from '@/components/schedule/LeaveNotices';
 import { buildScheduleSummary, getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
+import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 
 export default function ScheduleProposal() {
   const defaultStart = format(new Date(), 'yyyy-MM-dd');
@@ -20,6 +23,9 @@ export default function ScheduleProposal() {
   const [records, setRecords] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [assignments, setAssignments] = useState({});
+  const [shiftTemplates, setShiftTemplates] = useState([]);
+  const [leaves, setLeaves] = useState([]);
+  const [localEmployees, setLocalEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -27,8 +33,16 @@ export default function ScheduleProposal() {
 
   const loadEmployees = async () => {
     setLoading(true);
-    const res = await base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 });
+    const [res, shifts, leaveReqs, locals] = await Promise.all([
+      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
+      base44.entities.ShiftTemplate.list(),
+      base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
+      base44.entities.Employee.list('-created_date', 2000),
+    ]);
     setRecords(res.data.records || []);
+    setShiftTemplates(shifts || []);
+    setLeaves(leaveReqs || []);
+    setLocalEmployees(locals || []);
     setLoading(false);
   };
 
@@ -41,7 +55,21 @@ export default function ScheduleProposal() {
   })), [records]);
 
   const selectedEmployees = useMemo(() => employees.filter(emp => selectedIds.includes(emp.id)), [employees, selectedIds]);
-  const summary = useMemo(() => buildScheduleSummary({ employees: selectedEmployees, assignments, periodStart: form.period_start, periodEnd: form.period_end }), [selectedEmployees, assignments, form.period_start, form.period_end]);
+
+  const { overlay: leaveOverlay, notices: leaveNotices } = useMemo(() => buildLeaveOverlay({
+    employees: selectedEmployees, leaves, localEmployees, periodStart: form.period_start, periodEnd: form.period_end,
+  }), [selectedEmployees, leaves, localEmployees, form.period_start, form.period_end]);
+
+  // Merge auto leave overlay under manual assignments so leaves count in the summary/analytics
+  const effectiveAssignments = useMemo(() => {
+    const merged = {};
+    selectedEmployees.forEach(emp => {
+      merged[emp.id] = { ...(leaveOverlay[emp.id] || {}), ...(assignments[emp.id] || {}) };
+    });
+    return merged;
+  }, [selectedEmployees, leaveOverlay, assignments]);
+
+  const summary = useMemo(() => buildScheduleSummary({ employees: selectedEmployees, assignments: effectiveAssignments, periodStart: form.period_start, periodEnd: form.period_end }), [selectedEmployees, effectiveAssignments, form.period_start, form.period_end]);
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -54,7 +82,7 @@ export default function ScheduleProposal() {
       ...form,
       status: 'pending_hr_review',
       employees: selectedEmployees,
-      assignments,
+      assignments: effectiveAssignments,
       summary,
     });
     setSaving(false);
@@ -106,9 +134,11 @@ export default function ScheduleProposal() {
 
       {selectedEmployees.length > 0 && (
         <>
-          <div className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground mb-3">Click each card to cycle: Opener → Closer → OFF → WFH → Paid VL → No Sched. Paid VL counts as cost, not manpower.</p>
-            <ScheduleGrid employees={selectedEmployees} assignments={assignments} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} />
+          <LeaveNotices notices={leaveNotices} />
+          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Click each card to cycle through schedule types, leave cards, and your shift templates. Dates with a leave request on file are auto-plotted and outlined in yellow.</p>
+            <ScheduleLegend shiftTemplates={shiftTemplates} />
+            <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} />
           </div>
           <ScheduleAnalytics summary={summary} />
           <div className="flex justify-end">

@@ -1,0 +1,33 @@
+{
+  "name": "ApprovedSchedule",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "schedule_type": {
+      "type": "string",
+      "description": "Schedule card key (opener, closer, off, wfh, paid_vl, etc.)",
+      "default": "none"
+    },
+    "source_proposal_id": {
+      "type": "string",
+      "description": "AttendanceProposal ID that plotted this assignment"
+    }
+  },
+  "required": [
+    "employee_id",
+    "date"
+  ]
+}

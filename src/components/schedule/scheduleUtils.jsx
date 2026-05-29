@@ -6,12 +6,32 @@ export const SCHEDULE_TYPES = {
   off: { label: 'OFF', short: 'OFF', className: 'bg-red-500 text-white border-red-600' },
   wfh: { label: 'WFH', short: 'WFH', className: 'bg-purple-500 text-white border-purple-600' },
   paid_vl: { label: 'Paid\nVL', short: 'Paid VL', className: 'bg-emerald-500 text-white border-emerald-600' },
+  sick: { label: 'Sick\nSL', short: 'Sick Leave', className: 'bg-rose-500 text-white border-rose-600' },
+  unpaid_vl: { label: 'Unpaid\nVL', short: 'Unpaid VL', className: 'bg-amber-500 text-white border-amber-600' },
+  emergency: { label: 'Emer-\ngency', short: 'Emergency', className: 'bg-red-700 text-white border-red-800' },
+  maternity: { label: 'Mater-\nnity', short: 'Maternity', className: 'bg-pink-500 text-white border-pink-600' },
+  paternity: { label: 'Pater-\nnity', short: 'Paternity', className: 'bg-cyan-600 text-white border-cyan-700' },
   none: { label: 'No\nSched', short: 'No Sched', className: 'bg-slate-200 text-slate-700 border-slate-300' },
 };
 
-export const COST_COUNTED_TYPES = new Set(['opener', 'closer', 'wfh', 'paid_vl']);
+// Maps LeaveRequest.leave_type (+ is_paid) to a schedule card key
+export const leaveTypeToScheduleType = (leaveType, isPaid = true) => {
+  switch (leaveType) {
+    case 'vacation': return isPaid ? 'paid_vl' : 'unpaid_vl';
+    case 'sick': return 'sick';
+    case 'emergency': return 'emergency';
+    case 'maternity': return 'maternity';
+    case 'paternity': return 'paternity';
+    case 'unpaid': return 'unpaid_vl';
+    default: return 'paid_vl';
+  }
+};
+
+export const LEAVE_SCHEDULE_TYPES = new Set(['paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity']);
+
+export const COST_COUNTED_TYPES = new Set(['opener', 'closer', 'wfh', 'paid_vl', 'sick', 'maternity', 'paternity']);
 export const MANPOWER_TYPES = new Set(['opener', 'closer', 'wfh']);
-export const OFF_TYPES = new Set(['off', 'paid_vl']);
+export const OFF_TYPES = new Set(['off', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity']);
 
 export const getEmployeeName = (record) => {
   const fields = record?.fields || record || {};

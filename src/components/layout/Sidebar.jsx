@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, ChevronRight, Building2, Fingerprint,
-  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck
+  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck
 } from 'lucide-react';
 
 const navGroups = [
@@ -49,6 +49,7 @@ const navGroups = [
       { label: 'Shift Schedules', icon: CalendarDays, path: '/shifts' },
       { label: 'Schedule Proposal', icon: Send, path: '/schedule-proposal' },
       { label: 'Schedule Requests', icon: ClipboardCheck, path: '/schedule-requests' },
+      { label: 'Approved Schedule', icon: CalendarCheck, path: '/approved-schedule' },
       { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
       { label: 'Overtime', icon: ClipboardList, path: '/overtime' },
     ],

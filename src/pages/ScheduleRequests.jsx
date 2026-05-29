@@ -45,6 +45,9 @@ export default function ScheduleRequests() {
       reviewed_date: new Date().toISOString(),
     });
     await base44.functions.invoke('scheduleWebhook', { proposalId: request.id, eventType: status });
+    if (status === 'approved') {
+      await base44.functions.invoke('plotApprovedSchedule', { proposalId: request.id });
+    }
     setBusyId(null);
     loadRequests();
   };
