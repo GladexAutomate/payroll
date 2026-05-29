@@ -17,9 +17,10 @@ export default function ScheduleProposal() {
   const defaultStart = format(new Date(), 'yyyy-MM-dd');
   const defaultEnd = format(addDays(new Date(), 15), 'yyyy-MM-dd');
   const [form, setForm] = useState({
-    team_name: '', company_name: '', branch_name: '', department_name: '',
+    team_name: '', company_name: '', branch_name: '', department_name: '', department_role: '',
     leader_name: '', leader_email: '', period_start: defaultStart, period_end: defaultEnd, notes: '',
   });
+  const [hierarchy, setHierarchy] = useState({ companies: [], branches: [], departments: [], departmentRoles: [] });
   const [records, setRecords] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [assignments, setAssignments] = useState({});
@@ -33,13 +34,15 @@ export default function ScheduleProposal() {
 
   const loadEmployees = async () => {
     setLoading(true);
-    const [res, shifts, leaveReqs, locals] = await Promise.all([
+    const [res, shifts, leaveReqs, locals, org] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
       base44.entities.ShiftTemplate.list(),
       base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
       base44.entities.Employee.list('-created_date', 2000),
+      base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
     ]);
     setRecords(res.data.records || []);
+    setHierarchy(org.data || { companies: [], branches: [], departments: [], departmentRoles: [] });
     setShiftTemplates(shifts || []);
     setLeaves(leaveReqs || []);
     setLocalEmployees(locals || []);
@@ -71,6 +74,10 @@ export default function ScheduleProposal() {
   }, [selectedEmployees, leaveOverlay, assignments]);
 
   const summary = useMemo(() => buildScheduleSummary({ employees: selectedEmployees, assignments: effectiveAssignments, periodStart: form.period_start, periodEnd: form.period_end }), [selectedEmployees, effectiveAssignments, form.period_start, form.period_end]);
+
+  const branchOptions = useMemo(() => hierarchy.branches.filter(b => !form.company_name || b.company_name === form.company_name), [hierarchy, form.company_name]);
+  const departmentOptions = useMemo(() => hierarchy.departments.filter(d => (!form.company_name || d.company_name === form.company_name) && (!form.branch_name || d.branch_name === form.branch_name)), [hierarchy, form.company_name, form.branch_name]);
+  const roleOptions = useMemo(() => hierarchy.departmentRoles.filter(r => (!form.company_name || r.company_name === form.company_name) && (!form.branch_name || r.branch_name === form.branch_name) && (!form.department_name || r.department_name === form.department_name)), [hierarchy, form.company_name, form.branch_name, form.department_name]);
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -104,9 +111,34 @@ export default function ScheduleProposal() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div><Label className="text-xs">Team Name*</Label><Input value={form.team_name} onChange={e => set('team_name', e.target.value)} required className="mt-1" /></div>
-          <div><Label className="text-xs">Company*</Label><Input value={form.company_name} onChange={e => set('company_name', e.target.value)} required className="mt-1" /></div>
-          <div><Label className="text-xs">Branch</Label><Input value={form.branch_name} onChange={e => set('branch_name', e.target.value)} className="mt-1" /></div>
-          <div><Label className="text-xs">Airtable Department</Label><Input value={form.department_name} onChange={e => set('department_name', e.target.value)} className="mt-1" placeholder="e.g. CORPORATE" /></div>
+          <div>
+            <Label className="text-xs">Company*</Label>
+            <select value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value, branch_name: '', department_name: '', department_role: '' }))} required className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
+              <option value="">Select company</option>
+              {hierarchy.companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Branch</Label>
+            <select value={form.branch_name} onChange={e => setForm(p => ({ ...p, branch_name: e.target.value, department_name: '', department_role: '' }))} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
+              <option value="">Select branch</option>
+              {branchOptions.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Department</Label>
+            <select value={form.department_name} onChange={e => setForm(p => ({ ...p, department_name: e.target.value, department_role: '' }))} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
+              <option value="">Select department</option>
+              {departmentOptions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Department Role</Label>
+            <select value={form.department_role} onChange={e => set('department_role', e.target.value)} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
+              <option value="">Select role</option>
+              {roleOptions.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
           <div><Label className="text-xs">Leader Name</Label><Input value={form.leader_name} onChange={e => set('leader_name', e.target.value)} className="mt-1" /></div>
           <div><Label className="text-xs">Leader Email</Label><Input type="email" value={form.leader_email} onChange={e => set('leader_email', e.target.value)} className="mt-1" /></div>
           <div><Label className="text-xs">Start Date*</Label><Input type="date" value={form.period_start} onChange={e => set('period_start', e.target.value)} required className="mt-1" /></div>

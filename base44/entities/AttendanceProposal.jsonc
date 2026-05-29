@@ -14,6 +14,9 @@
     "department_name": {
       "type": "string"
     },
+    "department_role": {
+      "type": "string"
+    },
     "leader_name": {
       "type": "string"
     },
