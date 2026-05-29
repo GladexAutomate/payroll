@@ -25,7 +25,7 @@ export const buildLeaveOverlay = ({ employees, leaves, localEmployees, periodSta
 
   leaves.forEach(leave => {
     // Prefer a direct ID match (airtable_record_id used as emp.id, or backend mirror id)
-    let match = employees.find(emp => emp.id === leave.employee_id || emp.backend_id === leave.employee_id);
+    let match = employees.find(emp => emp.id === leave.employee_id || emp.backend_id === leave.employee_id || emp.airtable_record_id === leave.employee_id);
     if (!match) {
       const leaveName = localNameById[leave.employee_id] || normalize(leave.employee_id);
       match = employees.find(emp => normalize(emp.name) === leaveName);

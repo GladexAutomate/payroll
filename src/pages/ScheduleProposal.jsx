@@ -53,6 +53,7 @@ export default function ScheduleProposal() {
   const employees = useMemo(() => records.map(record => ({
     id: record.id,
     backend_id: record.backend_id,
+    airtable_record_id: record.airtable_record_id || record.fields?.['RECORD ID'] || record.id,
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
     department: record.fields?.Department || record.fields?.['Department Role'] || '',
