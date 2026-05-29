@@ -24,9 +24,9 @@ export const buildLeaveOverlay = ({ employees, leaves, localEmployees, periodSta
   const periodEndDate = parseISO(periodEnd);
 
   leaves.forEach(leave => {
-    // Prefer direct ID match (leave.employee_id is now an Airtable record id),
-    // fall back to name match for older leave records.
-    let match = employees.find(emp => emp.id === leave.employee_id);
+    // Prefer direct ID match (leave.employee_id is an Airtable record id),
+    // also accept backend entity id for older leave records, then name match.
+    let match = employees.find(emp => emp.id === leave.employee_id || emp.backend_id === leave.employee_id);
     if (!match) {
       const leaveName = localNameById[leave.employee_id] || normalize(leave.employee_id);
       match = employees.find(emp => normalize(emp.name) === leaveName);
