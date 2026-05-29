@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { X, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/shared/StatusBadge';
+import PayslipDocument from '@/components/payroll/PayslipDocument';
 
 export default function PayrollRunDetail({ run, onClose }) {
   const [records, setRecords] = useState([]);
@@ -161,92 +162,8 @@ export default function PayrollRunDetail({ run, onClose }) {
         </div>
 
         {selectedRecord && (
-          <PayslipModal record={selectedRecord} employee={employees.find(e => e.id === selectedRecord.employee_id || e.airtable_record_id === selectedRecord.airtable_record_id)} run={run} onClose={() => setSelectedRecord(null)} />
+          <PayslipDocument record={selectedRecord} employee={employees.find(e => e.id === selectedRecord.employee_id || e.airtable_record_id === selectedRecord.airtable_record_id)} run={run} onClose={() => setSelectedRecord(null)} />
         )}
-      </div>
-    </div>
-  );
-}
-
-function PayslipModal({ record, employee, run, onClose }) {
-  const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '₱0.00';
-
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div id="payslip-content">
-          {/* Header */}
-          <div className="text-center p-6 border-b" style={{ backgroundColor: 'hsl(222,47%,11%)' }}>
-            <p className="text-white font-bold text-lg">PaySync PH</p>
-            <p className="text-white/70 text-xs mt-0.5">Payslip — {run.period_label}</p>
-          </div>
-
-          <div className="p-6 space-y-4">
-            {/* Employee Info */}
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="font-bold text-base">{record.employee_name || employee?.full_name || employee?.fields?.['Full Name'] || '—'}</p>
-              <p className="text-sm text-gray-500">{employee?.fields?.['Job Title'] || '—'}</p>
-              <div className="grid grid-cols-2 gap-1 mt-2 text-xs text-gray-600">
-                <span>ID: {record.employee_code || employee?.employee_code || employee?.fields?.['Employee Code ID']}</span>
-                <span>Period: {run.period_label}</span>
-              </div>
-            </div>
-
-            {/* Earnings */}
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Earnings</p>
-              {[
-                ['Regular Pay', record.regular_pay || record.basic_salary],
-                ['Overtime Pay', record.overtime_pay],
-                ['Allowances', record.allowances],
-              ].filter(([, v]) => v > 0).map(([label, val]) => (
-                <div key={label} className="flex justify-between py-1.5 border-b border-gray-100 text-sm">
-                  <span className="text-gray-600">{label}</span>
-                  <span className="font-medium">{fmt(val)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between py-2 text-sm font-semibold">
-                <span>Gross Pay</span>
-                <span className="text-green-600">{fmt(record.gross_pay)}</span>
-              </div>
-            </div>
-
-            {/* Deductions */}
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Deductions</p>
-              {[
-                ['SSS Contribution', record.sss_employee],
-                ['PhilHealth', record.philhealth_employee],
-                ['Pag-IBIG', record.pagibig_employee],
-                ['Withholding Tax', record.withholding_tax],
-                ['Late Deduction', record.late_deduction],
-                ['Absent Deduction', record.absent_deduction],
-              ].filter(([, v]) => v > 0).map(([label, val]) => (
-                <div key={label} className="flex justify-between py-1.5 border-b border-gray-100 text-sm">
-                  <span className="text-gray-600">{label}</span>
-                  <span className="text-red-600">{fmt(val)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between py-2 text-sm font-semibold">
-                <span>Total Deductions</span>
-                <span className="text-red-600">{fmt(record.total_deductions)}</span>
-              </div>
-            </div>
-
-            {/* Net Pay */}
-            <div className="bg-green-50 rounded-xl p-4 flex justify-between items-center">
-              <span className="font-bold text-base">NET PAY</span>
-              <span className="font-bold text-2xl text-green-600">{fmt(record.net_pay)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-2 p-4 border-t">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Close</Button>
-          <Button className="flex-1" onClick={() => window.print()}>
-            <Printer className="w-4 h-4 mr-1.5" /> Print
-          </Button>
-        </div>
       </div>
     </div>
   );
