@@ -24,13 +24,8 @@ export const buildLeaveOverlay = ({ employees, leaves, localEmployees, periodSta
   const periodEndDate = parseISO(periodEnd);
 
   leaves.forEach(leave => {
-    // Prefer direct ID match (leave.employee_id is an Airtable record id),
-    // also accept backend entity id for older leave records, then name match.
-    let match = employees.find(emp => emp.id === leave.employee_id || emp.backend_id === leave.employee_id);
-    if (!match) {
-      const leaveName = localNameById[leave.employee_id] || normalize(leave.employee_id);
-      match = employees.find(emp => normalize(emp.name) === leaveName);
-    }
+    const leaveName = localNameById[leave.employee_id] || normalize(leave.employee_id);
+    const match = employees.find(emp => normalize(emp.name) === leaveName);
     if (!match) return;
 
     const sched = leaveTypeToScheduleType(leave.leave_type, leave.is_paid);
