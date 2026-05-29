@@ -3,8 +3,6 @@ import { format } from 'date-fns';
 import { SCHEDULE_TYPES, getScheduleDays } from './scheduleUtils';
 import CellFillMenu from './CellFillMenu';
 
-const DEFAULT_CYCLE = ['opener', 'closer', 'off', 'wfh', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity', 'none'];
-
 // resolve a card config — supports built-in keys and dynamic shift cards (shift:<id>)
 const resolveConfig = (type, shiftCards = {}) => {
   if (type && type.startsWith('shift:')) {
@@ -20,24 +18,17 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
 
   // Build dynamic shift cards from templates
   const shiftCards = {};
-  const shiftKeys = shiftTemplates.map(t => {
-    const key = `shift:${t.id}`;
-    shiftCards[key] = {
+  shiftTemplates.forEach(t => {
+    shiftCards[`shift:${t.id}`] = {
       label: (t.name || 'Shift').slice(0, 10),
       short: `${t.name} (${t.start_time}-${t.end_time})`,
       className: 'bg-indigo-500 text-white border-indigo-600',
     };
-    return key;
   });
 
-  const cycle = [...DEFAULT_CYCLE.slice(0, 10), ...shiftKeys, 'none'];
-
-  const cycleType = (employeeId, date) => {
-    if (!editable) return;
-    const current = assignments?.[employeeId]?.[date] || 'none';
-    const idx = cycle.indexOf(current);
-    const next = cycle[(idx + 1) % cycle.length];
-    onChange(employeeId, date, next);
+  const openMenu = (employeeId, date, type) => {
+    if (!editable || type === 'none') return;
+    setMenuCell({ employeeId, date, type });
   };
 
   const handleDrop = (e, employeeId, date) => {
@@ -97,12 +88,12 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                       <button
                         type="button"
                         disabled={!editable}
-                        onClick={() => cycleType(emp.id, date)}
+                        onClick={() => openMenu(emp.id, date, type)}
                         onDragOver={editable ? (e) => { e.preventDefault(); setDragOver(cellKey); } : undefined}
                         onDragLeave={editable ? () => setDragOver(prev => prev === cellKey ? null : prev) : undefined}
                         onDrop={editable ? (e) => handleDrop(e, emp.id, date) : undefined}
                         className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''}`}
-                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? 'Click to cycle, or drag a card here' : config.short}
+                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? (type === 'none' ? 'Drag a card here' : 'Click for fill / delete options') : config.short}
                       >
                         {isPendingLeave && (
                           <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-yellow-400/70 bg-yellow-300/20 animate-pulse" />

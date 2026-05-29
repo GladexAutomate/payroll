@@ -90,19 +90,21 @@ export default function ScheduleProposal() {
   const fillSchedule = (employeeId, date, type, direction) => {
     setAssignments(prev => {
       const next = { ...prev };
-      const idx = days.indexOf(date);
-      if (direction === 'down') {
-        selectedEmployees.forEach(emp => {
+      const dayIdx = days.indexOf(date);
+      const empIdx = selectedEmployees.findIndex(e => e.id === employeeId);
+      if (direction === 'left' || direction === 'right') {
+        const row = { ...(next[employeeId] || {}) };
+        const from = direction === 'left' ? 0 : dayIdx;
+        const to = direction === 'left' ? dayIdx : days.length - 1;
+        for (let i = from; i <= to; i++) row[days[i]] = type;
+        next[employeeId] = row;
+      } else if (direction === 'up' || direction === 'down') {
+        const from = direction === 'up' ? 0 : empIdx;
+        const to = direction === 'up' ? empIdx : selectedEmployees.length - 1;
+        for (let i = from; i <= to; i++) {
+          const emp = selectedEmployees[i];
           next[emp.id] = { ...(next[emp.id] || {}), [date]: type };
-        });
-      } else if (direction === 'left') {
-        const row = { ...(next[employeeId] || {}) };
-        for (let i = 0; i <= idx; i++) row[days[i]] = type;
-        next[employeeId] = row;
-      } else if (direction === 'right') {
-        const row = { ...(next[employeeId] || {}) };
-        for (let i = idx; i < days.length; i++) row[days[i]] = type;
-        next[employeeId] = row;
+        }
       }
       return next;
     });
