@@ -59,20 +59,25 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                 </td>
                 {days.map(day => {
                   const date = format(day, 'yyyy-MM-dd');
-                  const leaveType = leaveOverlay?.[emp.id]?.[date];
-                  const type = assignments?.[emp.id]?.[date] || leaveType || 'none';
+                  const pendingLeave = leaveOverlay?.[emp.id]?.[date];
+                  // Pending leaves are NOT plotted — only show a pulsing hint on a blank cell.
+                  const type = assignments?.[emp.id]?.[date] || 'none';
                   const config = resolveConfig(type, shiftCards);
-                  const isLeaveAuto = !assignments?.[emp.id]?.[date] && leaveType;
+                  const isPendingLeave = !assignments?.[emp.id]?.[date] && pendingLeave;
+                  const pendingConfig = isPendingLeave ? resolveConfig(pendingLeave, shiftCards) : null;
                   return (
                     <td key={date} className="p-1 text-center border-r border-border/30">
                       <button
                         type="button"
                         disabled={!editable}
                         onClick={() => cycleType(emp.id, date)}
-                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isLeaveAuto ? 'ring-2 ring-offset-1 ring-yellow-400' : ''}`}
-                        title={isLeaveAuto ? `Leave on file: ${config.short}` : editable ? 'Click to change schedule card' : config.short}
+                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'}`}
+                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? 'Click to change schedule card' : config.short}
                       >
-                        {config.label}
+                        {isPendingLeave && (
+                          <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-yellow-400/70 bg-yellow-300/20 animate-pulse" />
+                        )}
+                        <span className="relative">{config.label}</span>
                       </button>
                     </td>
                   );
