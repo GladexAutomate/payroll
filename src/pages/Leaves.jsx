@@ -26,7 +26,7 @@ export default function Leaves() {
     setLoading(false);
   };
 
-  const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
+  const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.airtable_record_id]: e }), {});
   const filtered = requests.filter(r => filterStatus === 'all' || r.status === filterStatus);
 
   const handleApprove = async (id) => {
@@ -142,7 +142,7 @@ function LeaveForm({ employees, onClose, onSaved }) {
             <label className="text-xs font-medium text-muted-foreground">Employee*</label>
             <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
               <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.full_name || e.fields?.['Full Name'] || e.employee_code}</option>)}
+              {employees.map(e => <option key={e.id} value={e.airtable_record_id}>{e.full_name || e.fields?.['Full Name'] || e.employee_code}</option>)}
             </select>
           </div>
           <div>
