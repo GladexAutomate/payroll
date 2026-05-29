@@ -12,10 +12,12 @@ import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
 import { buildScheduleSummary, getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
+import { buildPayPeriods } from '@/components/schedule/payPeriods';
 
 export default function ScheduleProposal() {
-  const defaultStart = format(new Date(), 'yyyy-MM-dd');
-  const defaultEnd = format(addDays(new Date(), 15), 'yyyy-MM-dd');
+  const payPeriods = useMemo(() => buildPayPeriods(), []);
+  const defaultStart = payPeriods[1]?.period_start || format(new Date(), 'yyyy-MM-dd');
+  const defaultEnd = payPeriods[1]?.period_end || format(addDays(new Date(), 15), 'yyyy-MM-dd');
   const [form, setForm] = useState({
     team_name: '', company_name: '', branch_name: '', department_name: '', department_role: '',
     leader_name: '', leader_email: '', period_start: defaultStart, period_end: defaultEnd, notes: '',
@@ -141,8 +143,20 @@ export default function ScheduleProposal() {
           </div>
           <div><Label className="text-xs">Leader Name</Label><Input value={form.leader_name} onChange={e => set('leader_name', e.target.value)} className="mt-1" /></div>
           <div><Label className="text-xs">Leader Email</Label><Input type="email" value={form.leader_email} onChange={e => set('leader_email', e.target.value)} className="mt-1" /></div>
-          <div><Label className="text-xs">Start Date*</Label><Input type="date" value={form.period_start} onChange={e => set('period_start', e.target.value)} required className="mt-1" /></div>
-          <div><Label className="text-xs">End Date*</Label><Input type="date" value={form.period_end} onChange={e => set('period_end', e.target.value)} required className="mt-1" /></div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Pay Period*</Label>
+            <select
+              value={`${form.period_start}|${form.period_end}`}
+              onChange={e => {
+                const p = payPeriods.find(pp => pp.value === e.target.value);
+                if (p) setForm(prev => ({ ...prev, period_start: p.period_start, period_end: p.period_end }));
+              }}
+              required
+              className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent"
+            >
+              {payPeriods.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
           <div className="md:col-span-3"><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" /></div>
         </div>
       </div>
