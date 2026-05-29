@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { SCHEDULE_TYPES, getScheduleDays } from './scheduleUtils';
+import CellFillMenu from './CellFillMenu';
 
 const DEFAULT_CYCLE = ['opener', 'closer', 'off', 'wfh', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity', 'none'];
 
@@ -11,8 +13,10 @@ const resolveConfig = (type, shiftCards = {}) => {
   return SCHEDULE_TYPES[type] || SCHEDULE_TYPES.none;
 };
 
-export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, shiftTemplates = [], leaveOverlay = {} }) {
+export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, onFill, shiftTemplates = [], leaveOverlay = {} }) {
   const days = getScheduleDays(periodStart, periodEnd);
+  const [menuCell, setMenuCell] = useState(null); // { employeeId, date, type }
+  const [dragOver, setDragOver] = useState(null);
 
   // Build dynamic shift cards from templates
   const shiftCards = {};
@@ -34,6 +38,26 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
     const idx = cycle.indexOf(current);
     const next = cycle[(idx + 1) % cycle.length];
     onChange(employeeId, date, next);
+  };
+
+  const handleDrop = (e, employeeId, date) => {
+    if (!editable) return;
+    e.preventDefault();
+    setDragOver(null);
+    const card = e.dataTransfer.getData('text/schedule-card');
+    if (!card) return;
+    onChange(employeeId, date, card);
+    setMenuCell({ employeeId, date, type: card });
+  };
+
+  const handleFill = (direction) => {
+    if (menuCell && onFill) onFill(menuCell.employeeId, menuCell.date, menuCell.type, direction);
+    setMenuCell(null);
+  };
+
+  const handleDelete = () => {
+    if (menuCell) onChange(menuCell.employeeId, menuCell.date, 'none');
+    setMenuCell(null);
   };
 
   return (
@@ -65,20 +89,29 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                   const config = resolveConfig(type, shiftCards);
                   const isPendingLeave = !assignments?.[emp.id]?.[date] && pendingLeave;
                   const pendingConfig = isPendingLeave ? resolveConfig(pendingLeave, shiftCards) : null;
+                  const cellKey = `${emp.id}|${date}`;
+                  const isDragOver = dragOver === cellKey;
+                  const showMenu = menuCell && menuCell.employeeId === emp.id && menuCell.date === date;
                   return (
-                    <td key={date} className="p-1 text-center border-r border-border/30">
+                    <td key={date} className="relative p-1 text-center border-r border-border/30">
                       <button
                         type="button"
                         disabled={!editable}
                         onClick={() => cycleType(emp.id, date)}
-                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'}`}
-                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? 'Click to change schedule card' : config.short}
+                        onDragOver={editable ? (e) => { e.preventDefault(); setDragOver(cellKey); } : undefined}
+                        onDragLeave={editable ? () => setDragOver(prev => prev === cellKey ? null : prev) : undefined}
+                        onDrop={editable ? (e) => handleDrop(e, emp.id, date) : undefined}
+                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''}`}
+                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? 'Click to cycle, or drag a card here' : config.short}
                       >
                         {isPendingLeave && (
                           <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-yellow-400/70 bg-yellow-300/20 animate-pulse" />
                         )}
                         <span className="relative">{config.label}</span>
                       </button>
+                      {showMenu && (
+                        <CellFillMenu onFill={handleFill} onDelete={handleDelete} onClose={() => setMenuCell(null)} />
+                      )}
                     </td>
                   );
                 })}

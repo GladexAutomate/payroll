@@ -10,7 +10,7 @@ import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
-import { buildScheduleSummary, getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
+import { buildScheduleSummary, getEmployeeName, getEmployeeSalary, getScheduleDays } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
 
@@ -84,6 +84,29 @@ export default function ScheduleProposal() {
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   const updateSchedule = (employeeId, date, type) => setAssignments(prev => ({ ...prev, [employeeId]: { ...(prev[employeeId] || {}), [date]: type } }));
+
+  const days = useMemo(() => getScheduleDays(form.period_start, form.period_end).map(d => format(d, 'yyyy-MM-dd')), [form.period_start, form.period_end]);
+
+  const fillSchedule = (employeeId, date, type, direction) => {
+    setAssignments(prev => {
+      const next = { ...prev };
+      const idx = days.indexOf(date);
+      if (direction === 'down') {
+        selectedEmployees.forEach(emp => {
+          next[emp.id] = { ...(next[emp.id] || {}), [date]: type };
+        });
+      } else if (direction === 'left') {
+        const row = { ...(next[employeeId] || {}) };
+        for (let i = 0; i <= idx; i++) row[days[i]] = type;
+        next[employeeId] = row;
+      } else if (direction === 'right') {
+        const row = { ...(next[employeeId] || {}) };
+        for (let i = idx; i < days.length; i++) row[days[i]] = type;
+        next[employeeId] = row;
+      }
+      return next;
+    });
+  };
 
   const submitProposal = async (e) => {
     e.preventDefault();
@@ -174,9 +197,9 @@ export default function ScheduleProposal() {
         <>
           <LeaveNotices notices={leaveNotices} />
           <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-            <p className="text-xs text-muted-foreground">Click each card to cycle through schedule types, leave cards, and your shift templates. Dates with a leave request on file are auto-plotted and outlined in yellow.</p>
-            <ScheduleLegend shiftTemplates={shiftTemplates} />
-            <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} />
+            <p className="text-xs text-muted-foreground">Drag a card onto a cell (then choose fill left/right/down or delete), or click a cell to cycle. Dates with a leave request on file are outlined in yellow.</p>
+            <ScheduleLegend shiftTemplates={shiftTemplates} draggable />
+            <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} onFill={fillSchedule} />
           </div>
           <ScheduleAnalytics summary={summary} />
           <div className="flex justify-end">
