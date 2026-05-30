@@ -19,7 +19,9 @@ export const buildActualOverlay = ({ employees, logs, localEmployees, assignment
   const days = getScheduleDays(periodStart, periodEnd).map(d => format(d, 'yyyy-MM-dd'));
   const WORK_TYPES = new Set(['opener', 'closer', 'wfh']);
 
-  // Resolve a log to an employee id via biometric/code/name
+  // Resolve a log to an employee id via biometric/code/name.
+  // Logs key by LOCAL Employee id; grid employees key by Airtable record id.
+  // Bridge them through the local Employee's name.
   const localById = (localEmployees || []).reduce((m, e) => {
     m[e.id] = normName(`${e.first_name || ''} ${e.middle_name || ''} ${e.last_name || ''}`);
     return m;
@@ -28,11 +30,12 @@ export const buildActualOverlay = ({ employees, logs, localEmployees, assignment
   // Index logs by employee match key
   const logsByEmp = {};
   logs.forEach(log => {
-    const logName = normName(log.employee_name);
+    // Resolve the log's name: from the log itself, or via its local Employee record.
+    const logName = normName(log.employee_name) || localById[log.employee_id] || '';
     const match = employees.find(emp =>
       emp.id === log.employee_id ||
-      normName(emp.name) === logName ||
-      normalize(emp.name) === normalize(log.employee_name)
+      (logName && normName(emp.name) === logName) ||
+      (log.employee_name && normalize(emp.name) === normalize(log.employee_name))
     );
     if (!match) return;
     logsByEmp[match.id] = logsByEmp[match.id] || {};
