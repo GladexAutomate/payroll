@@ -45,12 +45,12 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
     if (!fillDrag) return;
     const finish = () => {
       setFillDrag(curr => {
-        if (curr && curr.target && onFillTo) {
+        if (curr && curr.moved && curr.target && onFillTo) {
           onFillTo(curr.employeeId, curr.date, curr.type, curr.axis, curr.target);
+          setMenuCell(null);
         }
         return null;
       });
-      setMenuCell(null);
     };
     window.addEventListener('mouseup', finish);
     return () => window.removeEventListener('mouseup', finish);
@@ -64,7 +64,17 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
 
   const onCellEnter = (employeeId, date) => {
     if (!fillDrag) return;
-    setFillDrag(curr => curr ? { ...curr, target: { employeeId, date } } : curr);
+    setFillDrag(curr => {
+      if (!curr) return curr;
+      const moved = curr.moved || employeeId !== curr.employeeId || date !== curr.date;
+      return { ...curr, moved, target: { employeeId, date } };
+    });
+  };
+
+  // If the user dragged across cells, suppress the arrow's onClick fallback
+  const suppressClick = (handler) => (e) => {
+    if (fillDrag && fillDrag.moved) { e.preventDefault(); e.stopPropagation(); return; }
+    handler();
   };
 
   // Build dynamic shift cards from templates — color comes from the template
@@ -147,7 +157,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         onDragLeave={editable ? () => setDragOver(prev => prev === cellKey ? null : prev) : undefined}
                         onDrop={editable ? (e) => handleDrop(e, emp.id, date) : undefined}
                         style={config.color ? { backgroundColor: config.color, borderColor: config.color } : undefined}
-                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''} ${isPreview ? 'ring-2 ring-primary ring-offset-1' : ''} ${showMenu ? 'ring-2 ring-primary' : ''}`}
+                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${fillDrag ? 'pointer-events-none' : ''} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''} ${showMenu ? 'ring-2 ring-primary' : ''}`}
                         title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? (type === 'none' ? 'Drag a card here' : 'Click to fill / delete') : config.short}
                       >
                         {isPendingLeave && (
@@ -155,26 +165,29 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         )}
                         <span className="relative">{config.label}</span>
                       </button>
+                      {isPreview && (
+                        <span className="pointer-events-none absolute inset-1 rounded ring-2 ring-primary bg-primary/30 z-20" />
+                      )}
                       {showMenu && (
                         <>
-                          <div className="fixed inset-0 z-30" onClick={() => setMenuCell(null)} />
+                          <div className={`fixed inset-0 z-30 ${fillDrag ? 'pointer-events-none' : ''}`} onClick={() => setMenuCell(null)} />
                           {/* Up (vertical drag) */}
-                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'vertical')} onClick={() => handleFill('up')} title="Drag to fill up"
+                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'vertical')} onClick={suppressClick(() => handleFill('up'))} title="Drag to fill up"
                             className="absolute z-40 left-1/2 -translate-x-1/2 top-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition cursor-grab active:cursor-grabbing">
                             <ArrowUp className="w-3 h-3" />
                           </button>
                           {/* Down (vertical drag) */}
-                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'vertical')} onClick={() => handleFill('down')} title="Drag to fill down"
+                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'vertical')} onClick={suppressClick(() => handleFill('down'))} title="Drag to fill down"
                             className="absolute z-40 left-1/2 -translate-x-1/2 bottom-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition cursor-grab active:cursor-grabbing">
                             <ArrowDown className="w-3 h-3" />
                           </button>
                           {/* Left (horizontal drag) */}
-                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'horizontal')} onClick={() => handleFill('left')} title="Drag to fill left"
+                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'horizontal')} onClick={suppressClick(() => handleFill('left'))} title="Drag to fill left"
                             className="absolute z-40 top-1/2 -translate-y-1/2 left-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition cursor-grab active:cursor-grabbing">
                             <ArrowLeft className="w-3 h-3" />
                           </button>
                           {/* Right (horizontal drag) */}
-                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'horizontal')} onClick={() => handleFill('right')} title="Drag to fill right"
+                          <button type="button" onMouseDown={startFillDrag(emp.id, date, type, 'horizontal')} onClick={suppressClick(() => handleFill('right'))} title="Drag to fill right"
                             className="absolute z-40 top-1/2 -translate-y-1/2 right-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition cursor-grab active:cursor-grabbing">
                             <ArrowRight className="w-3 h-3" />
                           </button>
