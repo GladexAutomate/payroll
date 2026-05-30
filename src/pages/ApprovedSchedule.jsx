@@ -147,6 +147,39 @@ export default function ApprovedSchedule() {
     setDraft(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [date]: type } }));
   };
 
+  const dayKeys = useMemo(() => {
+    const out = [];
+    let d = new Date(periodStart);
+    const end = new Date(periodEnd);
+    while (d <= end) { out.push(format(d, 'yyyy-MM-dd')); d = addDays(d, 1); }
+    return out;
+  }, [periodStart, periodEnd]);
+
+  const handleFillTo = (empId, date, type, axis, target) => {
+    setDraft(prev => {
+      const next = { ...prev };
+      if (axis === 'horizontal') {
+        const from = dayKeys.indexOf(date);
+        const to = dayKeys.indexOf(target.date);
+        if (from === -1 || to === -1) return prev;
+        const [a, b] = from <= to ? [from, to] : [to, from];
+        const row = { ...(next[empId] || {}) };
+        for (let i = a; i <= b; i++) row[dayKeys[i]] = type;
+        next[empId] = row;
+      } else {
+        const from = filteredEmployees.findIndex(e => e.id === empId);
+        const to = filteredEmployees.findIndex(e => e.id === target.employeeId);
+        if (from === -1 || to === -1) return prev;
+        const [a, b] = from <= to ? [from, to] : [to, from];
+        for (let i = a; i <= b; i++) {
+          const emp = filteredEmployees[i];
+          next[emp.id] = { ...(next[emp.id] || {}), [date]: type };
+        }
+      }
+      return next;
+    });
+  };
+
   const cancelEdit = () => { setDraft({}); setEditMode(false); };
 
   const saveEdits = async () => {
@@ -257,6 +290,7 @@ export default function ApprovedSchedule() {
             periodEnd={periodEnd}
             editable={editMode}
             onChange={handleCellChange}
+            onFillTo={handleFillTo}
           />
         )}
       </div>

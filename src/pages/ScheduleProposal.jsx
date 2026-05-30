@@ -129,6 +129,31 @@ export default function ScheduleProposal() {
     });
   };
 
+  const fillScheduleTo = (employeeId, date, type, axis, target) => {
+    setAssignments(prev => {
+      const next = { ...prev };
+      if (axis === 'horizontal') {
+        const from = days.indexOf(date);
+        const to = days.indexOf(target.date);
+        if (from === -1 || to === -1) return prev;
+        const [a, b] = from <= to ? [from, to] : [to, from];
+        const row = { ...(next[employeeId] || {}) };
+        for (let i = a; i <= b; i++) row[days[i]] = type;
+        next[employeeId] = row;
+      } else {
+        const from = selectedEmployees.findIndex(e => e.id === employeeId);
+        const to = selectedEmployees.findIndex(e => e.id === target.employeeId);
+        if (from === -1 || to === -1) return prev;
+        const [a, b] = from <= to ? [from, to] : [to, from];
+        for (let i = a; i <= b; i++) {
+          const emp = selectedEmployees[i];
+          next[emp.id] = { ...(next[emp.id] || {}), [date]: type };
+        }
+      }
+      return next;
+    });
+  };
+
   const submitProposal = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -193,7 +218,7 @@ export default function ScheduleProposal() {
           <div className="bg-card border border-border rounded-xl p-4 space-y-3">
             <p className="text-xs text-muted-foreground">Drag a card onto a cell (then choose fill left/right/down or delete), or click a cell to cycle. Dates with a leave request on file are outlined in yellow.</p>
             <ScheduleLegend shiftTemplates={shiftTemplates} draggable />
-            <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} onFill={fillSchedule} />
+            <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} onFill={fillSchedule} onFillTo={fillScheduleTo} />
           </div>
           <ScheduleAnalytics summary={summary} />
           <div className="flex justify-end">
