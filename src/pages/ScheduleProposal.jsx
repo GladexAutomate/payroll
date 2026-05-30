@@ -164,14 +164,6 @@ export default function ScheduleProposal() {
           roleOptions={roleOptions}
           complete={formComplete}
         />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-          <PayPeriodPicker
-            periodStart={form.period_start}
-            periodEnd={form.period_end}
-            onChange={(start, end) => setForm(prev => ({ ...prev, period_start: start, period_end: end }))}
-          />
-          <div className="md:col-span-3"><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" /></div>
-        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-5">
