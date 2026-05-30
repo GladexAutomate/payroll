@@ -12,39 +12,49 @@ const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').
  * localEmployees: local Employee records (to resolve log keys -> name)
  * assignments: plotted schedule map { empId: { date: type } } to detect "scheduled work but no punch" = absent
  */
-export const buildActualOverlay = ({ employees, logs, localEmployees, assignments, periodStart, periodEnd }) => {
+export const buildActualOverlay = ({ employees, logs, localEmployees, airtableMatches, assignments, periodStart, periodEnd }) => {
   const overlay = {};
   if (!employees?.length) return overlay;
 
   const days = getScheduleDays(periodStart, periodEnd).map(d => format(d, 'yyyy-MM-dd'));
   const WORK_TYPES = new Set(['opener', 'closer', 'wfh']);
 
-  // Resolve a log to an employee id via biometric/code/name.
   // Logs key by LOCAL Employee id; grid employees key by Airtable record id.
-  // Bridge them through the local Employee's name.
-  const localById = (localEmployees || []).reduce((m, e) => {
+  // Primary bridge: EmployeeAirtableMatch maps local Employee id -> Airtable record id.
+  const airtableIdByLocalId = (airtableMatches || []).reduce((m, rec) => {
+    if (rec.employee_record_id && rec.airtable_record_id) m[rec.employee_record_id] = rec.airtable_record_id;
+    return m;
+  }, {});
+
+  // Fallback bridge by name: resolve local Employee id -> normalized name.
+  const localNameById = (localEmployees || []).reduce((m, e) => {
     m[e.id] = normName(`${e.first_name || ''} ${e.middle_name || ''} ${e.last_name || ''}`);
     return m;
   }, {});
 
-  // Index logs by employee match key
+  // Index logs by the resolved Airtable grid id
   const logsByEmp = {};
   logs.forEach(log => {
-    // Resolve the log's name: from the log itself, or via its local Employee record.
-    const logName = normName(log.employee_name) || localById[log.employee_id] || '';
-    const match = employees.find(emp =>
-      emp.id === log.employee_id ||
-      (logName && normName(emp.name) === logName) ||
-      (log.employee_name && normalize(emp.name) === normalize(log.employee_name))
-    );
-    if (!match) return;
-    logsByEmp[match.id] = logsByEmp[match.id] || {};
+    // 1) Direct id match (rare), 2) ID bridge via match table, 3) name fallback.
+    let targetId = null;
+    if (employees.some(emp => emp.id === log.employee_id)) {
+      targetId = log.employee_id;
+    } else if (airtableIdByLocalId[log.employee_id]) {
+      targetId = airtableIdByLocalId[log.employee_id];
+    } else {
+      const logName = normName(log.employee_name) || localNameById[log.employee_id] || '';
+      const match = logName ? employees.find(emp => normName(emp.name) === logName) : null;
+      if (match) targetId = match.id;
+    }
+    if (!targetId) return;
+
+    logsByEmp[targetId] = logsByEmp[targetId] || {};
     let worked = 0;
     if (log.time_in && log.time_out) {
       worked = (new Date(log.time_out) - new Date(log.time_in)) / 3600000;
       if (!Number.isFinite(worked) || worked <= 0) worked = Number(log.total_hours) || 0;
     }
-    if (worked > 0) logsByEmp[match.id][log.date] = Math.min(worked, 12);
+    if (worked > 0) logsByEmp[targetId][log.date] = Math.min(worked, 12);
   });
 
   employees.forEach(emp => {

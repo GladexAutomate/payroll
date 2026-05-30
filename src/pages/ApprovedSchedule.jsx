@@ -23,6 +23,7 @@ export default function ApprovedSchedule() {
   const [plotted, setPlotted] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [localEmployees, setLocalEmployees] = useState([]);
+  const [airtableMatches, setAirtableMatches] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,14 +40,16 @@ export default function ApprovedSchedule() {
 
   const loadBase = async () => {
     setLoading(true);
-    const [res, shifts, locals] = await Promise.all([
+    const [res, shifts, locals, matches] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
       base44.entities.ShiftTemplate.list(),
       base44.entities.Employee.list('-updated_date', 5000),
+      base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
     ]);
     setRecords(res.data.records || []);
     setShiftTemplates(shifts || []);
     setLocalEmployees(locals || []);
+    setAirtableMatches(matches || []);
     setLoading(false);
     loadRange();
   };
@@ -136,9 +139,9 @@ export default function ApprovedSchedule() {
   const actualOverlay = useMemo(() => {
     if (!showActual) return null;
     return buildActualOverlay({
-      employees: filteredEmployees, logs: attendanceLogs, localEmployees, assignments, periodStart, periodEnd,
+      employees: filteredEmployees, logs: attendanceLogs, localEmployees, airtableMatches, assignments, periodStart, periodEnd,
     });
-  }, [showActual, filteredEmployees, attendanceLogs, localEmployees, assignments, periodStart, periodEnd]);
+  }, [showActual, filteredEmployees, attendanceLogs, localEmployees, airtableMatches, assignments, periodStart, periodEnd]);
 
   const handleCellChange = (empId, date, type) => {
     setDraft(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [date]: type } }));
