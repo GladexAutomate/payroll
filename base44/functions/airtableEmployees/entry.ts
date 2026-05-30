@@ -449,6 +449,19 @@ Deno.serve(async (req) => {
       return Response.json({ records, offset: nextOffset, source: 'backend' });
     }
 
+    if (action === 'allActive') {
+      const allRecords = await listMirrorRecords(5000);
+      const records = allRecords.filter(isNotResigned).map(record => {
+        const fields = { ...(record.fields || {}) };
+        if (!fields.Company && !fields.COMPANY && record.company) fields.Company = record.company;
+        if (!fields.Branch && !fields.BRANCH && record.branch) fields.Branch = record.branch;
+        if (!fields.Department && record.department) fields.Department = record.department;
+        if (!fields['Department Role'] && record.department_role) fields['Department Role'] = record.department_role;
+        return { id: record.airtable_record_id, fields, backend_id: record.id };
+      });
+      return Response.json({ records });
+    }
+
     if (action === 'organizationHierarchy') {
       return Response.json(await buildHierarchy());
     }

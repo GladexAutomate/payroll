@@ -3,16 +3,13 @@ import { addDays, format } from 'date-fns';
 import { CalendarDays, Send, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
 import { buildScheduleSummary, getEmployeeName, getEmployeeSalary, getScheduleDays } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
-import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
+import ProposalWizard from '@/components/schedule/ProposalWizard';
 
 export default function ScheduleProposal() {
   const defaultStart = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
@@ -50,15 +47,30 @@ export default function ScheduleProposal() {
     setLoading(false);
   };
 
+  const norm = (v) => String(v || '').trim().toLowerCase();
+
   const employees = useMemo(() => records.map(record => ({
     id: record.id,
     backend_id: record.backend_id,
     airtable_record_id: record.airtable_record_id || record.fields?.['RECORD ID'] || record.id,
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
-    department: record.fields?.Department || record.fields?.['Department Role'] || '',
+    company: record.fields?.Company || record.fields?.COMPANY || '',
+    branch: record.fields?.Branch || record.fields?.BRANCH || '',
+    department: record.fields?.Department || '',
+    department_role: record.fields?.['Department Role'] || '',
     email: record.fields?.Email || record.fields?.['Business email'] || '',
   })), [records]);
+
+  // Only employees matching the selected company/branch/department/role are pickable.
+  const formComplete = !!(form.leader_name && form.company_name && form.branch_name && form.department_name && form.department_role && form.team_name && form.period_start && form.period_end);
+
+  const filteredEmployees = useMemo(() => employees.filter(emp =>
+    (!form.company_name || norm(emp.company) === norm(form.company_name)) &&
+    (!form.branch_name || norm(emp.branch) === norm(form.branch_name)) &&
+    (!form.department_name || norm(emp.department) === norm(form.department_name)) &&
+    (!form.department_role || norm(emp.department_role) === norm(form.department_role))
+  ), [employees, form.company_name, form.branch_name, form.department_name, form.department_role]);
 
   const selectedEmployees = useMemo(() => employees.filter(emp => selectedIds.includes(emp.id)), [employees, selectedIds]);
 
@@ -81,7 +93,6 @@ export default function ScheduleProposal() {
   const departmentOptions = useMemo(() => hierarchy.departments.filter(d => (!form.company_name || d.company_name === form.company_name) && (!form.branch_name || d.branch_name === form.branch_name)), [hierarchy, form.company_name, form.branch_name]);
   const roleOptions = useMemo(() => hierarchy.departmentRoles.filter(r => (!form.company_name || r.company_name === form.company_name) && (!form.branch_name || r.branch_name === form.branch_name) && (!form.department_name || r.department_name === form.department_name)), [hierarchy, form.company_name, form.branch_name, form.department_name]);
 
-  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   const updateSchedule = (employeeId, date, type) => setAssignments(prev => ({ ...prev, [employeeId]: { ...(prev[employeeId] || {}), [date]: type } }));
 
@@ -136,64 +147,36 @@ export default function ScheduleProposal() {
             <p className="text-xs text-muted-foreground">Create the team schedule request for HR review.</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div><Label className="text-xs">Team Name*</Label><Input value={form.team_name} onChange={e => set('team_name', e.target.value)} required className="mt-1" /></div>
-          <div>
-            <Label className="text-xs">Company*</Label>
-            <select value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value, branch_name: '', department_name: '', department_role: '' }))} required className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
-              <option value="">Select company</option>
-              {hierarchy.companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <Label className="text-xs">Branch</Label>
-            <select value={form.branch_name} onChange={e => setForm(p => ({ ...p, branch_name: e.target.value, department_name: '', department_role: '' }))} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
-              <option value="">Select branch</option>
-              {branchOptions.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <Label className="text-xs">Department</Label>
-            <select value={form.department_name} onChange={e => setForm(p => ({ ...p, department_name: e.target.value, department_role: '' }))} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
-              <option value="">Select department</option>
-              {departmentOptions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <Label className="text-xs">Department Role</Label>
-            <select value={form.department_role} onChange={e => set('department_role', e.target.value)} className="mt-1 w-full border border-input rounded-md px-3 h-9 text-sm bg-transparent">
-              <option value="">Select role</option>
-              {roleOptions.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-            </select>
-          </div>
-          <div><Label className="text-xs">Leader Name</Label><Input value={form.leader_name} onChange={e => set('leader_name', e.target.value)} className="mt-1" /></div>
-          <div><Label className="text-xs">Leader Email</Label><Input type="email" value={form.leader_email} onChange={e => set('leader_email', e.target.value)} className="mt-1" /></div>
-          <PayPeriodPicker
-            periodStart={form.period_start}
-            periodEnd={form.period_end}
-            onChange={(start, end) => setForm(prev => ({ ...prev, period_start: start, period_end: end }))}
-          />
-          <div className="md:col-span-3"><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" /></div>
-        </div>
+        <ProposalWizard
+          form={form}
+          setForm={setForm}
+          hierarchy={hierarchy}
+          branchOptions={branchOptions}
+          departmentOptions={departmentOptions}
+          roleOptions={roleOptions}
+        />
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Select Employees</h3></div>
-          <span className="text-xs text-muted-foreground">{selectedEmployees.length} selected</span>
-        </div>
-        {loading ? <div className="text-sm text-muted-foreground py-6">Loading Airtable employees...</div> : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-auto pr-1">
-            {employees.map(emp => (
-              <label key={emp.id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm cursor-pointer hover:bg-muted/40">
-                <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleEmployee(emp.id)} />
-                <span className="flex-1 truncate">{emp.name}</span>
-                <span className="text-xs text-muted-foreground">₱{Math.round(emp.monthly_salary).toLocaleString()}</span>
-              </label>
-            ))}
+      {formComplete && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Select Employees</h3></div>
+            <span className="text-xs text-muted-foreground">{selectedEmployees.length} selected</span>
           </div>
-        )}
-      </div>
+          {loading ? <div className="text-sm text-muted-foreground py-6">Loading Airtable employees...</div> : filteredEmployees.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6">No employees found under the selected company, branch, department and role.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-auto pr-1">
+              {filteredEmployees.map(emp => (
+                <label key={emp.id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm cursor-pointer hover:bg-muted/40">
+                  <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleEmployee(emp.id)} />
+                  <span className="flex-1 truncate">{emp.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {selectedEmployees.length > 0 && (
         <>
