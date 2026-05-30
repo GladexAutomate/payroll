@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X } from 'lucide-react';
-import { SCHEDULE_TYPES, getScheduleDays } from './scheduleUtils';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X, Settings2 } from 'lucide-react';
+import { SCHEDULE_TYPES, getScheduleDays, parseShiftValue } from './scheduleUtils';
+import ShiftCellOptions from './ShiftCellOptions';
 
-// resolve a card config — supports built-in keys and dynamic shift cards (shift:<id>)
+const fmtCustom = (c) => c && c.includes('-') ? c.split('-').map(p => p.length === 4 ? `${p.slice(0,2)}:${p.slice(2)}` : p).join('-') : c;
+
+// resolve a card config — supports built-in keys and dynamic shift cards (shift:<id> + ::wfh / ::custom)
 const resolveConfig = (type, shiftCards = {}) => {
   if (type && type.startsWith('shift:')) {
-    return shiftCards[type] || { label: 'Shift', short: 'Shift', className: 'bg-indigo-500 text-white border-indigo-600' };
+    const { baseType, mode, custom } = parseShiftValue(type);
+    const base = shiftCards[baseType] || { label: 'Shift', short: 'Shift', className: 'bg-indigo-500 text-white border-indigo-600' };
+    if (mode === 'wfh') {
+      return { ...base, label: `${base.label}\nWFH`, short: `${base.short} · WFH`, color: '#8b5cf6' };
+    }
+    if (mode === 'custom') {
+      return { ...base, label: `${base.label}\n${fmtCustom(custom)}`, short: `${base.short} · ${fmtCustom(custom)}`, color: '#f59e0b' };
+    }
+    return base;
   }
   return SCHEDULE_TYPES[type] || SCHEDULE_TYPES.none;
 };
@@ -15,6 +26,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
   const days = getScheduleDays(periodStart, periodEnd);
   const dayKeys = days.map(d => format(d, 'yyyy-MM-dd'));
   const [menuCell, setMenuCell] = useState(null); // { employeeId, date, type }
+  const [optionsCell, setOptionsCell] = useState(null); // { employeeId, date, type }
   const [dragOver, setDragOver] = useState(null);
   // Drag-to-fill: drag an arrow and the fill follows the cursor along its axis
   const [fillDrag, setFillDrag] = useState(null); // { employeeId, date, type, axis, target: {employeeId,date} }
@@ -191,6 +203,13 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                             className="absolute z-40 top-1/2 -translate-y-1/2 right-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition cursor-grab active:cursor-grabbing">
                             <ArrowRight className="w-3 h-3" />
                           </button>
+                          {/* Options (WFH / custom time) — only for shift cards */}
+                          {type.startsWith('shift:') && (
+                            <button type="button" onClick={() => { setOptionsCell({ employeeId: emp.id, date, type }); setMenuCell(null); }} title="WFH / Custom time"
+                              className="absolute z-40 top-[-10px] left-[-6px] w-5 h-5 rounded-full bg-amber-500 text-white shadow flex items-center justify-center hover:scale-110 transition">
+                              <Settings2 className="w-3 h-3" />
+                            </button>
+                          )}
                           {/* Delete */}
                           <button type="button" onClick={handleDelete} title="Delete"
                             className="absolute z-40 top-[-10px] right-[-6px] w-5 h-5 rounded-full bg-destructive text-destructive-foreground shadow flex items-center justify-center hover:scale-110 transition">
@@ -217,6 +236,15 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
           </tbody>
         </table>
       </div>
+      {optionsCell && (
+        <ShiftCellOptions
+          open={!!optionsCell}
+          onClose={() => setOptionsCell(null)}
+          value={optionsCell.type}
+          shiftName={(shiftCards[parseShiftValue(optionsCell.type).baseType] || {}).short || 'Shift'}
+          onApply={(newValue) => onChange(optionsCell.employeeId, optionsCell.date, newValue)}
+        />
+      )}
     </div>
   );
 }

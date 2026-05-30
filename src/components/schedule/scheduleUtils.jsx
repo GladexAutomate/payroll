@@ -96,3 +96,20 @@ export const buildScheduleSummary = ({ employees, assignments, periodStart, peri
 };
 
 export const peso = (value) => `₱${Math.round(Number(value) || 0).toLocaleString()}`;
+
+// Shift cell values can carry a modifier: "shift:<id>", "shift:<id>::wfh", "shift:<id>::custom:0900-1300"
+export const parseShiftValue = (value) => {
+  if (!value || !value.startsWith('shift:')) return { baseType: value, mode: null, custom: null };
+  const [base, modifier] = value.split('::');
+  if (!modifier) return { baseType: base, mode: null, custom: null };
+  if (modifier === 'wfh') return { baseType: base, mode: 'wfh', custom: null };
+  if (modifier.startsWith('custom:')) return { baseType: base, mode: 'custom', custom: modifier.slice(7) };
+  return { baseType: base, mode: null, custom: null };
+};
+
+export const buildShiftValue = (baseType, mode, custom) => {
+  if (!baseType || !baseType.startsWith('shift:')) return baseType;
+  if (mode === 'wfh') return `${baseType}::wfh`;
+  if (mode === 'custom' && custom) return `${baseType}::custom:${custom}`;
+  return baseType;
+};
