@@ -48,8 +48,8 @@ export default function Shifts() {
           <div key={shift.id} className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-primary" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${shift.card_color || '#6366f1'}1a` }}>
+                  <Clock className="w-5 h-5" style={{ color: shift.card_color || '#6366f1' }} />
                 </div>
                 <div>
                   <p className="font-semibold">{shift.name}</p>
@@ -90,8 +90,10 @@ function ShiftForm({ shift, onSave, onClose }) {
     break_minutes: shift?.break_minutes || 60,
     grace_period_minutes: shift?.grace_period_minutes || 15,
     is_night_shift: shift?.is_night_shift || false,
+    card_color: shift?.card_color || '#6366f1',
   });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const COLORS = ['#6366f1', '#3b82f6', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6', '#64748b'];
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm">
@@ -107,6 +109,20 @@ function ShiftForm({ shift, onSave, onClose }) {
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Break (min)</Label><Input type="number" value={form.break_minutes} onChange={e => set('break_minutes', parseInt(e.target.value))} className="mt-1" /></div>
             <div><Label>Grace Period (min)</Label><Input type="number" value={form.grace_period_minutes} onChange={e => set('grace_period_minutes', parseInt(e.target.value))} className="mt-1" /></div>
+          </div>
+          <div>
+            <Label>Card Color</Label>
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => set('card_color', c)}
+                  className={`w-7 h-7 rounded-full border-2 transition ${form.card_color === c ? 'border-foreground scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
             <input type="checkbox" checked={form.is_night_shift} onChange={e => set('is_night_shift', e.target.checked)} /> Night shift (crosses midnight)

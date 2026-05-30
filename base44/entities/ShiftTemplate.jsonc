@@ -29,6 +29,11 @@
     "is_night_shift": {
       "type": "boolean",
       "default": false
+    },
+    "card_color": {
+      "type": "string",
+      "description": "Hex color for the shift card on the schedule",
+      "default": "#6366f1"
     }
   },
   "required": [

@@ -28,7 +28,8 @@ export default function ScheduleLegend({ shiftTemplates = [], draggable = false 
           key={t.id}
           draggable={draggable}
           onDragStart={draggable ? (e) => onDragStart(e, `shift:${t.id}`) : undefined}
-          className={`px-2 py-0.5 rounded border font-semibold bg-indigo-500 text-white border-indigo-600 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+          style={{ backgroundColor: t.card_color || '#6366f1', borderColor: t.card_color || '#6366f1' }}
+          className={`px-2 py-0.5 rounded border font-semibold text-white ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
         >
           {t.name} ({t.start_time}-{t.end_time})
         </span>
