@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { SCHEDULE_TYPES, getScheduleDays } from './scheduleUtils';
-import CellFillMenu from './CellFillMenu';
 
 // resolve a card config — supports built-in keys and dynamic shift cards (shift:<id>)
 const resolveConfig = (type, shiftCards = {}) => {
@@ -16,19 +16,20 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
   const [menuCell, setMenuCell] = useState(null); // { employeeId, date, type }
   const [dragOver, setDragOver] = useState(null);
 
-  // Build dynamic shift cards from templates
+  // Build dynamic shift cards from templates — color comes from the template
   const shiftCards = {};
   shiftTemplates.forEach(t => {
     shiftCards[`shift:${t.id}`] = {
       label: (t.name || 'Shift').slice(0, 10),
       short: `${t.name} (${t.start_time}-${t.end_time})`,
-      className: 'bg-indigo-500 text-white border-indigo-600',
+      className: 'text-white',
+      color: t.card_color || '#6366f1',
     };
   });
 
   const openMenu = (employeeId, date, type) => {
     if (!editable || type === 'none') return;
-    setMenuCell({ employeeId, date, type });
+    setMenuCell(prev => (prev && prev.employeeId === employeeId && prev.date === date) ? null : { employeeId, date, type });
   };
 
   const handleDrop = (e, employeeId, date) => {
@@ -38,7 +39,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
     const card = e.dataTransfer.getData('text/schedule-card');
     if (!card) return;
     onChange(employeeId, date, card);
-    setMenuCell({ employeeId, date, type: card });
+    setMenuCell(null);
   };
 
   const handleFill = (direction) => {
@@ -92,14 +93,45 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         onDragOver={editable ? (e) => { e.preventDefault(); setDragOver(cellKey); } : undefined}
                         onDragLeave={editable ? () => setDragOver(prev => prev === cellKey ? null : prev) : undefined}
                         onDrop={editable ? (e) => handleDrop(e, emp.id, date) : undefined}
-                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''}`}
-                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? (type === 'none' ? 'Drag a card here' : 'Click for fill / delete options') : config.short}
+                        style={config.color ? { backgroundColor: config.color, borderColor: config.color } : undefined}
+                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''} ${showMenu ? 'ring-2 ring-primary' : ''}`}
+                        title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? (type === 'none' ? 'Drag a card here' : 'Click to fill / delete') : config.short}
                       >
                         {isPendingLeave && (
                           <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-yellow-400/70 bg-yellow-300/20 animate-pulse" />
                         )}
                         <span className="relative">{config.label}</span>
                       </button>
+                      {showMenu && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setMenuCell(null)} />
+                          {/* Up */}
+                          <button type="button" onClick={() => handleFill('up')} title="Fill up"
+                            className="absolute z-40 left-1/2 -translate-x-1/2 top-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition">
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          {/* Down */}
+                          <button type="button" onClick={() => handleFill('down')} title="Fill down"
+                            className="absolute z-40 left-1/2 -translate-x-1/2 bottom-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition">
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                          {/* Left */}
+                          <button type="button" onClick={() => handleFill('left')} title="Fill left"
+                            className="absolute z-40 top-1/2 -translate-y-1/2 left-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition">
+                            <ArrowLeft className="w-3 h-3" />
+                          </button>
+                          {/* Right */}
+                          <button type="button" onClick={() => handleFill('right')} title="Fill right"
+                            className="absolute z-40 top-1/2 -translate-y-1/2 right-[-10px] w-5 h-5 rounded-full bg-primary text-primary-foreground shadow flex items-center justify-center hover:scale-110 transition">
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                          {/* Delete */}
+                          <button type="button" onClick={handleDelete} title="Delete"
+                            className="absolute z-40 top-[-10px] right-[-6px] w-5 h-5 rounded-full bg-destructive text-destructive-foreground shadow flex items-center justify-center hover:scale-110 transition">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
                       {actualOverlay && (() => {
                         const a = actualOverlay?.[emp.id]?.[date];
                         if (!a) return null;
@@ -111,9 +143,6 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         }
                         return null;
                       })()}
-                      {showMenu && (
-                        <CellFillMenu onFill={handleFill} onDelete={handleDelete} onClose={() => setMenuCell(null)} />
-                      )}
                     </td>
                   );
                 })}
