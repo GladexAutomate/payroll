@@ -105,10 +105,14 @@ Deno.serve(async (req) => {
       let lateMinutes = 0;
       for (const log of employeeLogs) {
         if (!log.time_in || !log.time_out) continue;
-        const workedHours = Number(log.total_hours) || 0;
+        // Derive worked hours from punches; fall back to stored total_hours.
+        let workedHours = (new Date(log.time_out) - new Date(log.time_in)) / 3600000;
+        if (!Number.isFinite(workedHours) || workedHours <= 0) workedHours = Number(log.total_hours) || 0;
         if (workedHours <= 0) continue;
-        hours += Math.min(workedHours, 8);
-        overtimeHours += Math.max(workedHours - 8, 0);
+        // Regular hours capped at 8 (min 1); OT counted in whole hours beyond 8.
+        hours += Math.max(1, Math.min(workedHours, 8));
+        const extra = workedHours - 8;
+        if (extra >= 1) overtimeHours += Math.floor(extra);
         lateMinutes += Number(log.late_minutes) || 0;
       }
 

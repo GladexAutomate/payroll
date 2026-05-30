@@ -165,7 +165,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   useEffect(() => { setPage(1); }, [search]);
 
   useEffect(() => {
-    if (!loading && logs.some(log => Number(log.total_hours) > 0)) computePaySummaries();
+    if (!loading && logs.some(log => log.time_in && log.time_out)) computePaySummaries();
   }, [loading, logs.length, startDate, endDate]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
