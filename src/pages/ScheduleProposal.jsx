@@ -3,13 +3,19 @@ import { addDays, format } from 'date-fns';
 import { CalendarDays, Send, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
 import { buildScheduleSummary, getEmployeeName, getEmployeeSalary, getScheduleDays } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
+import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
 import ProposalWizard from '@/components/schedule/ProposalWizard';
+
+const cell = (v) => String(v || '').trim().toLowerCase();
 
 export default function ScheduleProposal() {
   const defaultStart = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
@@ -33,7 +39,7 @@ export default function ScheduleProposal() {
   const loadEmployees = async () => {
     setLoading(true);
     const [res, shifts, leaveReqs, locals, org] = await Promise.all([
-      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
+      base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
       base44.entities.ShiftTemplate.list(),
       base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
       base44.entities.Employee.list('-created_date', 2000),
@@ -47,9 +53,7 @@ export default function ScheduleProposal() {
     setLoading(false);
   };
 
-  const norm = (v) => String(v || '').trim().toLowerCase();
-
-  const employees = useMemo(() => records.map(record => ({
+  const allEmployees = useMemo(() => records.map(record => ({
     id: record.id,
     backend_id: record.backend_id,
     airtable_record_id: record.airtable_record_id || record.fields?.['RECORD ID'] || record.id,
@@ -62,15 +66,18 @@ export default function ScheduleProposal() {
     email: record.fields?.Email || record.fields?.['Business email'] || '',
   })), [records]);
 
-  // Only employees matching the selected company/branch/department/role are pickable.
-  const formComplete = !!(form.leader_name && form.company_name && form.branch_name && form.department_name && form.department_role && form.team_name && form.period_start && form.period_end);
+  // Form must be complete before employees show; then only show those under the chosen org path.
+  const formComplete = !!(form.leader_name && form.company_name && form.branch_name && form.department_name && form.department_role && form.team_name);
 
-  const filteredEmployees = useMemo(() => employees.filter(emp =>
-    (!form.company_name || norm(emp.company) === norm(form.company_name)) &&
-    (!form.branch_name || norm(emp.branch) === norm(form.branch_name)) &&
-    (!form.department_name || norm(emp.department) === norm(form.department_name)) &&
-    (!form.department_role || norm(emp.department_role) === norm(form.department_role))
-  ), [employees, form.company_name, form.branch_name, form.department_name, form.department_role]);
+  const employees = useMemo(() => {
+    if (!formComplete) return [];
+    return allEmployees.filter(emp =>
+      cell(emp.company) === cell(form.company_name) &&
+      cell(emp.branch) === cell(form.branch_name) &&
+      cell(emp.department) === cell(form.department_name) &&
+      cell(emp.department_role) === cell(form.department_role)
+    );
+  }, [allEmployees, formComplete, form.company_name, form.branch_name, form.department_name, form.department_role]);
 
   const selectedEmployees = useMemo(() => employees.filter(emp => selectedIds.includes(emp.id)), [employees, selectedIds]);
 
@@ -93,6 +100,7 @@ export default function ScheduleProposal() {
   const departmentOptions = useMemo(() => hierarchy.departments.filter(d => (!form.company_name || d.company_name === form.company_name) && (!form.branch_name || d.branch_name === form.branch_name)), [hierarchy, form.company_name, form.branch_name]);
   const roleOptions = useMemo(() => hierarchy.departmentRoles.filter(r => (!form.company_name || r.company_name === form.company_name) && (!form.branch_name || r.branch_name === form.branch_name) && (!form.department_name || r.department_name === form.department_name)), [hierarchy, form.company_name, form.branch_name, form.department_name]);
 
+  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   const updateSchedule = (employeeId, date, type) => setAssignments(prev => ({ ...prev, [employeeId]: { ...(prev[employeeId] || {}), [date]: type } }));
 
@@ -154,29 +162,38 @@ export default function ScheduleProposal() {
           branchOptions={branchOptions}
           departmentOptions={departmentOptions}
           roleOptions={roleOptions}
+          complete={formComplete}
         />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          <PayPeriodPicker
+            periodStart={form.period_start}
+            periodEnd={form.period_end}
+            onChange={(start, end) => setForm(prev => ({ ...prev, period_start: start, period_end: end }))}
+          />
+          <div className="md:col-span-3"><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" /></div>
+        </div>
       </div>
 
-      {formComplete && (
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Select Employees</h3></div>
-            <span className="text-xs text-muted-foreground">{selectedEmployees.length} selected</span>
-          </div>
-          {loading ? <div className="text-sm text-muted-foreground py-6">Loading Airtable employees...</div> : filteredEmployees.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-6">No employees found under the selected company, branch, department and role.</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-auto pr-1">
-              {filteredEmployees.map(emp => (
-                <label key={emp.id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm cursor-pointer hover:bg-muted/40">
-                  <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleEmployee(emp.id)} />
-                  <span className="flex-1 truncate">{emp.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Select Employees</h3></div>
+          <span className="text-xs text-muted-foreground">{selectedEmployees.length} selected</span>
         </div>
-      )}
+        {!formComplete ? (
+          <div className="text-sm text-muted-foreground py-6 text-center">Complete the schedule details above to load employees.</div>
+        ) : loading ? <div className="text-sm text-muted-foreground py-6">Loading Airtable employees...</div> : employees.length === 0 ? (
+          <div className="text-sm text-muted-foreground py-6 text-center">No employees found under the selected company, branch, department and role.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-auto pr-1">
+            {employees.map(emp => (
+              <label key={emp.id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm cursor-pointer hover:bg-muted/40">
+                <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleEmployee(emp.id)} />
+                <span className="flex-1 truncate">{emp.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
 
       {selectedEmployees.length > 0 && (
         <>
