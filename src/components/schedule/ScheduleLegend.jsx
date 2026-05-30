@@ -1,6 +1,6 @@
 import { SCHEDULE_TYPES } from './scheduleUtils';
 
-const ORDER = ['opener', 'closer', 'off', 'wfh', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity', 'none'];
+const ORDER = ['off', 'wfh', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity', 'none'];
 
 export default function ScheduleLegend({ shiftTemplates = [], draggable = false }) {
   const onDragStart = (e, key) => {
