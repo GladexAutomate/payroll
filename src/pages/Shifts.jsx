@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { DragDropContext, Droppable } from '@hello-pangea/dnd';
 import { base44 } from '@/api/base44Client';
-import { Plus, Pencil, Clock, Trash2 } from 'lucide-react';
+import { Plus, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ShiftCard from '@/components/shifts/ShiftCard';
 
 export default function Shifts() {
   const [shifts, setShifts] = useState([]);
@@ -15,14 +17,23 @@ export default function Shifts() {
 
   const loadShifts = async () => {
     setLoading(true);
-    const data = await base44.entities.ShiftTemplate.list();
+    const data = await base44.entities.ShiftTemplate.list('sort_order');
     setShifts(data);
     setLoading(false);
   };
 
+  const handleDragEnd = async (result) => {
+    if (!result.destination || result.source.index === result.destination.index) return;
+    const reordered = Array.from(shifts);
+    const [moved] = reordered.splice(result.source.index, 1);
+    reordered.splice(result.destination.index, 0, moved);
+    setShifts(reordered);
+    await Promise.all(reordered.map((s, i) => base44.entities.ShiftTemplate.update(s.id, { sort_order: i })));
+  };
+
   const handleSave = async (data) => {
     if (editing) await base44.entities.ShiftTemplate.update(editing.id, data);
-    else await base44.entities.ShiftTemplate.create(data);
+    else await base44.entities.ShiftTemplate.create({ ...data, sort_order: shifts.length });
     setShowForm(false); setEditing(null); loadShifts();
   };
 
@@ -39,41 +50,35 @@ export default function Shifts() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading ? (
-          [...Array(3)].map((_, i) => <div key={i} className="h-36 bg-card border border-border rounded-xl animate-pulse" />)
-        ) : shifts.length === 0 ? (
-          <div className="col-span-3 text-center py-12 text-muted-foreground">No shift templates yet.</div>
-        ) : shifts.map(shift => (
-          <div key={shift.id} className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${shift.card_color || '#6366f1'}1a` }}>
-                  <Clock className="w-5 h-5" style={{ color: shift.card_color || '#6366f1' }} />
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-36 bg-card border border-border rounded-xl animate-pulse" />)}
+        </div>
+      ) : shifts.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">No shift templates yet.</div>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">Drag the <Clock className="w-3 h-3 inline" /> handle to reorder shifts. This order is used everywhere, including schedule proposals.</p>
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="shifts" direction="horizontal">
+              {(provided) => (
+                <div ref={provided.innerRef} {...provided.droppableProps} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {shifts.map((shift, index) => (
+                    <ShiftCard
+                      key={shift.id}
+                      shift={shift}
+                      index={index}
+                      onEdit={(s) => { setEditing(s); setShowForm(true); }}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                  {provided.placeholder}
                 </div>
-                <div>
-                  <p className="font-semibold">{shift.name}</p>
-                  {shift.is_night_shift && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Night Shift</span>}
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <button onClick={() => { setEditing(shift); setShowForm(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => handleDelete(shift.id)} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Start Time</span><span className="font-medium">{shift.start_time}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">End Time</span><span className="font-medium">{shift.end_time}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Break</span><span>{shift.break_minutes || 60} min</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Grace Period</span><span>{shift.grace_period_minutes || 15} min</span></div>
-            </div>
-          </div>
-        ))}
-      </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </>
+      )}
 
       {showForm && (
         <ShiftForm shift={editing} onSave={handleSave} onClose={() => { setShowForm(false); setEditing(null); }} />

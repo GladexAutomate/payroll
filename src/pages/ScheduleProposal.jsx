@@ -40,7 +40,7 @@ export default function ScheduleProposal() {
     setLoading(true);
     const [res, shifts, leaveReqs, locals, org] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
-      base44.entities.ShiftTemplate.list(),
+      base44.entities.ShiftTemplate.list('sort_order'),
       base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
       base44.entities.Employee.list('-created_date', 2000),
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),

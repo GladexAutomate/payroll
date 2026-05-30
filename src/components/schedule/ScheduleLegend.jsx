@@ -10,6 +10,17 @@ export default function ScheduleLegend({ shiftTemplates = [], draggable = false 
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      {shiftTemplates.map(t => (
+        <span
+          key={t.id}
+          draggable={draggable}
+          onDragStart={draggable ? (e) => onDragStart(e, `shift:${t.id}`) : undefined}
+          style={{ backgroundColor: t.card_color || '#6366f1', borderColor: t.card_color || '#6366f1' }}
+          className={`px-2 py-0.5 rounded border font-semibold text-white ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        >
+          {t.name} ({t.start_time}-{t.end_time})
+        </span>
+      ))}
       {ORDER.map(key => {
         const c = SCHEDULE_TYPES[key];
         return (
@@ -23,17 +34,6 @@ export default function ScheduleLegend({ shiftTemplates = [], draggable = false 
           </span>
         );
       })}
-      {shiftTemplates.map(t => (
-        <span
-          key={t.id}
-          draggable={draggable}
-          onDragStart={draggable ? (e) => onDragStart(e, `shift:${t.id}`) : undefined}
-          style={{ backgroundColor: t.card_color || '#6366f1', borderColor: t.card_color || '#6366f1' }}
-          className={`px-2 py-0.5 rounded border font-semibold text-white ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
-        >
-          {t.name} ({t.start_time}-{t.end_time})
-        </span>
-      ))}
     </div>
   );
 }

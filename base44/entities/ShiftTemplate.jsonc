@@ -34,6 +34,11 @@
       "type": "string",
       "description": "Hex color for the shift card on the schedule",
       "default": "#6366f1"
+    },
+    "sort_order": {
+      "type": "number",
+      "description": "Display/order index for shift cards",
+      "default": 0
     }
   },
   "required": [
