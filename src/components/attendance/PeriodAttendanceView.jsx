@@ -26,7 +26,6 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   const [employeeMatches, setEmployeeMatches] = useState([]);
   const [paySummaries, setPaySummaries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [computingPay, setComputingPay] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -164,9 +163,9 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   // Reset to first page whenever search changes
   useEffect(() => { setPage(1); }, [search]);
 
-  useEffect(() => {
-    if (!loading && logs.some(log => log.time_in && log.time_out)) computePaySummaries();
-  }, [loading, logs.length, startDate, endDate]);
+  // Pay summaries are now produced by the "Approve for Payroll" reconciliation
+  // on the Approved Schedule page (schedule + attendance + holidays). This view
+  // only displays the latest computed gross/lates if available.
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = useMemo(
@@ -185,22 +184,6 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     ]);
     const hiddenUploadIds = new Set(hiddenUploads.filter(upload => upload.status === 'deleting' || upload.status === 'deleted').map(upload => upload.id));
     setLogs(logsData.filter(log => !hiddenUploadIds.has(log.upload_id)));
-  };
-
-  const refreshPaySummaries = async () => {
-    const summariesData = await base44.entities.AttendancePaySummary.filter({ period_start: startDate, period_end: endDate }, '-updated_date', 5000);
-    setPaySummaries(summariesData);
-  };
-
-  const computePaySummaries = async () => {
-    setComputingPay(true);
-    await base44.functions.invoke('computeAttendancePaySummaries', {
-      period_start: startDate,
-      period_end: endDate,
-      period_label: periodLabel,
-    });
-    await refreshPaySummaries();
-    setComputingPay(false);
   };
 
   const savePunch = async ({ timeIn, timeOut }) => {
@@ -236,7 +219,6 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     }
     setEditCell(null);
     await reloadLogs();
-    await computePaySummaries();
   };
 
   const summarize = (empLogs) => {
@@ -307,7 +289,6 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         </div>
         <div className="text-sm text-muted-foreground">
           <strong className="text-foreground">{periodLabel}</strong> · {days.length} days · {rows.length} employees
-          {computingPay && <span className="ml-2 text-primary">computing pay…</span>}
         </div>
         <div className="ml-auto">
           <Button variant="outline" size="sm" onClick={exportToExcel} disabled={loading || rows.length === 0}>

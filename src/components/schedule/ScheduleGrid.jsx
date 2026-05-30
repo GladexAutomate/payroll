@@ -11,7 +11,7 @@ const resolveConfig = (type, shiftCards = {}) => {
   return SCHEDULE_TYPES[type] || SCHEDULE_TYPES.none;
 };
 
-export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, onFill, shiftTemplates = [], leaveOverlay = {} }) {
+export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, onFill, shiftTemplates = [], leaveOverlay = {}, actualOverlay = null }) {
   const days = getScheduleDays(periodStart, periodEnd);
   const [menuCell, setMenuCell] = useState(null); // { employeeId, date, type }
   const [dragOver, setDragOver] = useState(null);
@@ -100,6 +100,17 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         )}
                         <span className="relative">{config.label}</span>
                       </button>
+                      {actualOverlay && (() => {
+                        const a = actualOverlay?.[emp.id]?.[date];
+                        if (!a) return null;
+                        if (a.worked) {
+                          return <div className="mt-0.5 text-[9px] font-bold text-green-700">✓ {Number(a.hours).toFixed(1)}h</div>;
+                        }
+                        if (a.absent) {
+                          return <div className="mt-0.5 text-[9px] font-bold text-red-600">✗ Absent</div>;
+                        }
+                        return null;
+                      })()}
                       {showMenu && (
                         <CellFillMenu onFill={handleFill} onDelete={handleDelete} onClose={() => setMenuCell(null)} />
                       )}

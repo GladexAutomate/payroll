@@ -184,13 +184,18 @@ Deno.serve(async (req) => {
       const overtimeHours = Number(summary.overtime_hours) || 0;
       const totalLateMin = Number(summary.late_minutes) || 0;
       const totalUndertimeMin = 0;
-      const daysWorked = totalHours > 0 ? Math.ceil(totalHours / 8) : 0;
-      const daysAbsent = 0;
+      const daysWorked = Number(summary.days_worked) || (totalHours > 0 ? Math.ceil(totalHours / 8) : 0);
+      const daysAbsent = Number(summary.days_absent) || 0;
       const grossPay = Number(summary.gross) || 0;
       const lateDeduction = Number(summary.lates_deduction) || 0;
       const allowances = 0;
-      const overtimePay = overtimeHours * hourlyRate * 1.25;
-      const regularPay = Math.max(grossPay - overtimePay, 0);
+      // Use reconciled pay breakdown when available; fall back to legacy derivation.
+      const overtimePay = summary.overtime_pay != null ? Number(summary.overtime_pay) : overtimeHours * hourlyRate * 1.25;
+      const holidayPay = Number(summary.holiday_pay) || 0;
+      const leavePay = Number(summary.leave_pay) || 0;
+      const regularPay = summary.regular_pay != null
+        ? Number(summary.regular_pay) + leavePay
+        : Math.max(grossPay - overtimePay, 0);
       const sss = getSSSContribution(monthlySalary);
       const ph = getPhilHealthContribution(monthlySalary);
       const pi = getPagIBIGContribution(monthlySalary);
@@ -222,6 +227,7 @@ Deno.serve(async (req) => {
         undertime_minutes: totalUndertimeMin,
         overtime_hours: money(overtimeHours),
         overtime_pay: money(overtimePay),
+        holiday_pay: money(holidayPay),
         allowances: money(allowances),
         gross_pay: money(grossPay),
         sss_employee: money(sssEE),

@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
+import ReconcileBar from '@/components/schedule/ReconcileBar';
 import { getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
+import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
 import { exportApprovedScheduleToExcel } from '@/components/schedule/exportApprovedSchedule';
 
 export default function ApprovedSchedule() {
@@ -21,11 +23,15 @@ export default function ApprovedSchedule() {
   const [plotted, setPlotted] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [localEmployees, setLocalEmployees] = useState([]);
+  const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [showActual, setShowActual] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [lastReconciledAt, setLastReconciledAt] = useState(null);
   const { toast } = useToast();
 
   useEffect(() => { loadBase(); }, []);
@@ -46,15 +52,33 @@ export default function ApprovedSchedule() {
   };
 
   const loadRange = async () => {
-    const [plottedData, leaveData] = await Promise.all([
+    const [plottedData, leaveData, logsData] = await Promise.all([
       base44.entities.ApprovedSchedule.filter({ date: { $gte: periodStart, $lte: periodEnd } }, '-date', 5000),
       base44.entities.LeaveRequest.filter({
         date_from: { $lte: periodEnd },
         date_to: { $gte: periodStart },
       }, '-date_from', 5000),
+      base44.entities.AttendanceLog.filter({ date: { $gte: periodStart, $lte: periodEnd } }, 'date', 5000),
     ]);
     setPlotted(plottedData || []);
     setLeaves(leaveData || []);
+    setAttendanceLogs(logsData || []);
+  };
+
+  const handleReconcile = async () => {
+    setReconciling(true);
+    const res = await base44.functions.invoke('reconcilePeriod', {
+      period_start: periodStart,
+      period_end: periodEnd,
+      period_label: `${periodStart} – ${periodEnd}`,
+    });
+    setReconciling(false);
+    if (res.data?.success) {
+      setLastReconciledAt(format(new Date(), 'MMM d, HH:mm'));
+      toast({ title: 'Approved for payroll', description: `Reconciled ${res.data.count} employees. Payroll will use these results.` });
+    } else {
+      toast({ title: 'Reconcile failed', description: res.data?.error || 'Unknown error', variant: 'destructive' });
+    }
   };
 
   const employees = useMemo(() => records.map(record => ({
@@ -108,6 +132,13 @@ export default function ApprovedSchedule() {
     });
     return map;
   }, [baseAssignments, draft]);
+
+  const actualOverlay = useMemo(() => {
+    if (!showActual) return null;
+    return buildActualOverlay({
+      employees: filteredEmployees, logs: attendanceLogs, localEmployees, assignments, periodStart, periodEnd,
+    });
+  }, [showActual, filteredEmployees, attendanceLogs, localEmployees, assignments, periodStart, periodEnd]);
 
   const handleCellChange = (empId, date, type) => {
     setDraft(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [date]: type } }));
@@ -202,6 +233,13 @@ export default function ApprovedSchedule() {
           <p className="text-xs text-muted-foreground">{filteredEmployees.length} employees · {plottedCount} plotted cells in range</p>
           <ScheduleLegend shiftTemplates={shiftTemplates} />
         </div>
+        <ReconcileBar
+          showActual={showActual}
+          onToggleActual={() => setShowActual(s => !s)}
+          onReconcile={handleReconcile}
+          reconciling={reconciling}
+          lastReconciledAt={lastReconciledAt}
+        />
         <LeaveNotices notices={notices} />
         {loading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">Loading employees...</div>
@@ -210,6 +248,7 @@ export default function ApprovedSchedule() {
             employees={filteredEmployees}
             assignments={assignments}
             leaveOverlay={leaveOverlay}
+            actualOverlay={actualOverlay}
             shiftTemplates={shiftTemplates}
             periodStart={periodStart}
             periodEnd={periodEnd}

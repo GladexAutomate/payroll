@@ -46,6 +46,34 @@
       "type": "number",
       "default": 0
     },
+    "days_worked": {
+      "type": "number",
+      "default": 0
+    },
+    "days_absent": {
+      "type": "number",
+      "default": 0
+    },
+    "paid_leave_days": {
+      "type": "number",
+      "default": 0
+    },
+    "regular_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "overtime_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "holiday_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "leave_pay": {
+      "type": "number",
+      "default": 0
+    },
     "computed_at": {
       "type": "string"
     }
