@@ -95,8 +95,7 @@ export default function EmployeeAccessGate({ children }) {
             </div>
             <div>
               <label className="text-sm font-medium">Generated Password</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Initials + date hired" className="mt-1" required />
-              <p className="text-xs text-muted-foreground mt-1">Format: initials + date hired as YYYYMMDD.</p>
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="mt-1" required />
             </div>
             {error && <div className="rounded-lg bg-destructive/10 text-destructive text-sm p-3">{error}</div>}
             <Button variant="ghost" type="button" className="w-full" onClick={() => { setLoading(true); setError(''); checkAccess(); }}>
