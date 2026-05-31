@@ -85,13 +85,15 @@ function getPagIBIGContribution(monthlySalary, policy) {
   return { employee: Math.min(monthlySalary * rate, maxPerSide), employer: Math.min(monthlySalary * rate, maxPerSide) };
 }
 
-function computeWithholdingTax(annualTaxableIncome) {
-  if (annualTaxableIncome <= 250000) return 0;
-  if (annualTaxableIncome <= 400000) return (annualTaxableIncome - 250000) * 0.15;
-  if (annualTaxableIncome <= 800000) return 22500 + (annualTaxableIncome - 400000) * 0.20;
-  if (annualTaxableIncome <= 2000000) return 102500 + (annualTaxableIncome - 800000) * 0.25;
-  if (annualTaxableIncome <= 8000000) return 402500 + (annualTaxableIncome - 2000000) * 0.30;
-  return 2202500 + (annualTaxableIncome - 8000000) * 0.35;
+// 2026 PH Monthly Withholding Tax Table
+function computeMonthlyWithholdingTax(monthlyTaxableIncome) {
+  const income = Number(monthlyTaxableIncome) || 0;
+  if (income <= 20833) return 0;
+  if (income <= 33332) return (income - 20833) * 0.15;
+  if (income <= 66666) return 1875 + (income - 33333) * 0.20;
+  if (income <= 166666) return 8541.80 + (income - 66667) * 0.25;
+  if (income <= 666666) return 33541.80 + (income - 166667) * 0.30;
+  return 183541.80 + (income - 666667) * 0.35;
 }
 
 function money(value) {
@@ -278,8 +280,8 @@ Deno.serve(async (req) => {
       const phER = ph.employer / 2;
       const piEE = pi.employee / 2;
       const piER = pi.employer / 2;
-      const annualTaxable = (monthlySalary * 12) - (sss.employee * 12) - (ph.employee * 12) - (pi.employee * 12);
-      const periodTax = computeWithholdingTax(annualTaxable) / 24;
+      const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
+      const periodTax = computeMonthlyWithholdingTax(monthlyTaxable) / 2;
       const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + otherDeductions;
       const grossWithAllowance = grossPay + allowances;
       const netPay = grossWithAllowance - totalDeductionsForEmp;
