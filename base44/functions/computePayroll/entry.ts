@@ -104,7 +104,7 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry(operation, attempts = 8) {
+async function withRetry(operation, attempts = 12) {
   let lastError;
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -113,7 +113,9 @@ async function withRetry(operation, attempts = 8) {
       lastError = error;
       const message = String(error?.message || '');
       if (!message.includes('429') && !message.toLowerCase().includes('rate limit')) throw error;
-      await wait(1200 * (i + 1));
+      // Exponential backoff with jitter, capped at ~15s, so colliding runs back off instead of dying.
+      const backoff = Math.min(15000, 1000 * Math.pow(1.6, i)) + Math.floor(Math.random() * 500);
+      await wait(backoff);
     }
   }
   throw lastError;
@@ -136,6 +138,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { payroll_run_id } = body;
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
+    globalThis.__activePayrollRunId = payroll_run_id;
 
     const runs = await withRetry(() => base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id }));
     if (!runs.length) return Response.json({ error: 'Payroll run not found' }, { status: 404 });
@@ -372,6 +375,21 @@ Deno.serve(async (req) => {
       message: `Payroll computed from saved attendance pay summaries for ${employees.length} employees.`,
     });
   } catch (error) {
+    // If the run died mid-compute (e.g. rate limits), reset it back to draft so the user can retry
+    // instead of it being permanently stuck at "computing".
+    const stuckId = globalThis.__activePayrollRunId;
+    if (stuckId) {
+      try {
+        const base44 = createClientFromRequest(req);
+        await base44.asServiceRole.entities.PayrollRun.update(stuckId, {
+          status: 'draft',
+          compute_progress: 0,
+          notes: `Compute failed: ${error.message}. Please retry.`,
+        });
+      } catch (_resetError) {
+        // best-effort reset; ignore secondary failures
+      }
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });

@@ -18,14 +18,16 @@ function buildEmployeeKeys(e) {
     .filter(Boolean).map(k => String(k).trim());
 }
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
-async function withRetry(op, attempts = 8) {
+async function withRetry(op, attempts = 12) {
   let last;
   for (let i = 0; i < attempts; i += 1) {
     try { return await op(); } catch (err) {
       last = err;
       const m = String(err?.message || '');
       if (!m.includes('429') && !m.toLowerCase().includes('rate limit')) throw err;
-      await wait(1200 * (i + 1));
+      // Exponential backoff with jitter, capped at ~15s, so colliding runs back off instead of dying.
+      const backoff = Math.min(15000, 1000 * Math.pow(1.6, i)) + Math.floor(Math.random() * 500);
+      await wait(backoff);
     }
   }
   throw last;
