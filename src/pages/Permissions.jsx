@@ -62,15 +62,38 @@ export default function Permissions() {
   };
 
   const save = async () => {
-    if (!selectedTier) return;
+    if (!selectedTier || saving) return;
     setSaving(true);
+    setSavedNote('');
     const key = tierPermissionKey(selectedTier.key);
-    const existing = await base44.entities.RolePagePermission.filter({ role: key }, '-updated_date', 1);
     const data = { role: key, role_label: selectedTier.label, allowed_paths: allowed };
-    if (existing.length) await base44.entities.RolePagePermission.update(existing[0].id, data);
-    else await base44.entities.RolePagePermission.create(data);
-    setSaving(false);
-    setSavedNote('Permissions saved. Everyone in this tier will see the change on their next page load.');
+
+    // Retry on transient gateway errors (e.g. 502).
+    const withRetry = async (fn, attempts = 3) => {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await fn();
+        } catch (err) {
+          const status = err?.response?.status || err?.status;
+          if (i < attempts - 1 && (status === 502 || status === 503 || status === 504)) {
+            await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+            continue;
+          }
+          throw err;
+        }
+      }
+    };
+
+    try {
+      const existing = await withRetry(() => base44.entities.RolePagePermission.filter({ role: key }, '-updated_date', 1));
+      if (existing.length) await withRetry(() => base44.entities.RolePagePermission.update(existing[0].id, data));
+      else await withRetry(() => base44.entities.RolePagePermission.create(data));
+      setSavedNote('Permissions saved. Everyone in this tier will see the change on their next page load.');
+    } catch {
+      setSavedNote('Could not save permissions — the server was temporarily unavailable. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loadingPerms) {
