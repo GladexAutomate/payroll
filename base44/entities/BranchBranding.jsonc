@@ -1,0 +1,40 @@
+{
+  "name": "BranchBranding",
+  "type": "object",
+  "properties": {
+    "branch_id": {
+      "type": "string",
+      "description": "Slug-based branch id from the organization hierarchy"
+    },
+    "branch_name": {
+      "type": "string"
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "logo_url": {
+      "type": "string",
+      "description": "Uploaded branch/company logo image URL"
+    },
+    "primary_color": {
+      "type": "string",
+      "description": "Hex color for the payslip header background start, e.g. #0f172a"
+    },
+    "secondary_color": {
+      "type": "string",
+      "description": "Hex color for the payslip header background end / accent, e.g. #1e3a8a"
+    },
+    "accent_color": {
+      "type": "string",
+      "description": "Hex accent color used for section markers, e.g. #2563eb"
+    },
+    "text_on_primary": {
+      "type": "string",
+      "description": "Readable text color over the primary header (#ffffff or #0f172a)",
+      "default": "#ffffff"
+    }
+  },
+  "required": [
+    "branch_id"
+  ]
+}

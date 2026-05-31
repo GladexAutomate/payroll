@@ -10,14 +10,23 @@ const Row = ({ label, value, highlight, strong, bordered = true }) => (
   </div>
 );
 
-const SectionTitle = ({ children }) => (
+const SectionTitle = ({ children, accent = '#2563eb' }) => (
   <div className="mt-4 mb-1.5 flex items-center gap-2">
-    <span className="h-3.5 w-1 rounded-full bg-blue-600" />
+    <span className="h-3.5 w-1 rounded-full" style={{ background: accent }} />
     <p className="text-[11px] font-bold uppercase tracking-wide text-slate-700">{children}</p>
   </div>
 );
 
-export default function PayslipDocument({ record, employee, run, onClose }) {
+export default function PayslipDocument({ record, employee, run, branding, onClose }) {
+  const brand = {
+    primary: branding?.primary_color || '#0f172a',
+    secondary: branding?.secondary_color || '#1e3a8a',
+    accent: branding?.accent_color || '#2563eb',
+    textOnPrimary: branding?.text_on_primary || '#ffffff',
+    logo: branding?.logo_url || '',
+  };
+  const headerStyle = { background: `linear-gradient(to right, ${brand.primary}, ${brand.secondary})`, color: brand.textOnPrimary };
+  const subTextStyle = { color: brand.textOnPrimary, opacity: 0.75 };
   const fields = employee?.fields || {};
   const company = fields['Company'] || fields['COMPANY'] || employee?.company || 'Company';
   const position = fields['Job Title'] || fields['Position'] || '—';
@@ -49,17 +58,27 @@ export default function PayslipDocument({ record, employee, run, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-gradient-to-b from-slate-50 to-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto border-t-4 border-blue-600">
-        <div id="payslip-content" className="p-7">
+      <div className="bg-gradient-to-b from-slate-50 to-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto border-t-4" style={{ borderTopColor: brand.accent }}>
+        <div id="payslip-content" className="relative p-7">
+          {/* Logo watermark behind body */}
+          {brand.logo && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <img src={brand.logo} alt="" className="w-2/3 max-w-md object-contain opacity-[0.06]" />
+            </div>
+          )}
+          <div className="relative">
           {/* Header */}
-          <div className="flex items-start justify-between rounded-lg bg-gradient-to-r from-slate-900 to-blue-900 p-4 text-white shadow-md">
-            <div>
-              <p className="font-bold text-sm uppercase tracking-wide">{company}</p>
-              <p className="text-[10px] text-blue-200 italic">Payslip — {run.period_label}</p>
+          <div className="flex items-start justify-between rounded-lg p-4 shadow-md" style={headerStyle}>
+            <div className="flex items-center gap-3">
+              {brand.logo && <img src={brand.logo} alt="logo" className="h-10 w-10 object-contain rounded bg-white/90 p-1" />}
+              <div>
+                <p className="font-bold text-sm uppercase tracking-wide">{company}</p>
+                <p className="text-[10px] italic" style={subTextStyle}>Payslip — {run.period_label}</p>
+              </div>
             </div>
             <div className="text-right">
               <p className="font-bold text-sm">PaySync PH</p>
-              <p className="text-[10px] text-blue-200">Official Payslip</p>
+              <p className="text-[10px]" style={subTextStyle}>Official Payslip</p>
             </div>
           </div>
 
@@ -77,7 +96,7 @@ export default function PayslipDocument({ record, employee, run, onClose }) {
 
             <div>
               <div className="mb-1 flex items-center gap-2">
-                <span className="h-3.5 w-1 rounded-full bg-blue-600" />
+                <span className="h-3.5 w-1 rounded-full" style={{ background: brand.accent }} />
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-700">I. Salary Details</p>
               </div>
               <table className="w-full text-[11px] border border-slate-300 border-collapse rounded overflow-hidden">
@@ -92,7 +111,7 @@ export default function PayslipDocument({ record, employee, run, onClose }) {
           </div>
 
           {/* Payments and other incomes */}
-          <SectionTitle>II. Payments and Other Incomes</SectionTitle>
+          <SectionTitle accent={brand.accent}>II. Payments and Other Incomes</SectionTitle>
           <div className="grid md:grid-cols-2 gap-3 items-start">
             <div className="border border-slate-300 rounded-lg overflow-hidden shadow-sm">
               <Row label="Regular Pay" value={fmt(regularPay)} />
@@ -109,7 +128,7 @@ export default function PayslipDocument({ record, employee, run, onClose }) {
           </div>
 
           {/* Deductions */}
-          <SectionTitle>III. Deductions</SectionTitle>
+          <SectionTitle accent={brand.accent}>III. Deductions</SectionTitle>
           <div className="grid md:grid-cols-2 gap-3 items-start">
             <div className="border border-slate-300 rounded-lg overflow-hidden shadow-sm">
               {govDeductions.map(([label, val]) => <Row key={label} label={label} value={fmt(val)} />)}
@@ -126,13 +145,14 @@ export default function PayslipDocument({ record, employee, run, onClose }) {
           </div>
 
           {/* Net pay */}
-          <SectionTitle>IV. Total Net Pay</SectionTitle>
-          <div className="rounded-lg bg-gradient-to-r from-slate-900 to-blue-900 p-4 flex items-center justify-between shadow-md">
+          <SectionTitle accent={brand.accent}>IV. Total Net Pay</SectionTitle>
+          <div className="rounded-lg p-4 flex items-center justify-between shadow-md" style={headerStyle}>
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-blue-100">Total Salary</p>
-              <p className="text-[10px] text-blue-300 italic">(To be received)</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: brand.textOnPrimary }}>Total Salary</p>
+              <p className="text-[10px] italic" style={subTextStyle}>(To be received)</p>
             </div>
             <p className="text-2xl font-bold text-emerald-300 tabular-nums">{fmt(netPay)}</p>
+          </div>
           </div>
         </div>
 

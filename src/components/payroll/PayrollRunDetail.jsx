@@ -12,20 +12,33 @@ export default function PayrollRunDetail({ run, onClose }) {
   const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [search, setSearch] = useState('');
+  const [brandings, setBrandings] = useState([]);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [recs, emps] = await Promise.all([
+      const [recs, emps, brands] = await Promise.all([
         base44.entities.PayrollRecord.filter({ payroll_run_id: run.id }),
-        base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000)
+        base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+        base44.entities.BranchBranding.list('-updated_date', 1000),
       ]);
       setRecords(recs);
       setEmployees(emps);
+      setBrandings(brands || []);
       setLoading(false);
     };
     load();
   }, [run.id]);
+
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const brandingForEmployee = (emp) => {
+    const f = emp?.fields || {};
+    const branch = norm(f.Branch || f.BRANCH || emp?.branch);
+    const company = norm(f.Company || f.COMPANY || emp?.company);
+    if (!branch) return null;
+    return brandings.find(b => norm(b.branch_name) === branch && (!company || norm(b.company_name) === company))
+      || brandings.find(b => norm(b.branch_name) === branch) || null;
+  };
 
   const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.airtable_record_id]: e }), {});
   const activeRecords = records.filter(record => !record.is_held);
@@ -180,9 +193,10 @@ export default function PayrollRunDetail({ run, onClose }) {
           )}
         </div>
 
-        {selectedRecord && (
-          <PayslipDocument record={selectedRecord} employee={employees.find(e => e.id === selectedRecord.employee_id || e.airtable_record_id === selectedRecord.airtable_record_id)} run={run} onClose={() => setSelectedRecord(null)} />
-        )}
+        {selectedRecord && (() => {
+          const emp = employees.find(e => e.id === selectedRecord.employee_id || e.airtable_record_id === selectedRecord.airtable_record_id);
+          return <PayslipDocument record={selectedRecord} employee={emp} run={run} branding={brandingForEmployee(emp)} onClose={() => setSelectedRecord(null)} />;
+        })()}
       </div>
     </div>
   );

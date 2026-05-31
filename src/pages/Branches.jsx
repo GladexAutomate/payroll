@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import MultiSelectList from '@/components/organization/MultiSelectList';
 import SetupCard from '@/components/organization/SetupCard';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import BranchBrandingModal from '@/components/organization/BranchBrandingModal';
+import { Palette } from 'lucide-react';
 import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Branches() {
@@ -16,16 +18,20 @@ export default function Branches() {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [loading, setLoading] = useState(true);
   const [employeeModal, setEmployeeModal] = useState(null);
+  const [brandings, setBrandings] = useState([]);
+  const [brandingBranch, setBrandingBranch] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [hierarchyResponse, departmentData, employeeData] = await Promise.all([
+    const [hierarchyResponse, departmentData, employeeData, brandingData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Department.list('name'),
       base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+      base44.entities.BranchBranding.list('-updated_date', 1000),
     ]);
+    setBrandings(brandingData || []);
 
     const mergedDepartments = new Map();
     for (const department of (hierarchyResponse.data?.departments || [])) {
@@ -111,9 +117,22 @@ export default function Branches() {
               <span className="inline-flex w-fit max-w-full items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary truncate">
                 Company: {branch.company_name || 'Unassigned'}
               </span>
+              <Button variant="outline" size="sm" className="mt-2 w-full" onClick={() => setBrandingBranch(branch)}>
+                <Palette className="w-3.5 h-3.5 mr-1.5" />
+                {brandings.some(b => b.branch_id === branch.id) ? 'Edit Branding' : 'Add Branding'}
+              </Button>
             </SetupCard>
           ))}
         </div>
+      )}
+
+      {brandingBranch && (
+        <BranchBrandingModal
+          branch={brandingBranch}
+          branding={brandings.find(b => b.branch_id === brandingBranch.id)}
+          onClose={() => setBrandingBranch(null)}
+          onSaved={() => { setBrandingBranch(null); loadData(); }}
+        />
       )}
 
       {selectedBranch && (
