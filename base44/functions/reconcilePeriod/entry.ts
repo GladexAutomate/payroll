@@ -195,7 +195,9 @@ Deno.serve(async (req) => {
       const key = cleanText(a.employee_id);
       if (!key) return;
       if (a.kind === 'allowance' && (a.atd_status === 'active' || a.recurring)) {
-        allowanceByKey[key] = (allowanceByKey[key] || 0) + (Number(a.amount_per_cutoff) || 0);
+        // Recurring allowances apply every cutoff once started; respect start_date if set
+        const started = !a.start_date || a.start_date <= period_end;
+        if (started) allowanceByKey[key] = (allowanceByKey[key] || 0) + (Number(a.amount_per_cutoff) || 0);
       } else if (a.kind === 'deduction' && a.atd_status === 'active') {
         // Only deduct if started and not yet completed
         const started = !a.start_date || a.start_date <= period_end;
