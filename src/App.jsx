@@ -80,6 +80,7 @@ const AuthenticatedApp = () => {
         <Route path="/schedule-proposal" element={<ScheduleProposal />} />
         <Route path="/schedule-requests" element={<ScheduleRequests />} />
         <Route path="/approved-schedule" element={<ApprovedSchedule />} />
+        <Route path="/schedule/:scope/:value" element={<ApprovedSchedule />} />
         <Route path="/schedule-links" element={<ScheduleLinks />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />

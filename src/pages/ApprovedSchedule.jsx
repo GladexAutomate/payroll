@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { addDays, format } from 'date-fns';
 import { CalendarCheck, RefreshCw, Download, Pencil, Save, X, Filter } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -37,8 +37,9 @@ export default function ApprovedSchedule() {
   const [teams, setTeams] = useState([]);
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  const scope = searchParams.get('scope') || '';
-  const scopeValue = searchParams.get('value') || '';
+  const params = useParams();
+  const scope = params.scope || searchParams.get('scope') || '';
+  const scopeValue = params.value ? decodeURIComponent(params.value) : (searchParams.get('value') || '');
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { loadRange(); }, [periodStart, periodEnd]);

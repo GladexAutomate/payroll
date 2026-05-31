@@ -6,7 +6,7 @@ import { Copy, Check, ExternalLink } from 'lucide-react';
 // One approved-schedule link entry with copy-to-clipboard and open actions.
 export default function ScheduleLinkRow({ label, scope, value }) {
   const [copied, setCopied] = useState(false);
-  const path = `/approved-schedule?scope=${encodeURIComponent(scope)}&value=${encodeURIComponent(value)}`;
+  const path = `/schedule/${encodeURIComponent(scope)}/${encodeURIComponent(value)}`;
   const fullUrl = `${window.location.origin}${path}`;
 
   const copy = async () => {
