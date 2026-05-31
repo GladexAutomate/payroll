@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Play, CheckCircle, Eye, Trash2 } from 'lucide-react';
+import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -140,6 +140,16 @@ export default function Payroll() {
                           title="Compute payroll"
                         >
                           <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                      {(run.status === 'processing' || run.status === 'approved') && (
+                        <button
+                          onClick={() => handleCompute(run)}
+                          disabled={computing === run.id}
+                          className="p-1.5 rounded hover:bg-amber-50 text-amber-600 hover:text-amber-700 transition-colors disabled:opacity-50"
+                          title="Recompute payroll (refresh records)"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
                       {run.status === 'processing' && (
