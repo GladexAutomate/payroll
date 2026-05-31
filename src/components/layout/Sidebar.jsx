@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, ChevronRight, Building2, Fingerprint,
-  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat, Receipt, Link2
+  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat, Receipt, Link2, Scale
 } from 'lucide-react';
 
 const navGroups = [
@@ -62,6 +62,13 @@ const navGroups = [
     items: [
       { label: 'Payroll', icon: DollarSign, path: '/payroll' },
       { label: 'Allowances & Charges', icon: Receipt, path: '/deductions' },
+    ],
+  },
+  {
+    label: 'Compliance',
+    icon: Scale,
+    items: [
+      { label: 'Tax Compliance', icon: ShieldCheck, path: '/tax-compliance' },
     ],
   },
   {

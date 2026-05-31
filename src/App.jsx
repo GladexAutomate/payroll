@@ -24,6 +24,7 @@ import Overtime from './pages/Overtime';
 import Offsets from './pages/Offsets';
 import Deductions from './pages/Deductions';
 import Payroll from './pages/Payroll';
+import TaxCompliance from './pages/TaxCompliance';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import ScheduleProposal from './pages/ScheduleProposal';
@@ -102,6 +103,7 @@ const GatedRoutes = () => {
         <Route path="/offsets" element={<Offsets />} />
         <Route path="/deductions" element={<Deductions />} />
         <Route path="/payroll" element={<Payroll />} />
+        <Route path="/tax-compliance" element={<TaxCompliance />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
