@@ -53,7 +53,7 @@ export default function ScheduleRequests() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] bg-black rounded-xl p-4 text-slate-900 space-y-5">
+    <div className="min-h-[calc(100vh-8rem)] bg-background rounded-xl p-4 text-slate-900 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Schedule Requests</h2>
@@ -64,7 +64,7 @@ export default function ScheduleRequests() {
             <button
               key={item.key}
               onClick={() => setFilter(item.key)}
-              className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${filter === item.key ? 'bg-blue-700 border-blue-700 text-white' : 'border-slate-500 text-slate-400 hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${filter === item.key ? 'bg-blue-700 border-blue-700 text-white' : 'border-slate-300 text-slate-600 hover:text-slate-900'}`}
             >
               {item.label}
             </button>
