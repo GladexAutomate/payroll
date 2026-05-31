@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Printer } from 'lucide-react';
+import { X, Printer, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import PayslipDocument from '@/components/payroll/PayslipDocument';
 
@@ -10,6 +11,7 @@ export default function PayrollRunDetail({ run, onClose }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -34,6 +36,14 @@ export default function PayrollRunDetail({ run, onClose }) {
     net: sum.net + Number(record.net_pay || 0),
   }), { gross: 0, deductions: 0, net: 0 });
   const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
+
+  const recordName = (rec) => {
+    const emp = empMap[rec.employee_id];
+    return rec.employee_name || emp?.full_name || emp?.fields?.['Full Name'] || rec.employee_id || '';
+  };
+  const displayedRecords = records
+    .filter(rec => recordName(rec).toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a, b) => recordName(a).localeCompare(recordName(b)));
 
   const toggleHold = async (record) => {
     const nextValue = !record.is_held;
@@ -95,6 +105,15 @@ export default function PayrollRunDetail({ run, onClose }) {
 
         {/* Records Table */}
         <div className="p-6">
+          <div className="relative mb-4 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search employee name..."
+              className="pl-9"
+            />
+          </div>
           {loading ? (
             <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-10 bg-muted rounded animate-pulse" />)}</div>
           ) : (
@@ -117,7 +136,7 @@ export default function PayrollRunDetail({ run, onClose }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map(rec => {
+                  {displayedRecords.map(rec => {
                     const emp = empMap[rec.employee_id];
                     return (
                       <tr key={rec.id} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rec.is_held ? 'bg-orange-50/50 text-muted-foreground' : ''}`}>
