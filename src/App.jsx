@@ -61,8 +61,24 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <EmployeeAccessGate>
-      <Routes>
+    <Routes>
+      <Route path="/schedule/:scope/:value" element={
+        <div className="min-h-screen bg-background p-4 md:p-6">
+          <div className="max-w-[120rem] mx-auto"><ApprovedSchedule readOnly /></div>
+        </div>
+      } />
+      <Route path="*" element={
+        <EmployeeAccessGate>
+          <GatedRoutes />
+        </EmployeeAccessGate>
+      } />
+    </Routes>
+  );
+};
+
+const GatedRoutes = () => {
+  return (
+    <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
@@ -89,14 +105,8 @@ const AuthenticatedApp = () => {
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
-      <Route path="/schedule/:scope/:value" element={
-        <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="max-w-[120rem] mx-auto"><ApprovedSchedule readOnly /></div>
-        </div>
-      } />
       <Route path="*" element={<PageNotFound />} />
-      </Routes>
-    </EmployeeAccessGate>
+    </Routes>
   );
 };
 

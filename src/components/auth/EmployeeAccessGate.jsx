@@ -15,11 +15,21 @@ export default function EmployeeAccessGate({ children }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const checkAccess = async () => {
-    const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccessStatus' });
-    setAllowed(!!res.data.allowed);
-    setBlockedMessage(res.data.message || '');
-    setLoading(false);
+  const checkAccess = async (attempt = 0) => {
+    try {
+      const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccessStatus' });
+      setAllowed(!!res.data.allowed);
+      setBlockedMessage(res.data.message || '');
+      setLoading(false);
+    } catch (err) {
+      // Transient error (e.g. Airtable rate limit / 500): retry a couple times before giving up.
+      if (attempt < 2) {
+        setTimeout(() => checkAccess(attempt + 1), 1500 * (attempt + 1));
+        return;
+      }
+      setError(err?.response?.data?.error || 'Unable to verify access right now. Please try again.');
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -89,6 +99,9 @@ export default function EmployeeAccessGate({ children }) {
               <p className="text-xs text-muted-foreground mt-1">Format: initials + date hired as YYYYMMDD.</p>
             </div>
             {error && <div className="rounded-lg bg-destructive/10 text-destructive text-sm p-3">{error}</div>}
+            <Button variant="ghost" type="button" className="w-full" onClick={() => { setLoading(true); setError(''); checkAccess(); }}>
+              Retry access check
+            </Button>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign in
