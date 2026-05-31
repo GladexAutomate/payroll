@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
+import TeamSelectField from '@/components/schedule/TeamSelectField';
 
 const Select = ({ value, onChange, disabled, placeholder, options }) => (
   <select
@@ -32,7 +33,7 @@ const Step = ({ index, label, children, done, locked, last }) => (
 );
 
 // Step-by-step proposal form. Each field unlocks once the previous one is filled.
-export default function ProposalWizard({ form, setForm, hierarchy, branchOptions, departmentOptions, roleOptions }) {
+export default function ProposalWizard({ form, setForm, hierarchy, branchOptions, departmentOptions, roleOptions, teamOptions = [], onCreateTeam }) {
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
   return (
@@ -79,7 +80,12 @@ export default function ProposalWizard({ form, setForm, hierarchy, branchOptions
 
       <Step index={6} label="6. Team Name & Leader Email" done={!!form.team_name} locked={!form.department_role}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Input value={form.team_name} onChange={e => set('team_name', e.target.value)} placeholder="Team name" />
+          <TeamSelectField
+            value={form.team_name}
+            onChange={v => set('team_name', v)}
+            teamOptions={teamOptions}
+            onCreateTeam={onCreateTeam}
+          />
           <Input type="email" value={form.leader_email} onChange={e => set('leader_email', e.target.value)} placeholder="Leader email" />
         </div>
       </Step>

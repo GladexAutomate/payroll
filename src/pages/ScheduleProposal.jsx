@@ -31,6 +31,7 @@ export default function ScheduleProposal() {
   const [shiftTemplates, setShiftTemplates] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [localEmployees, setLocalEmployees] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -38,19 +39,60 @@ export default function ScheduleProposal() {
 
   const loadEmployees = async () => {
     setLoading(true);
-    const [res, shifts, leaveReqs, locals, org] = await Promise.all([
+    const [res, shifts, leaveReqs, locals, org, teamData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
       base44.entities.ShiftTemplate.list('sort_order'),
       base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
       base44.entities.Employee.list('-created_date', 2000),
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
+      base44.entities.Team.list('name', 1000),
     ]);
     setRecords(res.data.records || []);
     setHierarchy(org.data || { companies: [], branches: [], departments: [], departmentRoles: [] });
     setShiftTemplates(shifts || []);
     setLeaves(leaveReqs || []);
     setLocalEmployees(locals || []);
+    setTeams(teamData || []);
     setLoading(false);
+  };
+
+  // Resolve the selected org names to their ids so we can scope teams under them.
+  const selectedOrgIds = useMemo(() => {
+    const company = hierarchy.companies.find(c => c.name === form.company_name);
+    const branch = hierarchy.branches.find(b => b.name === form.branch_name);
+    const department = hierarchy.departments.find(d => d.name === form.department_name);
+    const role = hierarchy.departmentRoles.find(r => r.name === form.department_role);
+    return {
+      company_id: company?.id || '',
+      branch_id: branch?.id || '',
+      department_id: department?.id || '',
+      sub_department_id: role?.id || '',
+    };
+  }, [hierarchy, form.company_name, form.branch_name, form.department_name, form.department_role]);
+
+  // Only show teams registered under the chosen company/branch/department/role.
+  const teamOptions = useMemo(() => teams.filter(t => {
+    if (selectedOrgIds.company_id && t.company_id && t.company_id !== selectedOrgIds.company_id) return false;
+    if (selectedOrgIds.branch_id && t.branch_id && t.branch_id !== selectedOrgIds.branch_id) return false;
+    if (selectedOrgIds.department_id && t.department_id && t.department_id !== selectedOrgIds.department_id) return false;
+    if (selectedOrgIds.sub_department_id && t.sub_department_id && t.sub_department_id !== selectedOrgIds.sub_department_id) return false;
+    return true;
+  }), [teams, selectedOrgIds]);
+
+  // Create a new team registered under the currently selected org path, then select it.
+  const createTeam = async (teamName) => {
+    const created = await base44.entities.Team.create({
+      name: teamName,
+      ...selectedOrgIds,
+      department_name: form.department_name,
+      leader_name: form.leader_name,
+      leader_email: form.leader_email,
+      member_record_ids: [],
+      status: 'active',
+    });
+    const fresh = await base44.entities.Team.list('name', 1000);
+    setTeams(fresh || []);
+    setForm(prev => ({ ...prev, team_name: created?.name || teamName }));
   };
 
   const allEmployees = useMemo(() => records.map(record => ({
@@ -187,6 +229,8 @@ export default function ScheduleProposal() {
           branchOptions={branchOptions}
           departmentOptions={departmentOptions}
           roleOptions={roleOptions}
+          teamOptions={teamOptions}
+          onCreateTeam={createTeam}
           complete={formComplete}
         />
       </div>

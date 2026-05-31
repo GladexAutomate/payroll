@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { addDays, format } from 'date-fns';
-import { CalendarCheck, RefreshCw, Download, Pencil, Save, X } from 'lucide-react';
+import { CalendarCheck, RefreshCw, Download, Pencil, Save, X, Filter } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
@@ -33,23 +34,29 @@ export default function ApprovedSchedule() {
   const [showActual, setShowActual] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [lastReconciledAt, setLastReconciledAt] = useState(null);
+  const [teams, setTeams] = useState([]);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const scope = searchParams.get('scope') || '';
+  const scopeValue = searchParams.get('value') || '';
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { loadRange(); }, [periodStart, periodEnd]);
 
   const loadBase = async () => {
     setLoading(true);
-    const [res, shifts, locals, matches] = await Promise.all([
+    const [res, shifts, locals, matches, teamData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
       base44.entities.ShiftTemplate.list(),
       base44.entities.Employee.list('-updated_date', 5000),
       base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
+      base44.entities.Team.list('name', 1000),
     ]);
     setRecords(res.data.records || []);
     setShiftTemplates(shifts || []);
     setLocalEmployees(locals || []);
     setAirtableMatches(matches || []);
+    setTeams(teamData || []);
     setLoading(false);
     loadRange();
   };
@@ -87,16 +94,37 @@ export default function ApprovedSchedule() {
   const employees = useMemo(() => records.map(record => ({
     id: record.id,
     backend_id: record.backend_id,
+    airtable_record_id: record.airtable_record_id || record.fields?.['RECORD ID'] || record.id,
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
     department: record.fields?.Department || record.fields?.['Department Role'] || '',
+    branch_name: record.fields?.Branch || record.fields?.BRANCH || '',
+    department_name: record.fields?.Department || '',
+    department_role: record.fields?.['Department Role'] || '',
   })), [records]);
+
+  const cell = (v) => String(v || '').trim().toLowerCase();
+
+  // Scope filter from URL (?scope=branch|department|department_role|team&value=...)
+  const scopedEmployees = useMemo(() => {
+    if (!scope || !scopeValue) return employees;
+    if (scope === 'branch') return employees.filter(e => cell(e.branch_name) === cell(scopeValue));
+    if (scope === 'department') return employees.filter(e => cell(e.department_name) === cell(scopeValue));
+    if (scope === 'department_role') return employees.filter(e => cell(e.department_role) === cell(scopeValue));
+    if (scope === 'team') {
+      const team = teams.find(t => cell(t.name) === cell(scopeValue));
+      const memberIds = new Set((team?.member_record_ids || []).map(String));
+      if (memberIds.size === 0) return [];
+      return employees.filter(e => memberIds.has(String(e.airtable_record_id)) || memberIds.has(String(e.backend_id)) || memberIds.has(String(e.id)));
+    }
+    return employees;
+  }, [employees, teams, scope, scopeValue]);
 
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter(e => e.name.toLowerCase().includes(q) || (e.department || '').toLowerCase().includes(q));
-  }, [employees, search]);
+    if (!q) return scopedEmployees;
+    return scopedEmployees.filter(e => e.name.toLowerCase().includes(q) || (e.department || '').toLowerCase().includes(q));
+  }, [scopedEmployees, search]);
 
   // Pending leaves -> glow overlay; approved leaves -> plotted onto dates
   const pendingLeaves = useMemo(() => leaves.filter(l => l.status === 'pending'), [leaves]);
@@ -230,6 +258,11 @@ export default function ApprovedSchedule() {
             <div>
               <h2 className="font-semibold">Approved Schedule</h2>
               <p className="text-xs text-muted-foreground">{editMode ? 'Edit mode — click any cell to cycle its schedule card, then Save.' : 'Blank schedule for all active employees — auto-plotted when a proposal is approved.'}</p>
+              {scope && scopeValue && (
+                <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-primary bg-primary/10 rounded-full px-2.5 py-0.5">
+                  <Filter className="w-3 h-3" /> {scope.replace('_', ' ')}: {scopeValue}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
