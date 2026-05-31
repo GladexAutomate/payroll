@@ -4,9 +4,16 @@ import { Button } from '@/components/ui/button';
 
 const employeeName = (employee) => `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.employee_id;
 
-export default function EmployeeMapper({ employees, selectedTeam, search, onSearchChange, onAssign, onUnassign }) {
+export default function EmployeeMapper({ employees, selectedTeam, scope = {}, search, onSearchChange, onAssign, onUnassign }) {
   const assigned = selectedTeam ? employees.filter(employee => employee.team_id === selectedTeam.id) : [];
-  const available = selectedTeam ? employees.filter(employee => employee.team_id !== selectedTeam.id) : [];
+  const available = selectedTeam
+    ? employees.filter(employee =>
+        employee.team_id !== selectedTeam.id &&
+        (!scope.companyId || employee.company_id === scope.companyId) &&
+        (!scope.branchId || employee.branch_id === scope.branchId) &&
+        (!scope.departmentId || employee.department_id === scope.departmentId)
+      )
+    : [];
   const filteredAvailable = available.filter(employee => employeeName(employee).toLowerCase().includes(search.toLowerCase()) || (employee.employee_id || '').toLowerCase().includes(search.toLowerCase()));
 
   if (!selectedTeam) {

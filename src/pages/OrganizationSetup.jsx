@@ -184,6 +184,7 @@ export default function OrganizationSetup() {
       <EmployeeMapper
         employees={employees}
         selectedTeam={selectedTeam}
+        scope={{ companyId: selected.companyId, branchId: selected.branchId, departmentId: selected.departmentId }}
         search={search}
         onSearchChange={setSearch}
         onAssign={assignEmployee}
