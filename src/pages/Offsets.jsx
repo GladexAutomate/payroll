@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
+import { useEmployeeScope } from '@/lib/useEmployeeScope';
 import OTBankTable from '@/components/offset/OTBankTable';
 
 export default function Offsets() {
+  const { selfOnly, ownEmployeeId, isOwn } = useEmployeeScope();
   const [requests, setRequests] = useState([]);
   const [overtime, setOvertime] = useState([]);
   const [offsets, setOffsets] = useState([]);
@@ -36,7 +38,11 @@ export default function Offsets() {
   };
 
   const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
-  const filtered = requests.filter(r => filterStatus === 'all' || r.status === filterStatus);
+  const visibleOvertime = overtime.filter(r => isOwn(r.employee_id));
+  const visibleOffsets = offsets.filter(r => isOwn(r.employee_id));
+  const filtered = requests
+    .filter(r => isOwn(r.employee_id))
+    .filter(r => filterStatus === 'all' || r.status === filterStatus);
 
   const handleApprove = async (req) => {
     await base44.entities.OffsetRequest.update(req.id, {
@@ -53,7 +59,7 @@ export default function Offsets() {
 
   return (
     <div className="space-y-6">
-      <OTBankTable overtime={overtime} offsets={offsets} empMap={empMap} loading={loading} />
+      <OTBankTable overtime={visibleOvertime} offsets={visibleOffsets} empMap={empMap} loading={loading} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
@@ -100,7 +106,7 @@ export default function Offsets() {
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>
                     <td className="py-3.5 px-4">
-                      {req.status === 'pending' && (
+                      {!selfOnly && req.status === 'pending' && (
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => handleApprove(req)} className="p-1.5 rounded hover:bg-green-50 text-green-600">
                             <Check className="w-3.5 h-3.5" />
@@ -120,14 +126,14 @@ export default function Offsets() {
       </div>
 
       {showForm && (
-        <OffsetForm employees={employees} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+        <OffsetForm employees={employees} selfOnly={selfOnly} ownEmployeeId={ownEmployeeId} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
       )}
     </div>
   );
 }
 
-function OffsetForm({ employees, onClose, onSaved }) {
-  const [form, setForm] = useState({ employee_id: '', offset_date: '', offset_hours: 1, reason: '' });
+function OffsetForm({ employees, selfOnly, ownEmployeeId, onClose, onSaved }) {
+  const [form, setForm] = useState({ employee_id: selfOnly ? ownEmployeeId : '', offset_date: '', offset_hours: 1, reason: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSubmit = async (e) => {
@@ -145,13 +151,15 @@ function OffsetForm({ employees, onClose, onSaved }) {
           <button onClick={onClose}><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Employee*</label>
-            <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
-              <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{getAirtableEmployeeName(e)}</option>)}
-            </select>
-          </div>
+          {!selfOnly && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Employee*</label>
+              <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+                <option value="">Select employee</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{getAirtableEmployeeName(e)}</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><label className="text-xs font-medium text-muted-foreground">Offset Date*</label><Input type="date" value={form.offset_date} onChange={e => set('offset_date', e.target.value)} required className="mt-1" /></div>
             <div><label className="text-xs font-medium text-muted-foreground">Offset Hours*</label><Input type="number" step="0.5" min="0.5" value={form.offset_hours} onChange={e => set('offset_hours', parseFloat(e.target.value))} required className="mt-1" /></div>

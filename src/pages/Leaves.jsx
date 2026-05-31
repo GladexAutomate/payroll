@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Check, X, Calendar } from 'lucide-react';
+import { Plus, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { format } from 'date-fns';
+import { useEmployeeScope } from '@/lib/useEmployeeScope';
 
 export default function Leaves() {
+  const { selfOnly, ownEmployeeId, isOwn, loading: scopeLoading } = useEmployeeScope();
   const [requests, setRequests] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +28,9 @@ export default function Leaves() {
   };
 
   const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.airtable_record_id]: e }), {});
-  const filtered = requests.filter(r => filterStatus === 'all' || r.status === filterStatus);
+  const filtered = requests
+    .filter(r => isOwn(r.employee_id))
+    .filter(r => filterStatus === 'all' || r.status === filterStatus);
 
   const handleApprove = async (id) => {
     await base44.entities.LeaveRequest.update(id, { status: 'approved', approved_date: new Date().toISOString() });
@@ -90,7 +93,7 @@ export default function Leaves() {
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>
                     <td className="py-3.5 px-4">
-                      {req.status === 'pending' && (
+                      {!selfOnly && req.status === 'pending' && (
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => handleApprove(req.id)} className="p-1.5 rounded hover:bg-green-50 text-green-600 transition-colors" title="Approve">
                             <Check className="w-3.5 h-3.5" />
@@ -110,14 +113,14 @@ export default function Leaves() {
       </div>
 
       {showForm && (
-        <LeaveForm employees={employees} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+        <LeaveForm employees={employees} selfOnly={selfOnly} ownEmployeeId={ownEmployeeId} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
       )}
     </div>
   );
 }
 
-function LeaveForm({ employees, onClose, onSaved }) {
-  const [form, setForm] = useState({ employee_id: '', leave_type: 'vacation', date_from: '', date_to: '', reason: '', is_paid: true });
+function LeaveForm({ employees, selfOnly, ownEmployeeId, onClose, onSaved }) {
+  const [form, setForm] = useState({ employee_id: selfOnly ? ownEmployeeId : '', leave_type: 'vacation', date_from: '', date_to: '', reason: '', is_paid: true });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const days = form.date_from && form.date_to
@@ -138,13 +141,15 @@ function LeaveForm({ employees, onClose, onSaved }) {
           <button onClick={onClose}><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Employee*</label>
-            <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
-              <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.airtable_record_id}>{e.full_name || e.fields?.['Full Name'] || e.employee_code}</option>)}
-            </select>
-          </div>
+          {!selfOnly && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Employee*</label>
+              <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+                <option value="">Select employee</option>
+                {employees.map(e => <option key={e.id} value={e.airtable_record_id}>{e.full_name || e.fields?.['Full Name'] || e.employee_code}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-muted-foreground">Leave Type</label>
             <select value={form.leave_type} onChange={e => set('leave_type', e.target.value)} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
