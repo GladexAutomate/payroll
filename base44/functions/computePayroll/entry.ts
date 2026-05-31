@@ -153,6 +153,9 @@ Deno.serve(async (req) => {
     const runBranchNorm = normalizeText(run.branch_name);
     const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
     const allowanceRecords = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ kind: 'allowance' }, '-updated_date', 5000));
+    // Employee IDs that qualify for an allowance in this run (used to also pull in consultants
+    // who aren't part of the branch's regular employee list but still get paid an allowance).
+    const allowanceEmployeeIds = new Set();
     const allowanceByEmp = allowanceRecords.reduce((map, row) => {
       const amount = Number(row.amount_per_cutoff) || 0;
       if (amount <= 0) return map;
@@ -164,6 +167,7 @@ Deno.serve(async (req) => {
       // Fixed-duration allowances: skip once all cutoffs already paid.
       if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return map;
       map[row.employee_id] = (map[row.employee_id] || 0) + amount;
+      allowanceEmployeeIds.add(row.employee_id);
       return map;
     }, {});
     const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
@@ -174,6 +178,9 @@ Deno.serve(async (req) => {
 
     const selectedBranch = normalizeText(run.branch_name);
     const employees = allEmployees.filter(employee => {
+      // Always include employees who have a qualifying allowance for this run (e.g. consultants
+      // not formally under this branch but who still receive an allowance paid through it).
+      if (allowanceEmployeeIds.has(employee.id)) return true;
       if (!isActiveEmployee(employee)) return false;
       if (!selectedBranch) return true;
       const fields = getFields(employee);
