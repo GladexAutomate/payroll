@@ -94,7 +94,7 @@ export default function RoleHierarchy() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading roles...</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {byTier.map((tier) => (
             <div key={tier.key} className="bg-muted/30 rounded-xl border border-border p-3">
               <div className="flex items-center justify-between mb-3">

@@ -1,6 +1,11 @@
 // Classify an employee job title into one of three tiers for the permissions UI.
 // Order matters: manager keywords are checked before leader/supervisor keywords.
 
+const HR_KEYWORDS = [
+  'human resource', 'hr ', 'hr-', 'hr/', 'hris', 'recruit', 'talent acquisition',
+  'people operations', 'people & culture',
+];
+
 const MANAGER_KEYWORDS = [
   'manager', 'head', 'chief', 'director', 'officer', 'executive', 'ceo', 'coo',
   'cto', 'cfo', 'president', 'vp', 'vice president',
@@ -11,6 +16,7 @@ const LEADER_KEYWORDS = [
 ];
 
 export const TIERS = [
+  { key: 'hr', label: 'HR' },
   { key: 'managers', label: 'Managers' },
   { key: 'leaders', label: 'Leaders & Supervisors' },
   { key: 'employees', label: 'Employees' },
@@ -18,7 +24,8 @@ export const TIERS = [
 
 // Automatic guess based on keywords (used as the default when no manual override exists).
 export function classifyRole(label) {
-  const text = String(label || '').toLowerCase();
+  const text = ` ${String(label || '').toLowerCase()} `;
+  if (HR_KEYWORDS.some((kw) => text.includes(kw))) return 'hr';
   if (MANAGER_KEYWORDS.some((kw) => text.includes(kw))) return 'managers';
   if (LEADER_KEYWORDS.some((kw) => text.includes(kw))) return 'leaders';
   return 'employees';
@@ -30,7 +37,7 @@ export function resolveTier(role, overrides = {}) {
 }
 
 export function groupRolesByTier(roles, overrides = {}) {
-  const buckets = { managers: [], leaders: [], employees: [] };
+  const buckets = { hr: [], managers: [], leaders: [], employees: [] };
   roles.forEach((role) => {
     buckets[resolveTier(role, overrides)].push(role);
   });
