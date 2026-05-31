@@ -4,6 +4,8 @@ import { Building2, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import EmployeeListModal from '@/components/organization/EmployeeListModal';
+import GroupHeader from '@/components/organization/GroupHeader';
+import { groupByCompanyBranch } from '@/components/organization/groupByCompanyBranch';
 import { isNotResigned } from '@/utils/employeeStatus';
 
 export default function Departments() {
@@ -124,54 +126,57 @@ export default function Departments() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading ? (
-          [...Array(6)].map((_, i) => <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />)
-        ) : filteredDepartments.length === 0 ? (
-          <div className="col-span-full bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
-            No departments found in Airtable yet.
-          </div>
-        ) : filteredDepartments.map(dept => (
-          <div key={dept.id} className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Building2 className="w-5 h-5 text-primary" />
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />)}
+        </div>
+      ) : filteredDepartments.length === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-8 text-center text-sm text-muted-foreground">
+          No departments found in Airtable yet.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupByCompanyBranch(filteredDepartments).map(group => (
+            <div key={`${group.company}-${group.branch}`} className="space-y-3">
+              <GroupHeader company={group.company} branch={group.branch} count={group.items.length} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {group.items.map(dept => (
+                  <div key={dept.id} className="bg-card border border-border rounded-xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <Building2 className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{dept.name}</p>
+                        {dept.code && <p className="text-xs text-muted-foreground">{dept.code}</p>}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+                      <EmployeeListModal
+                        employees={employees.filter(employee => employee.company === dept.company_name && employee.branch === dept.branch_name && employee.department === dept.name)}
+                        title={`${dept.name} Employees`}
+                        open={employeeModal === dept.id}
+                        onOpen={() => setEmployeeModal(dept.id)}
+                        onClose={() => setEmployeeModal(null)}
+                        onUpdated={loadData}
+                        categories={{ company: companies, branch: branches, department: departments, department_role: subDepartments, team: teams }}
+                      />
+                      <span className="text-xs text-primary font-medium">Airtable</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <span>{subDepartments.filter(item => item.department_id === dept.id).length} department roles</span>
+                      <span>{teams.filter(item => item.department_id === dept.id).length} teams</span>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setActiveDepartment(dept)}>
+                      <Plus className="w-4 h-4 mr-1.5" /> Add Under Department
+                    </Button>
+                  </div>
+                ))}
               </div>
-              <div className="min-w-0">
-                <p className="font-semibold truncate">{dept.name}</p>
-                {dept.code && <p className="text-xs text-muted-foreground">{dept.code}</p>}
-                <div className="mt-2 flex flex-col gap-1">
-                  <span className="inline-flex w-fit max-w-full items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary truncate">
-                    Company: {dept.company_name || 'Unassigned'}
-                  </span>
-                  <span className="inline-flex w-fit max-w-full items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 truncate">
-                    Branch: {dept.branch_name || 'Unassigned'}
-                  </span>
-                </div>
-              </div>
             </div>
-            <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
-              <EmployeeListModal
-                employees={employees.filter(employee => employee.company === dept.company_name && employee.branch === dept.branch_name && employee.department === dept.name)}
-                title={`${dept.name} Employees`}
-                open={employeeModal === dept.id}
-                onOpen={() => setEmployeeModal(dept.id)}
-                onClose={() => setEmployeeModal(null)}
-                onUpdated={loadData}
-                categories={{ company: companies, branch: branches, department: departments, department_role: subDepartments, team: teams }}
-              />
-              <span className="text-xs text-primary font-medium">Airtable</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <span>{subDepartments.filter(item => item.department_id === dept.id).length} department roles</span>
-              <span>{teams.filter(item => item.department_id === dept.id).length} teams</span>
-            </div>
-            <Button variant="outline" size="sm" className="w-full mt-3" onClick={() => setActiveDepartment(dept)}>
-              <Plus className="w-4 h-4 mr-1.5" /> Add Under Department
-            </Button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {editingItem && (
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
