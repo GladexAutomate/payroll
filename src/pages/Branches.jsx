@@ -100,6 +100,7 @@ export default function Branches() {
             <SetupCard
               key={branch.id}
               title={branch.name}
+              logoUrl={brandings.find(b => b.branch_id === branch.id)?.logo_url}
               subtitle={
                 <EmployeeListModal
                   employees={employees.filter(employee => employee.company === branch.company_name && employee.branch === branch.name)}
