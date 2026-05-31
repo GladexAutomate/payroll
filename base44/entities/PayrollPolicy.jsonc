@@ -122,6 +122,11 @@
       "default": 100,
       "description": "Pag-IBIG maximum contribution per side (employee/employer)"
     },
+    "pagibig_min_per_side": {
+      "type": "number",
+      "default": 200,
+      "description": "Pag-IBIG minimum contribution per side (employee/employer)"
+    },
     "sss_max_employee": {
       "type": "number",
       "default": 900,

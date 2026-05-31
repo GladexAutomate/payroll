@@ -12,6 +12,7 @@ const DEFAULTS = {
   philhealth_salary_ceiling: 100000,
   pagibig_rate: 0.02,
   pagibig_max_per_side: 100,
+  pagibig_min_per_side: 200,
   sss_max_employee: 900,
   sss_max_employer: 1900,
 };
@@ -31,6 +32,7 @@ const SECTIONS = [
     note: 'Applied to monthly salary, capped per side.',
     fields: [
       { label: 'Rate (0.02 = 2%)', key: 'pagibig_rate', step: '0.001' },
+      { label: 'Min per side (₱)', key: 'pagibig_min_per_side', step: '1' },
       { label: 'Max per side (₱)', key: 'pagibig_max_per_side', step: '1' },
     ],
   },

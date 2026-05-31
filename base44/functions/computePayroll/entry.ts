@@ -81,8 +81,10 @@ function getPhilHealthContribution(monthlySalary, policy) {
 function getPagIBIGContribution(monthlySalary, policy) {
   const rate = Number(policy?.pagibig_rate) || 0.02;
   const maxPerSide = Number(policy?.pagibig_max_per_side) || 100;
-  if (monthlySalary <= 1500) return { employee: monthlySalary * 0.01, employer: monthlySalary * 0.02 };
-  return { employee: Math.min(monthlySalary * rate, maxPerSide), employer: Math.min(monthlySalary * rate, maxPerSide) };
+  const minPerSide = Number(policy?.pagibig_min_per_side) || 0;
+  const clamp = (v) => Math.min(Math.max(v, minPerSide), maxPerSide);
+  if (monthlySalary <= 1500) return { employee: clamp(monthlySalary * 0.01), employer: clamp(monthlySalary * 0.02) };
+  return { employee: clamp(monthlySalary * rate), employer: clamp(monthlySalary * rate) };
 }
 
 // 2026 PH Monthly Withholding Tax Table
