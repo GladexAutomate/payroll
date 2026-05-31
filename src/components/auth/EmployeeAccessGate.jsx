@@ -98,9 +98,6 @@ export default function EmployeeAccessGate({ children }) {
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="mt-1" required />
             </div>
             {error && <div className="rounded-lg bg-destructive/10 text-destructive text-sm p-3">{error}</div>}
-            <Button variant="ghost" type="button" className="w-full" onClick={() => { setLoading(true); setError(''); checkAccess(); }}>
-              Retry access check
-            </Button>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign in
