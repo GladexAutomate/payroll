@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, Loader2, LockKeyhole, LogOut } from 'lucide-react';
+import { ShieldCheck, Loader2, LockKeyhole, LogOut, Eye, EyeOff } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ export default function EmployeeAccessGate({ children }) {
   const [blockedMessage, setBlockedMessage] = useState('');
   const [employeeCode, setEmployeeCode] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -100,7 +101,12 @@ export default function EmployeeAccessGate({ children }) {
             </div>
             <div>
               <label className="text-sm font-medium">Generated Password</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="mt-1" required />
+              <div className="relative mt-1">
+                <Input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="pr-10" required />
+                <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             {error && <div className="rounded-lg bg-destructive/10 text-destructive text-sm p-3">{error}</div>}
             <Button type="submit" className="w-full" disabled={submitting}>
