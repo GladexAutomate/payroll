@@ -89,6 +89,10 @@ export default function RoleHierarchy() {
         </div>
       </div>
 
+      <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">How to set up:</span> Each job title starts on an auto-detected tier (shown with an <span className="font-medium">auto</span> tag). Click <span className="font-medium">HR</span>, <span className="font-medium">Managers</span>, <span className="font-medium">Leaders</span>, or <span className="font-medium">Employees</span> on a role to move it. The role jumps to that column. When done, press <span className="font-medium">Save Hierarchy</span>.
+      </div>
+
       <Input placeholder="Search job titles..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
 
       {loading ? (
