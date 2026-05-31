@@ -26,6 +26,7 @@ const pageTitles = {
   '/reports': 'Reports',
   '/settings': 'Settings',
   '/permissions': 'Page Permissions',
+  '/role-hierarchy': 'Role Hierarchy',
 };
 
 export default function AppLayout() {

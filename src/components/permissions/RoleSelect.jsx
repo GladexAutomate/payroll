@@ -7,8 +7,8 @@ const TIER_ICONS = {
   employees: User,
 };
 
-export default function RoleSelect({ roles, loading, selected, onSelect }) {
-  const tiers = groupRolesByTier(roles);
+export default function RoleSelect({ roles, loading, selected, onSelect, overrides = {} }) {
+  const tiers = groupRolesByTier(roles, overrides);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">

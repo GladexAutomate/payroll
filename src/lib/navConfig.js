@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, Building2, ClipboardList, Calendar, Upload,
   Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat,
-  Receipt, Link2, Scale, KeyRound,
+  Receipt, Link2, Scale, KeyRound, Network,
 } from 'lucide-react';
 
 // Single source of truth for all navigable pages, grouped for the sidebar
@@ -83,6 +83,7 @@ export const navGroups = [
     items: [
       { label: 'Settings', icon: Settings, path: '/settings' },
       { label: 'Permissions', icon: KeyRound, path: '/permissions', adminOnly: true },
+      { label: 'Role Hierarchy', icon: Network, path: '/role-hierarchy', adminOnly: true },
     ],
   },
 ];

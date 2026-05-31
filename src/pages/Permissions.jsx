@@ -4,6 +4,7 @@ import { KeyRound, Save, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { navGroups } from '@/lib/navConfig';
 import { usePagePermissions } from '@/lib/usePagePermissions';
+import { groupRolesByTier } from '@/lib/roleHierarchy';
 import PermissionGroup from '@/components/permissions/PermissionGroup';
 import RoleSelect from '@/components/permissions/RoleSelect';
 
@@ -16,6 +17,7 @@ const editableGroups = navGroups
 export default function Permissions() {
   const { isAdmin, loading: loadingPerms } = usePagePermissions();
   const [roles, setRoles] = useState([]);
+  const [overrides, setOverrides] = useState({});
   const [selectedRole, setSelectedRole] = useState(null);
   const [allowed, setAllowed] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,13 +26,19 @@ export default function Permissions() {
 
   useEffect(() => {
     (async () => {
-      const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccounts' });
+      const [res, hierarchyRecords] = await Promise.all([
+        base44.functions.invoke('airtableEmployees', { action: 'employeeAccounts' }),
+        base44.entities.RoleHierarchy.list('-updated_date', 5000),
+      ]);
       const titles = [...new Set((res.data.accounts || [])
         .map((a) => String(a.job_title || '').trim())
         .filter(Boolean))]
         .sort((a, b) => a.localeCompare(b))
         .map((label) => ({ label, value: normalizeRole(label) }));
       setRoles(titles);
+      const map = {};
+      hierarchyRecords.forEach((r) => { map[r.role] = r.tier; });
+      setOverrides(map);
       setLoading(false);
     })();
   }, []);
@@ -89,7 +97,7 @@ export default function Permissions() {
         </div>
       </div>
 
-      <RoleSelect roles={roles} loading={loading} selected={selectedRole} onSelect={selectRole} />
+      <RoleSelect roles={roles} loading={loading} selected={selectedRole} onSelect={selectRole} overrides={overrides} />
 
       {selectedRole && (
         <>

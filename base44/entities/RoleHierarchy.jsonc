@@ -1,0 +1,28 @@
+{
+  "name": "RoleHierarchy",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "Internal role name (employee Job Title), stored lowercase for matching."
+    },
+    "role_label": {
+      "type": "string",
+      "description": "Original display label of the role"
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "managers",
+        "leaders",
+        "employees"
+      ],
+      "default": "employees",
+      "description": "Hierarchy tier this role belongs to"
+    }
+  },
+  "required": [
+    "role",
+    "tier"
+  ]
+}

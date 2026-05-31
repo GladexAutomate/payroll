@@ -16,6 +16,7 @@ export const TIERS = [
   { key: 'employees', label: 'Employees' },
 ];
 
+// Automatic guess based on keywords (used as the default when no manual override exists).
 export function classifyRole(label) {
   const text = String(label || '').toLowerCase();
   if (MANAGER_KEYWORDS.some((kw) => text.includes(kw))) return 'managers';
@@ -23,10 +24,15 @@ export function classifyRole(label) {
   return 'employees';
 }
 
-export function groupRolesByTier(roles) {
+// Resolve the tier for a role, preferring a manual override map ({ [roleValue]: tier }).
+export function resolveTier(role, overrides = {}) {
+  return overrides[role.value] || classifyRole(role.label);
+}
+
+export function groupRolesByTier(roles, overrides = {}) {
   const buckets = { managers: [], leaders: [], employees: [] };
   roles.forEach((role) => {
-    buckets[classifyRole(role.label)].push(role);
+    buckets[resolveTier(role, overrides)].push(role);
   });
   return TIERS
     .map((tier) => ({ ...tier, roles: buckets[tier.key] }))
