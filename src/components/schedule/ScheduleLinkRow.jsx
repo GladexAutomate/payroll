@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Copy, Check, ExternalLink } from 'lucide-react';
 
@@ -27,7 +26,7 @@ export default function ScheduleLinkRow({ label, scope, value }) {
           {copied ? 'Copied' : 'Copy'}
         </Button>
         <Button asChild size="sm" variant="secondary">
-          <Link to={path}><ExternalLink className="w-4 h-4 mr-1" /> Open</Link>
+          <a href={fullUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4 mr-1" /> Open</a>
         </Button>
       </div>
     </div>

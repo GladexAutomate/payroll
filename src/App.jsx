@@ -80,7 +80,6 @@ const AuthenticatedApp = () => {
         <Route path="/schedule-proposal" element={<ScheduleProposal />} />
         <Route path="/schedule-requests" element={<ScheduleRequests />} />
         <Route path="/approved-schedule" element={<ApprovedSchedule />} />
-        <Route path="/schedule/:scope/:value" element={<ApprovedSchedule />} />
         <Route path="/schedule-links" element={<ScheduleLinks />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />
@@ -90,6 +89,11 @@ const AuthenticatedApp = () => {
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
+      <Route path="/schedule/:scope/:value" element={
+        <div className="min-h-screen bg-background p-4 md:p-6">
+          <div className="max-w-[120rem] mx-auto"><ApprovedSchedule /></div>
+        </div>
+      } />
       <Route path="*" element={<PageNotFound />} />
       </Routes>
     </EmployeeAccessGate>
