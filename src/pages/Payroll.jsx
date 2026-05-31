@@ -47,6 +47,11 @@ export default function Payroll() {
       .finally(() => setComputing(null));
   };
 
+  const handleRecompute = async (run) => {
+    if (!window.confirm(`Recompute ${run.period_label}? This will regenerate all payroll records for this run.`)) return;
+    handleCompute(run);
+  };
+
   const handleApprove = async (run) => {
     await base44.entities.PayrollRun.update(run.id, {
       status: 'approved',
@@ -142,12 +147,12 @@ export default function Payroll() {
                           <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
-                      {(run.status === 'processing' || run.status === 'approved') && (
+                      {(run.status === 'processing' || run.status === 'approved' || run.status === 'released') && (
                         <button
-                          onClick={() => handleCompute(run)}
+                          onClick={() => handleRecompute(run)}
                           disabled={computing === run.id}
                           className="p-1.5 rounded hover:bg-amber-50 text-amber-600 hover:text-amber-700 transition-colors disabled:opacity-50"
-                          title="Recompute payroll (refresh records)"
+                          title="Recompute payroll"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
@@ -233,11 +238,12 @@ function CreatePayrollModal({ onClose, onCreated }) {
     }));
   };
 
-  // Auto-fill period label
+  // Auto-fill period label. Parse YYYY-MM-DD as a local date (append T00:00:00) so the
+  // day is never shifted by timezone conversion.
   const autoLabel = () => {
     if (form.period_start && form.period_end) {
-      const s = format(new Date(form.period_start), 'MMM d');
-      const e = format(new Date(form.period_end), 'MMM d, yyyy');
+      const s = format(new Date(`${form.period_start}T00:00:00`), 'MMM d');
+      const e = format(new Date(`${form.period_end}T00:00:00`), 'MMM d, yyyy');
       set('period_label', `${s} – ${e}`);
     }
   };
