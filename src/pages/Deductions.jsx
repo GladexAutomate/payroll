@@ -21,6 +21,7 @@ export default function Deductions() {
   const [items, setItems] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [branchesByCompany, setBranchesByCompany] = useState({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('deduction');
   const [showForm, setShowForm] = useState(false);
@@ -37,6 +38,13 @@ export default function Deductions() {
     setItems(list);
     setEmployees(emps.filter(isActiveAirtableEmployee).sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b))));
     setCompanies([...new Set(comps.map(c => c.name).filter(Boolean))].sort());
+    const byCompany = {};
+    comps.forEach(c => {
+      if (!c.name || !c.branch) return;
+      byCompany[c.name] = byCompany[c.name] || new Set();
+      byCompany[c.name].add(c.branch);
+    });
+    setBranchesByCompany(Object.fromEntries(Object.entries(byCompany).map(([k, v]) => [k, [...v].sort()])));
     setLoading(false);
   };
 
@@ -93,6 +101,7 @@ export default function Deductions() {
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Company</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Branch</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Label</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Per Cutoff</th>
                 {tab === 'deduction' && <>
@@ -106,15 +115,16 @@ export default function Deductions() {
             </thead>
             <tbody>
               {loading ? (
-                [...Array(4)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(tab === 'deduction' ? 9 : 5)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}</tr>)
+                [...Array(4)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(tab === 'deduction' ? 10 : 6)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No {tab === 'allowance' ? 'allowances' : 'charges'} yet.</td></tr>
+                <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">No {tab === 'allowance' ? 'allowances' : 'charges'} yet.</td></tr>
               ) : filtered.map(item => {
                 const emp = empMap[item.employee_id];
                 return (
                   <tr key={item.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3.5 px-4 font-medium">{emp ? getAirtableEmployeeName(emp) : item.employee_name || item.employee_id}</td>
                     <td className="py-3.5 px-4 text-xs text-muted-foreground">{item.company || '—'}</td>
+                    <td className="py-3.5 px-4 text-xs text-muted-foreground">{item.branch || 'All branches'}</td>
                     <td className="py-3.5 px-4">{item.label}</td>
                     <td className="py-3.5 px-4 text-right">{peso(item.amount_per_cutoff)}</td>
                     {tab === 'deduction' && <>
@@ -148,7 +158,7 @@ export default function Deductions() {
       </div>
 
       {showForm && (
-        <DeductionForm kind={tab} employees={employees} companies={companies} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+        <DeductionForm kind={tab} employees={employees} companies={companies} branchesByCompany={branchesByCompany} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
       )}
       </>
       )}

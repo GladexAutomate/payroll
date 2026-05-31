@@ -13,6 +13,10 @@
       "type": "string",
       "description": "Company whose payroll this allowance/charge is paid through. Blank = all/default company"
     },
+    "branch": {
+      "type": "string",
+      "description": "Branch under the chosen company this allowance/charge is paid through. Blank = all branches of the company"
+    },
     "kind": {
       "type": "string",
       "enum": [
@@ -36,7 +40,7 @@
     },
     "total_cutoffs": {
       "type": "number",
-      "description": "Number of cutoffs to deduct until completion"
+      "description": "Number of cutoffs to deduct/pay until completion"
     },
     "cutoffs_paid": {
       "type": "number",
@@ -46,7 +50,7 @@
     "start_date": {
       "type": "string",
       "format": "date",
-      "description": "Deduction begins on the cutoff covering this date"
+      "description": "Deduction/allowance begins on the cutoff covering this date"
     },
     "recurring": {
       "type": "boolean",

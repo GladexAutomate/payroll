@@ -6,11 +6,12 @@ import { Input } from '@/components/ui/input';
 import { getAirtableEmployeeName } from '@/utils/airtableEmployee';
 import SearchableSelect from '@/components/shared/SearchableSelect';
 
-export default function DeductionForm({ kind, employees, companies = [], onClose, onSaved }) {
+export default function DeductionForm({ kind, employees, companies = [], branchesByCompany = {}, onClose, onSaved }) {
   const isDeduction = kind === 'deduction';
   const [form, setForm] = useState({
     employee_id: '',
     company: '',
+    branch: '',
     label: '',
     amount_per_cutoff: '',
     total_amount: '',
@@ -20,6 +21,7 @@ export default function DeductionForm({ kind, employees, companies = [], onClose
     notes: '',
   });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const availableBranches = form.company ? (branchesByCompany[form.company] || []) : [];
 
   // Auto-derive per-cutoff if total & cutoffs are set
   const onTotalsChange = (field, value) => {
@@ -37,14 +39,15 @@ export default function DeductionForm({ kind, employees, companies = [], onClose
       employee_id: form.employee_id,
       employee_name: emp ? getAirtableEmployeeName(emp) : '',
       company: form.company || '',
+      branch: form.branch || '',
       kind,
       label: form.label,
       amount_per_cutoff: parseFloat(form.amount_per_cutoff) || 0,
       total_amount: isDeduction ? (parseFloat(form.total_amount) || 0) : 0,
-      total_cutoffs: isDeduction ? (parseInt(form.total_cutoffs, 10) || 0) : 0,
+      total_cutoffs: (isDeduction || !form.recurring) ? (parseInt(form.total_cutoffs, 10) || 0) : 0,
       cutoffs_paid: 0,
       start_date: form.start_date || undefined,
-      recurring: isDeduction ? false : true,
+      recurring: isDeduction ? false : !!form.recurring,
       atd_status: isDeduction ? 'draft' : 'active',
       notes: form.notes,
     });
@@ -72,12 +75,22 @@ export default function DeductionForm({ kind, employees, companies = [], onClose
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Company / Payroll{isDeduction ? '' : '*'}</label>
-            <select value={form.company} onChange={e => set('company', e.target.value)} required={!isDeduction} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+            <select value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value, branch: '' }))} required={!isDeduction} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
               <option value="">{isDeduction ? 'All companies (default)' : 'Select company'}</option>
               {companies.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <p className="text-[11px] text-muted-foreground mt-1">{isDeduction ? 'Leave blank to charge across all companies.' : 'One employee can receive separate allowances through multiple companies — add one per company.'}</p>
           </div>
+          {form.company && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Branch</label>
+              <select value={form.branch} onChange={e => set('branch', e.target.value)} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+                <option value="">All branches of {form.company}</option>
+                {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <p className="text-[11px] text-muted-foreground mt-1">Pick a branch to only apply this when payroll is generated for that branch. Leave blank to apply for any branch under the company.</p>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-muted-foreground">{isDeduction ? 'Charge Label*' : 'Allowance Label*'}</label>
             <Input value={form.label} onChange={e => set('label', e.target.value)} required className="mt-1" placeholder={isDeduction ? 'e.g. Cash Advance' : 'e.g. Transportation'} />
@@ -96,10 +109,26 @@ export default function DeductionForm({ kind, employees, companies = [], onClose
               <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">Deduction begins on the cutoff covering the start date and runs for the set number of cutoffs (or until the total is fully paid). Send the ATD for the employee to authorize before it goes active.</p>
             </>
           ) : (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Amount per Cutoff*</label>
-              <Input type="number" step="0.01" min="0" value={form.amount_per_cutoff} onChange={e => set('amount_per_cutoff', e.target.value)} required className="mt-1" />
-            </div>
+            <>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Amount per Cutoff*</label>
+                <Input type="number" step="0.01" min="0" value={form.amount_per_cutoff} onChange={e => set('amount_per_cutoff', e.target.value)} required className="mt-1" />
+              </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={form.recurring} onChange={e => set('recurring', e.target.checked)} className="rounded border-border" />
+                <span>Recurring (no end date)</span>
+              </label>
+              {!form.recurring && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-muted-foreground"># of Cutoffs*</label><Input type="number" min="1" value={form.total_cutoffs} onChange={e => set('total_cutoffs', e.target.value)} required className="mt-1" /></div>
+                  <div><label className="text-xs font-medium text-muted-foreground">Start Date*</label><Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} required className="mt-1" /></div>
+                </div>
+              )}
+              {form.recurring && (
+                <div><label className="text-xs font-medium text-muted-foreground">Start Date</label><Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} className="mt-1" /></div>
+              )}
+              <p className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg p-2.5">Recurring allowances are added every cutoff. For a fixed duration, uncheck recurring and set the number of cutoffs and the start date.</p>
+            </>
           )}
 
           <div><label className="text-xs font-medium text-muted-foreground">Notes</label><Input value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" /></div>

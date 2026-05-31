@@ -150,10 +150,19 @@ Deno.serve(async (req) => {
     const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
     await wait(400);
     // Active allowances assigned to employees (added automatically to final pay).
+    const runBranchNorm = normalizeText(run.branch_name);
+    const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
     const allowanceRecords = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ kind: 'allowance' }, '-updated_date', 5000));
     const allowanceByEmp = allowanceRecords.reduce((map, row) => {
       const amount = Number(row.amount_per_cutoff) || 0;
       if (amount <= 0) return map;
+      // Branch targeting: if an allowance is bound to a branch, only apply it when this run is for that branch.
+      const rowBranch = normalizeText(row.branch);
+      if (rowBranch && runBranchNorm && rowBranch !== runBranchNorm) return map;
+      // Start date: skip if the allowance starts after this period ends.
+      if (row.start_date && periodEndTime != null && new Date(row.start_date).getTime() > periodEndTime) return map;
+      // Fixed-duration allowances: skip once all cutoffs already paid.
+      if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return map;
       map[row.employee_id] = (map[row.employee_id] || 0) + amount;
       return map;
     }, {});
