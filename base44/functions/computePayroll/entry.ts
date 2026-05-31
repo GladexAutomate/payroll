@@ -148,6 +148,15 @@ Deno.serve(async (req) => {
     const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
     await wait(400);
     const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
+    await wait(400);
+    // Active allowances assigned to employees (added automatically to final pay).
+    const allowanceRecords = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ kind: 'allowance' }, '-updated_date', 5000));
+    const allowanceByEmp = allowanceRecords.reduce((map, row) => {
+      const amount = Number(row.amount_per_cutoff) || 0;
+      if (amount <= 0) return map;
+      map[row.employee_id] = (map[row.employee_id] || 0) + amount;
+      return map;
+    }, {});
     const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
     for (const record of oldRecords) {
       await withRetry(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
@@ -191,7 +200,7 @@ Deno.serve(async (req) => {
       const daysAbsent = Number(summary.days_absent) || 0;
       const grossPay = Number(summary.gross) || 0;
       const lateDeduction = Number(summary.lates_deduction) || 0;
-      const allowances = 0;
+      const allowances = Number(allowanceByEmp[emp.id]) || 0;
       // Use reconciled pay breakdown when available; fall back to legacy derivation.
       const overtimePay = summary.overtime_pay != null ? Number(summary.overtime_pay) : overtimeHours * hourlyRate * 1.25;
       const holidayPay = Number(summary.holiday_pay) || 0;
@@ -215,7 +224,8 @@ Deno.serve(async (req) => {
       const annualTaxable = (monthlySalary * 12) - (sss.employee * 12) - (ph.employee * 12) - (pi.employee * 12);
       const periodTax = computeWithholdingTax(annualTaxable) / 24;
       const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction;
-      const netPay = grossPay - totalDeductionsForEmp;
+      const grossWithAllowance = grossPay + allowances;
+      const netPay = grossWithAllowance - totalDeductionsForEmp;
 
       const payrollRecord = {
         payroll_run_id,
@@ -236,7 +246,7 @@ Deno.serve(async (req) => {
         overtime_pay: money(overtimePay),
         holiday_pay: money(holidayPay),
         allowances: money(allowances),
-        gross_pay: money(grossPay),
+        gross_pay: money(grossWithAllowance),
         sss_employee: money(sssEE),
         sss_employer: money(sssER),
         philhealth_employee: money(phEE),
@@ -254,7 +264,7 @@ Deno.serve(async (req) => {
 
       recordsToCreate.push(payrollRecord);
 
-      totalGross += grossPay;
+      totalGross += grossWithAllowance;
       totalDeductions += totalDeductionsForEmp;
       totalNet += netPay;
     }
