@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getAirtableEmployeeName } from '@/utils/airtableEmployee';
+import SearchableSelect from '@/components/shared/SearchableSelect';
 
 export default function DeductionForm({ kind, employees, companies = [], onClose, onSaved }) {
   const isDeduction = kind === 'deduction';
@@ -60,10 +61,14 @@ export default function DeductionForm({ kind, employees, companies = [], onClose
         <form onSubmit={handleSubmit} className="p-5 space-y-3">
           <div>
             <label className="text-xs font-medium text-muted-foreground">Employee*</label>
-            <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
-              <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{getAirtableEmployeeName(e)}</option>)}
-            </select>
+            <SearchableSelect
+              className="mt-1"
+              value={form.employee_id}
+              onChange={v => set('employee_id', v)}
+              placeholder="Select employee"
+              required
+              options={employees.map(e => ({ value: e.id, label: getAirtableEmployeeName(e) }))}
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Company / Payroll{isDeduction ? '' : '*'}</label>
