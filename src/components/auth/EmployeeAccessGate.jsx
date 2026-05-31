@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 
 export default function EmployeeAccessGate({ children }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState('');
@@ -77,6 +77,11 @@ export default function EmployeeAccessGate({ children }) {
         <p className="text-sm text-muted-foreground mt-2">
           Use your employee code and generated password to continue.
         </p>
+        {user?.email && (
+          <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            Currently logged in as <span className="font-medium text-foreground">{user.email}</span>
+          </div>
+        )}
 
         {blockedMessage ? (
           <div className="mt-5 space-y-4">
