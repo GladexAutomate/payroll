@@ -91,7 +91,7 @@ const AuthenticatedApp = () => {
       </Route>
       <Route path="/schedule/:scope/:value" element={
         <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="max-w-[120rem] mx-auto"><ApprovedSchedule /></div>
+          <div className="max-w-[120rem] mx-auto"><ApprovedSchedule readOnly /></div>
         </div>
       } />
       <Route path="*" element={<PageNotFound />} />

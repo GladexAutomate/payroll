@@ -15,8 +15,9 @@ import { getEmployeeName, getEmployeeSalary } from '@/components/schedule/schedu
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
 import { exportApprovedScheduleToExcel } from '@/components/schedule/exportApprovedSchedule';
+import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
 
-export default function ApprovedSchedule() {
+export default function ApprovedSchedule({ readOnly = false }) {
   const [periodStart, setPeriodStart] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [periodEnd, setPeriodEnd] = useState(format(addDays(new Date(), 15), 'yyyy-MM-dd'));
   const [records, setRecords] = useState([]);
@@ -266,6 +267,7 @@ export default function ApprovedSchedule() {
               )}
             </div>
           </div>
+          {!readOnly && (
           <div className="flex items-center gap-2">
             {editMode ? (
               <>
@@ -290,12 +292,21 @@ export default function ApprovedSchedule() {
               </>
             )}
           </div>
+          )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div><Label className="text-xs">Period Start</Label><Input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="mt-1" /></div>
-          <div><Label className="text-xs">Period End</Label><Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="mt-1" /></div>
-          <div><Label className="text-xs">Search Employee</Label><Input value={search} onChange={e => setSearch(e.target.value)} className="mt-1" placeholder="Name or department" /></div>
-        </div>
+        {readOnly ? (
+          <PayPeriodPicker
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            onChange={(start, end) => { setPeriodStart(start); setPeriodEnd(end); }}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><Label className="text-xs">Period Start</Label><Input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="mt-1" /></div>
+            <div><Label className="text-xs">Period End</Label><Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="mt-1" /></div>
+            <div><Label className="text-xs">Search Employee</Label><Input value={search} onChange={e => setSearch(e.target.value)} className="mt-1" placeholder="Name or department" /></div>
+          </div>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl p-4 space-y-3">
@@ -303,14 +314,18 @@ export default function ApprovedSchedule() {
           <p className="text-xs text-muted-foreground">{filteredEmployees.length} employees · {plottedCount} plotted cells in range</p>
           <ScheduleLegend shiftTemplates={shiftTemplates} />
         </div>
-        <ReconcileBar
-          showActual={showActual}
-          onToggleActual={() => setShowActual(s => !s)}
-          onReconcile={handleReconcile}
-          reconciling={reconciling}
-          lastReconciledAt={lastReconciledAt}
-        />
-        <LeaveNotices notices={notices} />
+        {!readOnly && (
+          <>
+            <ReconcileBar
+              showActual={showActual}
+              onToggleActual={() => setShowActual(s => !s)}
+              onReconcile={handleReconcile}
+              reconciling={reconciling}
+              lastReconciledAt={lastReconciledAt}
+            />
+            <LeaveNotices notices={notices} />
+          </>
+        )}
         {loading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">Loading employees...</div>
         ) : (
