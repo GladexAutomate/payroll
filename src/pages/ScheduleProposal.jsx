@@ -80,14 +80,16 @@ export default function ScheduleProposal() {
   }), [teams, selectedOrgIds]);
 
   // Create a new team registered under the currently selected org path, then select it.
+  // Pre-select members of any previously-saved team with the same name for easier scheduling.
   const createTeam = async (teamName) => {
+    const existingSameName = teams.find(t => cell(t.name) === cell(teamName));
     const created = await base44.entities.Team.create({
       name: teamName,
       ...selectedOrgIds,
       department_name: form.department_name,
       leader_name: form.leader_name,
       leader_email: form.leader_email,
-      member_record_ids: [],
+      member_record_ids: existingSameName?.member_record_ids || [],
       status: 'active',
     });
     const fresh = await base44.entities.Team.list('name', 1000);
@@ -120,6 +122,19 @@ export default function ScheduleProposal() {
       cell(emp.department_role) === cell(form.department_role)
     );
   }, [allEmployees, formComplete, form.company_name, form.branch_name, form.department_name, form.department_role]);
+
+  // When a team is picked, pre-select its previously-saved members (matched against the
+  // employees available under the chosen org path). User can still add/remove manually.
+  useEffect(() => {
+    if (!form.team_name || employees.length === 0) return;
+    const team = teams.find(t => cell(t.name) === cell(form.team_name));
+    const memberIds = new Set((team?.member_record_ids || []).map(String));
+    if (memberIds.size === 0) return;
+    const preselected = employees
+      .filter(emp => memberIds.has(String(emp.id)) || memberIds.has(String(emp.airtable_record_id)) || memberIds.has(String(emp.backend_id)))
+      .map(emp => emp.id);
+    setSelectedIds(preselected);
+  }, [form.team_name, employees, teams]);
 
   const selectedEmployees = useMemo(() => employees.filter(emp => selectedIds.includes(emp.id)), [employees, selectedIds]);
 
