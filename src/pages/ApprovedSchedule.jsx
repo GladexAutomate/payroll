@@ -100,6 +100,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
     department: record.fields?.Department || record.fields?.['Department Role'] || '',
+    company_name: record.fields?.Company || record.fields?.COMPANY || '',
     branch_name: record.fields?.Branch || record.fields?.BRANCH || '',
     department_name: record.fields?.Department || '',
     department_role: record.fields?.['Department Role'] || '',
@@ -107,12 +108,26 @@ export default function ApprovedSchedule({ readOnly = false }) {
 
   const cell = (v) => String(v || '').trim().toLowerCase();
 
+  // Scope value may be a pipe-delimited path so same-named departments/roles under
+  // different companies/branches stay separate, e.g. "Company|Branch|Department|Role".
+  const scopeParts = useMemo(() => scopeValue.split('|').map(p => p.trim()), [scopeValue]);
+  const matchesPart = (val, part) => !part || cell(val) === cell(part);
+
   // Scope filter from URL (?scope=branch|department|department_role|team&value=...)
   const scopedEmployees = useMemo(() => {
     if (!scope || !scopeValue) return employees;
-    if (scope === 'branch') return employees.filter(e => cell(e.branch_name) === cell(scopeValue));
-    if (scope === 'department') return employees.filter(e => cell(e.department_name) === cell(scopeValue));
-    if (scope === 'department_role') return employees.filter(e => cell(e.department_role) === cell(scopeValue));
+    if (scope === 'branch') {
+      const [company, branch] = scopeParts.length > 1 ? scopeParts : ['', scopeParts[0]];
+      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch));
+    }
+    if (scope === 'department') {
+      const [company, branch, dept] = scopeParts.length > 1 ? scopeParts : ['', '', scopeParts[0]];
+      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept));
+    }
+    if (scope === 'department_role') {
+      const [company, branch, dept, role] = scopeParts.length > 1 ? scopeParts : ['', '', '', scopeParts[0]];
+      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept) && matchesPart(e.department_role, role));
+    }
     if (scope === 'team') {
       const team = teams.find(t => cell(t.name) === cell(scopeValue));
       const memberIds = new Set((team?.member_record_ids || []).map(String));
@@ -120,7 +135,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
       return employees.filter(e => memberIds.has(String(e.airtable_record_id)) || memberIds.has(String(e.backend_id)) || memberIds.has(String(e.id)));
     }
     return employees;
-  }, [employees, teams, scope, scopeValue]);
+  }, [employees, teams, scope, scopeValue, scopeParts]);
 
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -262,7 +277,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
               <p className="text-xs text-muted-foreground">{editMode ? 'Edit mode — click any cell to cycle its schedule card, then Save.' : 'Blank schedule for all active employees — auto-plotted when a proposal is approved.'}</p>
               {scope && scopeValue && (
                 <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-primary bg-primary/10 rounded-full px-2.5 py-0.5">
-                  <Filter className="w-3 h-3" /> {scope.replace('_', ' ')}: {scopeValue}
+                  <Filter className="w-3 h-3" /> {scope.replace('_', ' ')}: {scopeParts.filter(Boolean).join(' / ')}
                 </span>
               )}
             </div>

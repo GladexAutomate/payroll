@@ -58,17 +58,38 @@ export default function ScheduleLinks() {
       ) : (
         <>
           <LinkSection icon={Building2} title="Per Branch" count={branches.length}>
-            {branches.map(b => <ScheduleLinkRow key={b.id} label={b.name} scope="branch" value={b.name} />)}
+            {branches.map(b => (
+              <ScheduleLinkRow
+                key={b.id}
+                label={`${b.name}${b.company_name ? ` — ${b.company_name}` : ''}`}
+                scope="branch"
+                value={[b.company_name || '', b.name].join('|')}
+              />
+            ))}
             {branches.length === 0 && <p className="text-xs text-muted-foreground">No branches found.</p>}
           </LinkSection>
 
           <LinkSection icon={Building2} title="Per Department" count={departments.length}>
-            {departments.map(d => <ScheduleLinkRow key={d.id} label={d.name} scope="department" value={d.name} />)}
+            {departments.map(d => (
+              <ScheduleLinkRow
+                key={d.id}
+                label={`${d.name}${d.branch_name ? ` — ${d.branch_name}` : ''}`}
+                scope="department"
+                value={[d.company_name || '', d.branch_name || '', d.name].join('|')}
+              />
+            ))}
             {departments.length === 0 && <p className="text-xs text-muted-foreground">No departments found.</p>}
           </LinkSection>
 
           <LinkSection icon={Building2} title="Per Department Role" count={roles.length}>
-            {roles.map(r => <ScheduleLinkRow key={r.id} label={r.name} scope="department_role" value={r.name} />)}
+            {roles.map(r => (
+              <ScheduleLinkRow
+                key={r.id}
+                label={`${r.name}${r.department_name ? ` · ${r.department_name}` : ''}${r.branch_name ? ` — ${r.branch_name}` : ''}`}
+                scope="department_role"
+                value={[r.company_name || '', r.branch_name || '', r.department_name || '', r.name].join('|')}
+              />
+            ))}
             {roles.length === 0 && <p className="text-xs text-muted-foreground">No department roles found.</p>}
           </LinkSection>
 
