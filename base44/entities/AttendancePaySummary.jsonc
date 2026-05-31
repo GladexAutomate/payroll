@@ -38,11 +38,44 @@
       "type": "number",
       "default": 0
     },
+    "undertime_minutes": {
+      "type": "number",
+      "default": 0
+    },
+    "offset_hours": {
+      "type": "number",
+      "default": 0,
+      "description": "Banked OT hours consumed via approved offset requests"
+    },
+    "night_diff_hours": {
+      "type": "number",
+      "default": 0
+    },
+    "night_diff_pay": {
+      "type": "number",
+      "default": 0
+    },
     "gross": {
       "type": "number",
       "default": 0
     },
     "lates_deduction": {
+      "type": "number",
+      "default": 0
+    },
+    "undertime_deduction": {
+      "type": "number",
+      "default": 0
+    },
+    "allowances": {
+      "type": "number",
+      "default": 0
+    },
+    "other_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "thirteenth_month_accrual": {
       "type": "number",
       "default": 0
     },

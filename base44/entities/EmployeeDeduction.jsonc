@@ -1,0 +1,81 @@
+{
+  "name": "EmployeeDeduction",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "allowance",
+        "deduction"
+      ],
+      "default": "deduction",
+      "description": "allowance = recurring earning added to pay; deduction = ATD charge subtracted from pay"
+    },
+    "label": {
+      "type": "string",
+      "description": "e.g. Transportation Allowance, Cash Advance, Uniform Charge"
+    },
+    "amount_per_cutoff": {
+      "type": "number",
+      "description": "Amount applied each cutoff/payroll period"
+    },
+    "total_amount": {
+      "type": "number",
+      "description": "For deductions: total charge to be fully paid over multiple cutoffs. 0/blank = open-ended recurring"
+    },
+    "total_cutoffs": {
+      "type": "number",
+      "description": "Number of cutoffs to deduct until completion"
+    },
+    "cutoffs_paid": {
+      "type": "number",
+      "default": 0,
+      "description": "How many cutoffs have already been applied"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Deduction begins on the cutoff covering this date"
+    },
+    "recurring": {
+      "type": "boolean",
+      "default": false,
+      "description": "True for ongoing allowances with no end"
+    },
+    "atd_status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "sent",
+        "approved",
+        "active",
+        "completed",
+        "cancelled"
+      ],
+      "default": "draft",
+      "description": "Authorization-To-Deduct approval lifecycle"
+    },
+    "atd_sent_date": {
+      "type": "string"
+    },
+    "atd_approved_date": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_id",
+    "kind",
+    "label",
+    "amount_per_cutoff"
+  ]
+}

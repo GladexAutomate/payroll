@@ -21,6 +21,8 @@ import AttendanceUpload from './pages/AttendanceUpload';
 import Shifts from './pages/Shifts';
 import Leaves from './pages/Leaves';
 import Overtime from './pages/Overtime';
+import Offsets from './pages/Offsets';
+import Deductions from './pages/Deductions';
 import Payroll from './pages/Payroll';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
@@ -79,6 +81,8 @@ const AuthenticatedApp = () => {
         <Route path="/approved-schedule" element={<ApprovedSchedule />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />
+        <Route path="/offsets" element={<Offsets />} />
+        <Route path="/deductions" element={<Deductions />} />
         <Route path="/payroll" element={<Payroll />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />

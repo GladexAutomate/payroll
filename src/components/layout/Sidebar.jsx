@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, ChevronRight, Building2, Fingerprint,
-  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck
+  ClipboardList, Calendar, Upload, X, Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat, Receipt
 } from 'lucide-react';
 
 const navGroups = [
@@ -52,12 +52,16 @@ const navGroups = [
       { label: 'Approved Schedule', icon: CalendarCheck, path: '/approved-schedule' },
       { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
       { label: 'Overtime', icon: ClipboardList, path: '/overtime' },
+      { label: 'Offsets', icon: Repeat, path: '/offsets' },
     ],
   },
   {
     label: 'Payroll',
     icon: DollarSign,
-    items: [{ label: 'Payroll', icon: DollarSign, path: '/payroll' }],
+    items: [
+      { label: 'Payroll', icon: DollarSign, path: '/payroll' },
+      { label: 'Allowances & Charges', icon: Receipt, path: '/deductions' },
+    ],
   },
   {
     label: 'Insights',

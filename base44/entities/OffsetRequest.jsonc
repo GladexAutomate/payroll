@@ -1,0 +1,45 @@
+{
+  "name": "OffsetRequest",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "offset_date": {
+      "type": "string",
+      "format": "date",
+      "description": "The day the employee works short hours using banked OT"
+    },
+    "offset_hours": {
+      "type": "number",
+      "description": "Hours of banked OT used to offset (e.g. 2 = works 6h instead of 8h, still paid full 8h)"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_date": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_id",
+    "offset_date",
+    "offset_hours"
+  ]
+}
