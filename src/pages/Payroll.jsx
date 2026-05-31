@@ -4,6 +4,7 @@ import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
 import { format } from 'date-fns';
@@ -15,6 +16,7 @@ export default function Payroll() {
   const [selectedRun, setSelectedRun] = useState(null);
   const [computing, setComputing] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [dialog, setDialog] = useState(null);
 
   useEffect(() => { loadRuns(); }, []);
 
@@ -47,9 +49,13 @@ export default function Payroll() {
       .finally(() => setComputing(null));
   };
 
-  const handleRecompute = async (run) => {
-    if (!window.confirm(`Recompute ${run.period_label}? This regenerates payroll records from the saved attendance summaries.`)) return;
-    handleCompute(run, false);
+  const handleRecompute = (run) => {
+    setDialog({
+      title: 'Recompute payroll?',
+      description: `Recompute ${run.period_label}? This regenerates payroll records from the saved attendance summaries.`,
+      confirmLabel: 'Recompute',
+      onConfirm: () => { setDialog(null); handleCompute(run, false); },
+    });
   };
 
   const handleApprove = async (run) => {
@@ -60,14 +66,26 @@ export default function Payroll() {
     loadRuns();
   };
 
-  const handleDelete = async (run) => {
-    if (!window.confirm(`Delete ${run.period_label}? This will also delete all payroll records inside this run.`)) return;
+  const handleDelete = (run) => {
+    setDialog({
+      title: 'Delete payroll run?',
+      description: `Delete ${run.period_label}? This will also delete all payroll records inside this run.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: () => { setDialog(null); performDelete(run); },
+    });
+  };
+
+  const performDelete = async (run) => {
     setDeleting(run.id);
     setRuns(prev => prev.filter(item => item.id !== run.id));
     try {
       await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
     } catch (error) {
-      alert('Delete is still running slowly in the backend. The row will stay hidden while cleanup continues.');
+      setDialog({
+        title: 'Cleanup in progress',
+        description: 'Delete is still running slowly in the backend. The row will stay hidden while cleanup continues.',
+      });
     } finally {
       setDeleting(null);
     }
@@ -196,6 +214,16 @@ export default function Payroll() {
           onClose={() => setSelectedRun(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!dialog}
+        onOpenChange={(open) => { if (!open) setDialog(null); }}
+        title={dialog?.title}
+        description={dialog?.description}
+        confirmLabel={dialog?.confirmLabel}
+        destructive={dialog?.destructive}
+        onConfirm={dialog?.onConfirm}
+      />
     </div>
   );
 }
