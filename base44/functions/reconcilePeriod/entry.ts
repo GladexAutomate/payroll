@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
     const holidays = await withRetry(() => base44.asServiceRole.entities.HolidayCalendar.list('-date', 500));
     await wait(400);
     const existing = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start, period_end }, '-created_date', 5000));
+    await wait(400);
+    // Only APPROVED overtime within the period is paid. Unfiled / pending / rejected OT is ignored.
+    const approvedOT = await withRetry(() => base44.asServiceRole.entities.OvertimeRequest.filter({ status: 'approved', date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
 
     const activeUploadIds = new Set(hiddenUploads.filter(u => !['deleting', 'deleted'].includes(u.status)).map(u => u.id));
     const logs = allLogs.filter(l => !l.upload_id || activeUploadIds.has(l.upload_id));
@@ -90,6 +93,16 @@ Deno.serve(async (req) => {
     plotted.forEach(rec => {
       scheduleByEmp[rec.employee_id] = scheduleByEmp[rec.employee_id] || {};
       scheduleByEmp[rec.employee_id][rec.date] = rec.schedule_type;
+    });
+
+    // Approved OT lookup: employeeKey -> { date -> approved_hours }
+    const approvedOTByKey = {};
+    approvedOT.forEach(ot => {
+      const key = cleanText(ot.employee_id);
+      if (!key) return;
+      approvedOTByKey[key] = approvedOTByKey[key] || {};
+      const hrs = Number(ot.approved_hours);
+      approvedOTByKey[key][ot.date] = Number.isFinite(hrs) ? hrs : (Number(ot.requested_hours) || 0);
     });
 
     const localEmployeeMap = localEmployees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
@@ -131,6 +144,13 @@ Deno.serve(async (req) => {
 
       const sched = scheduleByEmp[employee.id] || {};
 
+      // Merge approved OT (date -> hours) across all keys that resolve to this employee
+      const approvedOTForEmp = {};
+      keys.forEach(k => {
+        const byDate = approvedOTByKey[cleanText(k)];
+        if (byDate) Object.entries(byDate).forEach(([d, h]) => { approvedOTForEmp[d] = Math.max(approvedOTForEmp[d] || 0, h); });
+      });
+
       let regularHours = 0, overtimeHours = 0, lateMinutes = 0;
       let regularPay = 0, overtimePay = 0, holidayPay = 0, leavePay = 0;
       let daysWorked = 0, daysAbsent = 0, paidLeaveDays = 0;
@@ -149,7 +169,9 @@ Deno.serve(async (req) => {
         const hasPunch = worked > 0;
         const reg = hasPunch ? Math.max(1, Math.min(worked, 8)) : 0;
         const extra = hasPunch ? Math.max(0, worked - 8) : 0;
-        const ot = extra >= 1 ? Math.floor(extra) : 0;
+        // OT is only paid up to the APPROVED overtime hours for that date. No approval -> 0 OT.
+        const approvedOTHours = approvedOTForEmp[date] || 0;
+        const ot = Math.min(extra >= 1 ? Math.floor(extra) : 0, approvedOTHours);
         const lateMin = Number(log?.late_minutes) || 0;
 
         // 1. Paid leave -> pay full 8h regardless of punch

@@ -4,6 +4,7 @@ import { Plus, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
+import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
 
 export default function Overtime() {
   const [requests, setRequests] = useState([]);
@@ -18,10 +19,13 @@ export default function Overtime() {
     setLoading(true);
     const [reqs, emps] = await Promise.all([
       base44.entities.OvertimeRequest.list('-created_date', 100),
-      base44.entities.Employee.filter({ status: 'active' })
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000)
     ]);
+    const activeEmps = emps
+      .filter(isActiveAirtableEmployee)
+      .sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b)));
     setRequests(reqs);
-    setEmployees(emps);
+    setEmployees(activeEmps);
     setLoading(false);
   };
 
@@ -84,7 +88,7 @@ export default function Overtime() {
                 const emp = empMap[req.employee_id];
                 return (
                   <tr key={req.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="py-3.5 px-4 font-medium">{emp ? `${emp.first_name} ${emp.last_name}` : req.employee_id}</td>
+                    <td className="py-3.5 px-4 font-medium">{emp ? getAirtableEmployeeName(emp) : req.employee_id}</td>
                     <td className="py-3.5 px-4">{req.date}</td>
                     <td className="py-3.5 px-4 text-right">{req.requested_hours}h</td>
                     <td className="py-3.5 px-4 text-right font-medium">{req.approved_hours ? `${req.approved_hours}h` : '—'}</td>
@@ -142,7 +146,7 @@ function OTForm({ employees, onClose, onSaved }) {
             <label className="text-xs font-medium text-muted-foreground">Employee*</label>
             <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)} required className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
               <option value="">Select employee</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              {employees.map(e => <option key={e.id} value={e.id}>{getAirtableEmployeeName(e)}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
