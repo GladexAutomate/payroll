@@ -142,6 +142,9 @@ Deno.serve(async (req) => {
     // Approved offsets within the period
     const approvedOffsets = await withRetry(() => base44.asServiceRole.entities.OffsetRequest.filter({ status: 'approved', offset_date: { $gte: period_start, $lte: period_end } }, 'offset_date', 5000));
     await wait(300);
+    // Approved leave requests (paid leaves are paid even when not plotted on the approved schedule)
+    const approvedLeaves = await withRetry(() => base44.asServiceRole.entities.LeaveRequest.filter({ status: 'approved' }, '-date_from', 5000));
+    await wait(300);
     // Active allowances & ATD charges
     const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-created_date', 5000));
 
@@ -179,6 +182,19 @@ Deno.serve(async (req) => {
       restDayApprovedByKey[key].add(ot.date);
     });
 
+    // Approved leave lookup: employeeKey -> { date -> 'paid' | 'unpaid' }
+    // Expands each leave request across its date range and tags each day paid/unpaid.
+    const leaveByKey = {};
+    approvedLeaves.forEach(lv => {
+      const key = cleanText(lv.employee_id);
+      if (!key || !lv.date_from || !lv.date_to) return;
+      const isPaid = lv.is_paid !== false && lv.leave_type !== 'unpaid';
+      leaveByKey[key] = leaveByKey[key] || {};
+      eachDate(lv.date_from, lv.date_to).forEach(d => {
+        if (d >= period_start && d <= period_end) leaveByKey[key][d] = isPaid ? 'paid' : 'unpaid';
+      });
+    });
+
     // Approved offset hours: employeeKey -> { date -> offset_hours }
     const offsetByKey = {};
     approvedOffsets.forEach(o => {
@@ -210,10 +226,26 @@ Deno.serve(async (req) => {
 
     const localEmployeeMap = localEmployees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
     const airtableByLocalId = savedMatches.reduce((m, mt) => ({ ...m, [mt.employee_record_id]: mt.airtable_record_id }), {});
+    // Index Airtable employees by biometric number, employee code, and normalized name for robust matching.
+    const airtableByBio = {};
+    const airtableByCode = {};
+    const airtableByName = {};
+    employees.forEach(e => {
+      const bio = cleanText(getBiometricNumber(e));
+      const code = cleanText(getEmployeeCode(e)).toLowerCase();
+      const nm = normalizeName(getEmployeeName(e));
+      if (bio) airtableByBio[bio] = e.airtable_record_id;
+      if (code) airtableByCode[code] = e.airtable_record_id;
+      if (nm) airtableByName[nm] = e.airtable_record_id;
+    });
     for (const local of localEmployees) {
+      if (airtableByLocalId[local.id]) continue; // saved match wins
+      const bio = cleanText(local.biometric_id || local.employee_id);
+      const code = cleanText(local.employee_id).toLowerCase();
       const localName = normalizeName([local.first_name, local.middle_name, local.last_name].filter(Boolean).join(' '));
-      const matched = employees.find(e => normalizeName(getEmployeeName(e)) === localName);
-      if (matched) airtableByLocalId[local.id] = matched.airtable_record_id;
+      // Prefer biometric number, then employee code, then exact normalized name.
+      const matchId = (bio && airtableByBio[bio]) || (code && airtableByCode[code]) || airtableByName[localName];
+      if (matchId) airtableByLocalId[local.id] = matchId;
     }
     const existingByEmpId = existing.reduce((m, r) => ({ ...m, [r.employee_id]: r }), {});
 
@@ -253,6 +285,7 @@ Deno.serve(async (req) => {
       const approvedOTForEmp = {};
       const restDayApprovedForEmp = new Set();
       const offsetForEmp = {};
+      const leaveForEmp = {};
       let allowanceTotal = 0;
       let chargeTotal = 0;
       keys.forEach(k => {
@@ -263,6 +296,8 @@ Deno.serve(async (req) => {
         if (rd) rd.forEach(d => restDayApprovedForEmp.add(d));
         const off = offsetByKey[ck];
         if (off) Object.entries(off).forEach(([d, h]) => { offsetForEmp[d] = Math.max(offsetForEmp[d] || 0, h); });
+        const lv = leaveByKey[ck];
+        if (lv) Object.entries(lv).forEach(([d, kind]) => { if (!leaveForEmp[d]) leaveForEmp[d] = kind; });
         allowanceTotal = Math.max(allowanceTotal, allowanceByKey[ck] || 0);
         chargeTotal = Math.max(chargeTotal, chargeByKey[ck] || 0);
       });
@@ -279,20 +314,40 @@ Deno.serve(async (req) => {
         const schedType = sched[date] || 'none';
         const log = logsByDate[date];
         const holiday = holidayByDate[date]; // 'regular' | 'special' | undefined
+        const leaveKind = leaveForEmp[date]; // 'paid' | 'unpaid' | undefined (from approved LeaveRequest)
+
+        // Approved leave from LeaveRequest takes precedence (filed leaves are honored even
+        // when the schedule wasn't plotted). Skip if the schedule already marks paid leave to avoid double pay.
+        if (leaveKind && !PAID_LEAVE.has(schedType) && !UNPAID_LEAVE.has(schedType)) {
+          if (leaveKind === 'paid') { leavePay += dailyRate; paidLeaveDays += 1; }
+          continue; // paid or unpaid: the day is consumed by leave, no absence/punch processing
+        }
+
+        // Resolve in/out: prefer explicit fields, else reconstruct from raw_punches
+        // (handles corrupt manually-edited logs with null time_in/out but valid punches).
+        let timeIn = log?.time_in;
+        let timeOut = log?.time_out;
+        if ((!timeIn || !timeOut) && Array.isArray(log?.raw_punches) && log.raw_punches.length >= 2) {
+          const sorted = [...log.raw_punches].filter(Boolean).sort();
+          timeIn = timeIn || sorted[0];
+          timeOut = timeOut || sorted[sorted.length - 1];
+        }
 
         // Gross punch span, then subtract the mandatory unpaid break
         let span = 0;
-        if (log?.time_in && log?.time_out) {
-          span = (new Date(log.time_out) - new Date(log.time_in)) / 3600000;
-          if (!Number.isFinite(span) || span <= 0) span = Number(log.total_hours) || 0;
+        if (timeIn && timeOut) {
+          span = (new Date(timeOut) - new Date(timeIn)) / 3600000;
+          if (!Number.isFinite(span) || span <= 0) span = Number(log?.total_hours) || 0;
+        } else if (Number(log?.total_hours) > 0) {
+          span = Number(log.total_hours);
         }
         const hasPunch = span > 0;
         // Net worked hours = span - break (only deduct break when worked beyond the break length)
         const worked = hasPunch ? Math.max(0, span - (span > BREAK_H ? BREAK_H : 0)) : 0;
 
         const lateMin = Number(log?.late_minutes) || 0;
-        const nd = (P.night_diff_enabled && hasPunch && log?.time_in && log?.time_out)
-          ? nightDiffHours(log.time_in, log.time_out, P.night_diff_start, P.night_diff_end) : 0;
+        const nd = (P.night_diff_enabled && hasPunch && timeIn && timeOut)
+          ? nightDiffHours(timeIn, timeOut, P.night_diff_start, P.night_diff_end) : 0;
 
         // 1. Paid leave -> pay full standard day regardless of punch
         if (PAID_LEAVE.has(schedType)) {
@@ -423,7 +478,7 @@ Deno.serve(async (req) => {
     await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToCreate);
     for (const r of recordsToUpdate) {
       await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.update(r.id, r.data));
-      await wait(120);
+      await wait(350);
     }
 
     return Response.json({ success: true, count: employees.length, period_start, period_end });
