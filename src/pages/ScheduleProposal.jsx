@@ -107,6 +107,7 @@ export default function ScheduleProposal() {
     branch: record.fields?.Branch || record.fields?.BRANCH || '',
     department: record.fields?.Department || '',
     department_role: record.fields?.['Department Role'] || '',
+    team: record.fields?.Team || record.fields?.TEAM || '',
     email: record.fields?.Email || record.fields?.['Business email'] || '',
   })), [records]);
 
@@ -129,10 +130,15 @@ export default function ScheduleProposal() {
     if (!form.team_name || employees.length === 0) return;
     const team = teams.find(t => cell(t.name) === cell(form.team_name));
     const memberIds = new Set((team?.member_record_ids || []).map(String));
-    if (memberIds.size === 0) return;
     const preselected = employees
-      .filter(emp => memberIds.has(String(emp.id)) || memberIds.has(String(emp.airtable_record_id)) || memberIds.has(String(emp.backend_id)))
+      .filter(emp =>
+        memberIds.has(String(emp.id)) ||
+        memberIds.has(String(emp.airtable_record_id)) ||
+        memberIds.has(String(emp.backend_id)) ||
+        cell(emp.team) === cell(form.team_name)
+      )
       .map(emp => emp.id);
+    if (preselected.length === 0) return;
     setSelectedIds(preselected);
   }, [form.team_name, employees, teams]);
 
