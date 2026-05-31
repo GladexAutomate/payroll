@@ -152,22 +152,42 @@ Deno.serve(async (req) => {
     // Active allowances assigned to employees (added automatically to final pay).
     const runBranchNorm = normalizeText(run.branch_name);
     const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
-    const allowanceRecords = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ kind: 'allowance' }, '-updated_date', 5000));
+    const allEmployeeDeductions = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-updated_date', 5000));
+    const allowanceRecords = allEmployeeDeductions.filter(r => r.kind === 'allowance');
+    // Active ATD charges (cash advance, uniform, etc.) that reduce net pay.
+    const deductionRecords = allEmployeeDeductions.filter(r => r.kind === 'deduction' && r.atd_status === 'active');
+
+    // Shared targeting test: branch match, started by period end, and not already fully paid.
+    const appliesToRun = (row) => {
+      const rowBranch = normalizeText(row.branch);
+      if (rowBranch && runBranchNorm && rowBranch !== runBranchNorm) return false;
+      if (row.start_date && periodEndTime != null && new Date(row.start_date).getTime() > periodEndTime) return false;
+      if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return false;
+      return true;
+    };
+
     // Employee IDs that qualify for an allowance in this run (used to also pull in consultants
     // who aren't part of the branch's regular employee list but still get paid an allowance).
     const allowanceEmployeeIds = new Set();
+    const appliedDeductionRows = [];
     const allowanceByEmp = allowanceRecords.reduce((map, row) => {
       const amount = Number(row.amount_per_cutoff) || 0;
-      if (amount <= 0) return map;
-      // Branch targeting: if an allowance is bound to a branch, only apply it when this run is for that branch.
-      const rowBranch = normalizeText(row.branch);
-      if (rowBranch && runBranchNorm && rowBranch !== runBranchNorm) return map;
-      // Start date: skip if the allowance starts after this period ends.
-      if (row.start_date && periodEndTime != null && new Date(row.start_date).getTime() > periodEndTime) return map;
-      // Fixed-duration allowances: skip once all cutoffs already paid.
-      if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return map;
+      if (amount <= 0 || !appliesToRun(row)) return map;
       map[row.employee_id] = (map[row.employee_id] || 0) + amount;
       allowanceEmployeeIds.add(row.employee_id);
+      return map;
+    }, {});
+
+    const deductionByEmp = deductionRecords.reduce((map, row) => {
+      const amount = Number(row.amount_per_cutoff) || 0;
+      if (amount <= 0 || !appliesToRun(row)) return map;
+      // Don't deduct more than the outstanding balance on a fixed-total charge.
+      const total = Number(row.total_amount) || 0;
+      const paid = (Number(row.cutoffs_paid) || 0) * amount;
+      const applied = total > 0 ? Math.min(amount, Math.max(total - paid, 0)) : amount;
+      if (applied <= 0) return map;
+      map[row.employee_id] = (map[row.employee_id] || 0) + applied;
+      appliedDeductionRows.push({ id: row.id, cutoffs_paid: (Number(row.cutoffs_paid) || 0) + 1, total_cutoffs: Number(row.total_cutoffs) || 0 });
       return map;
     }, {});
     const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
@@ -217,6 +237,7 @@ Deno.serve(async (req) => {
       const grossPay = Number(summary.gross) || 0;
       const lateDeduction = Number(summary.lates_deduction) || 0;
       const allowances = Number(allowanceByEmp[emp.id]) || 0;
+      const otherDeductions = Number(deductionByEmp[emp.id]) || 0;
       // Use reconciled pay breakdown when available; fall back to legacy derivation.
       const overtimePay = summary.overtime_pay != null ? Number(summary.overtime_pay) : overtimeHours * hourlyRate * 1.25;
       const holidayPay = Number(summary.holiday_pay) || 0;
@@ -239,7 +260,7 @@ Deno.serve(async (req) => {
       const piER = pi.employer / 2;
       const annualTaxable = (monthlySalary * 12) - (sss.employee * 12) - (ph.employee * 12) - (pi.employee * 12);
       const periodTax = computeWithholdingTax(annualTaxable) / 24;
-      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction;
+      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + otherDeductions;
       const grossWithAllowance = grossPay + allowances;
       const netPay = grossWithAllowance - totalDeductionsForEmp;
 
@@ -272,7 +293,7 @@ Deno.serve(async (req) => {
         withholding_tax: money(periodTax),
         late_deduction: money(lateDeduction),
         absent_deduction: 0,
-        other_deductions: 0,
+        other_deductions: money(otherDeductions),
         total_deductions: money(totalDeductionsForEmp),
         net_pay: money(netPay),
         status: 'computed',
@@ -293,6 +314,14 @@ Deno.serve(async (req) => {
         compute_total: recordsToCreate.length,
       }));
     });
+
+    // Advance progress on applied charges; mark completed when the last cutoff is paid.
+    for (const row of appliedDeductionRows) {
+      const update = { cutoffs_paid: row.cutoffs_paid };
+      if (row.total_cutoffs > 0 && row.cutoffs_paid >= row.total_cutoffs) update.atd_status = 'completed';
+      await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.update(row.id, update));
+      await wait(80);
+    }
 
     await withRetry(() => base44.asServiceRole.entities.PayrollRun.update(payroll_run_id, {
       total_gross: money(totalGross),
