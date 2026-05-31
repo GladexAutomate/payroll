@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Plus, Trash2, Building2, Calendar } from 'lucide-react';
 import WebhookSettings from '@/components/schedule/WebhookSettings';
 import PayrollRulesSettings from '@/components/settings/PayrollRulesSettings';
+import StatutoryContributionSettings from '@/components/settings/StatutoryContributionSettings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -131,25 +132,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Statutory contribution rules (reference) */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-primary" /> Statutory Contributions (reference)
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          {[
-            ['SSS', 'Based on 2024 table (max ₱900/mo EE)', 'bg-blue-50 text-blue-800'],
-            ['PhilHealth', '5% of salary, split 50/50, max ₱100k bracket', 'bg-green-50 text-green-800'],
-            ['Pag-IBIG', '2% employee + 2% employer (max ₱100/side)', 'bg-orange-50 text-orange-800'],
-            ['Withholding Tax', 'TRAIN Law 2024 — 0% below ₱250k/yr', 'bg-purple-50 text-purple-800'],
-          ].map(([title, desc, color]) => (
-            <div key={title} className={`rounded-xl p-3 ${color}`}>
-              <p className="font-semibold text-xs">{title}</p>
-              <p className="text-xs mt-0.5 opacity-80">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <StatutoryContributionSettings />
     </div>
   );
 }

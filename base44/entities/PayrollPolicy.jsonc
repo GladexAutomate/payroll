@@ -1,0 +1,139 @@
+{
+  "name": "PayrollPolicy",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Singleton key, always 'default'",
+      "default": "default"
+    },
+    "mandatory_break_minutes": {
+      "type": "number",
+      "default": 60,
+      "description": "Unpaid break deducted from the punch span before computing net worked hours"
+    },
+    "standard_work_hours": {
+      "type": "number",
+      "default": 8,
+      "description": "Expected paid work hours per day"
+    },
+    "grace_period_minutes": {
+      "type": "number",
+      "default": 15,
+      "description": "Minutes after scheduled start before counting as late"
+    },
+    "deduct_undertime": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether early-out / short hours are deducted"
+    },
+    "ot_multiplier_regular": {
+      "type": "number",
+      "default": 1.25,
+      "description": "Ordinary day overtime multiplier"
+    },
+    "ot_multiplier_rest_day": {
+      "type": "number",
+      "default": 1.3,
+      "description": "Rest day work multiplier (first 8h)"
+    },
+    "ot_multiplier_rest_day_excess": {
+      "type": "number",
+      "default": 1.69,
+      "description": "Rest day overtime multiplier (130% x 130%)"
+    },
+    "multiplier_regular_holiday": {
+      "type": "number",
+      "default": 2.0,
+      "description": "Regular holiday work (first 8h)"
+    },
+    "ot_multiplier_regular_holiday": {
+      "type": "number",
+      "default": 2.6,
+      "description": "Regular holiday overtime (200% x 130%)"
+    },
+    "multiplier_special_holiday": {
+      "type": "number",
+      "default": 1.3,
+      "description": "Special non-working holiday work (first 8h)"
+    },
+    "ot_multiplier_special_holiday": {
+      "type": "number",
+      "default": 1.69,
+      "description": "Special holiday overtime (130% x 130%)"
+    },
+    "night_diff_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Apply night differential premium"
+    },
+    "night_diff_rate": {
+      "type": "number",
+      "default": 0.1,
+      "description": "Night differential premium (0.10 = +10%)"
+    },
+    "night_diff_start": {
+      "type": "string",
+      "default": "22:00",
+      "description": "Night differential window start (HH:MM)"
+    },
+    "night_diff_end": {
+      "type": "string",
+      "default": "06:00",
+      "description": "Night differential window end (HH:MM)"
+    },
+    "rest_day_work_requires_approval": {
+      "type": "boolean",
+      "default": true,
+      "description": "Rest-day work is only paid if an approved OvertimeRequest exists for that date"
+    },
+    "thirteenth_month_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Accrue 13th month pay per period"
+    },
+    "working_days_divisor": {
+      "type": "number",
+      "default": 26,
+      "description": "Days used to derive daily rate from monthly salary"
+    },
+    "philhealth_rate": {
+      "type": "number",
+      "default": 0.05,
+      "description": "PhilHealth premium rate of monthly salary (0.05 = 5%)"
+    },
+    "philhealth_salary_floor": {
+      "type": "number",
+      "default": 10000,
+      "description": "PhilHealth minimum salary bracket"
+    },
+    "philhealth_salary_ceiling": {
+      "type": "number",
+      "default": 100000,
+      "description": "PhilHealth maximum salary bracket"
+    },
+    "pagibig_rate": {
+      "type": "number",
+      "default": 0.02,
+      "description": "Pag-IBIG contribution rate of monthly salary (0.02 = 2%)"
+    },
+    "pagibig_max_per_side": {
+      "type": "number",
+      "default": 100,
+      "description": "Pag-IBIG maximum contribution per side (employee/employer)"
+    },
+    "sss_max_employee": {
+      "type": "number",
+      "default": 900,
+      "description": "SSS maximum employee monthly contribution"
+    },
+    "sss_max_employer": {
+      "type": "number",
+      "default": 1900,
+      "description": "SSS maximum employer monthly contribution"
+    }
+  },
+  "required": [
+    "key"
+  ]
+}

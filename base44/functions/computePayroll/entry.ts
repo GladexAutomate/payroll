@@ -50,7 +50,9 @@ function buildEmployeeKeys(employee) {
   ].filter(Boolean).map(key => String(key).trim());
 }
 
-function getSSSContribution(monthlySalary) {
+function getSSSContribution(monthlySalary, policy) {
+  const maxEE = Number(policy?.sss_max_employee) || 900;
+  const maxER = Number(policy?.sss_max_employer) || 1900;
   const table = [
     [4249.99, 180, 380], [4749.99, 202.5, 427.5], [5249.99, 225, 475], [5749.99, 247.5, 522.5],
     [6249.99, 270, 570], [6749.99, 292.5, 617.5], [7249.99, 315, 665], [7749.99, 337.5, 712.5],
@@ -63,19 +65,24 @@ function getSSSContribution(monthlySalary) {
     [20249.99, 900, 1900],
   ];
   if (monthlySalary < 4250) return { employee: 180, employer: 380 };
-  for (const [cap, ee, er] of table) if (monthlySalary <= cap) return { employee: ee, employer: er };
-  return { employee: 900, employer: 1900 };
+  for (const [cap, ee, er] of table) if (monthlySalary <= cap) return { employee: Math.min(ee, maxEE), employer: Math.min(er, maxER) };
+  return { employee: maxEE, employer: maxER };
 }
 
-function getPhilHealthContribution(monthlySalary) {
-  const bracket = Math.min(Math.max(monthlySalary, 10000), 100000);
-  const total = bracket * 0.05;
+function getPhilHealthContribution(monthlySalary, policy) {
+  const rate = Number(policy?.philhealth_rate) || 0.05;
+  const floor = Number(policy?.philhealth_salary_floor) || 10000;
+  const ceiling = Number(policy?.philhealth_salary_ceiling) || 100000;
+  const bracket = Math.min(Math.max(monthlySalary, floor), ceiling);
+  const total = bracket * rate;
   return { employee: total / 2, employer: total / 2 };
 }
 
-function getPagIBIGContribution(monthlySalary) {
+function getPagIBIGContribution(monthlySalary, policy) {
+  const rate = Number(policy?.pagibig_rate) || 0.02;
+  const maxPerSide = Number(policy?.pagibig_max_per_side) || 100;
   if (monthlySalary <= 1500) return { employee: monthlySalary * 0.01, employer: monthlySalary * 0.02 };
-  return { employee: Math.min(monthlySalary * 0.02, 100), employer: Math.min(monthlySalary * 0.02, 100) };
+  return { employee: Math.min(monthlySalary * rate, maxPerSide), employer: Math.min(monthlySalary * rate, maxPerSide) };
 }
 
 function computeWithholdingTax(annualTaxableIncome) {
@@ -157,6 +164,9 @@ Deno.serve(async (req) => {
     await wait(600);
     const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
     await wait(400);
+    const policyRows = await withRetry(() => base44.asServiceRole.entities.PayrollPolicy.filter({ key: 'default' }));
+    const policy = policyRows[0] || {};
+    await wait(200);
     const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
     await wait(400);
     // Active allowances assigned to employees (added automatically to final pay).
@@ -259,9 +269,9 @@ Deno.serve(async (req) => {
       const sssOn = gov.sss_enabled !== false;
       const phOn = gov.philhealth_enabled !== false;
       const piOn = gov.pagibig_enabled !== false;
-      const sss = sssOn ? getSSSContribution(monthlySalary) : { employee: 0, employer: 0 };
-      const ph = phOn ? getPhilHealthContribution(monthlySalary) : { employee: 0, employer: 0 };
-      const pi = piOn ? getPagIBIGContribution(monthlySalary) : { employee: 0, employer: 0 };
+      const sss = sssOn ? getSSSContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
+      const ph = phOn ? getPhilHealthContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
+      const pi = piOn ? getPagIBIGContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
       const sssEE = sss.employee / 2;
       const sssER = sss.employer / 2;
       const phEE = ph.employee / 2;
