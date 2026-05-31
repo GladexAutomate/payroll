@@ -110,7 +110,7 @@ export default function StatutoryContributionSettings() {
           </div>
         ))}
         <p className="text-xs text-muted-foreground">
-          Withholding tax follows the TRAIN Law 2024 table (0% below ₱250k/yr) and is not adjustable here.
+          Withholding tax follows the 2026 monthly tax table (₱0 on taxable income of ₱20,833/month and below) and is not adjustable here.
         </p>
       </div>
     </div>
