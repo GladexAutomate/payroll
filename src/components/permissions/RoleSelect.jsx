@@ -1,7 +1,8 @@
-import { Loader2, Briefcase, Users, User } from 'lucide-react';
+import { Loader2, Briefcase, Users, User, HeartHandshake } from 'lucide-react';
 import { groupRolesByTier } from '@/lib/roleHierarchy';
 
 const TIER_ICONS = {
+  hr: HeartHandshake,
   managers: Briefcase,
   leaders: Users,
   employees: User,
