@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { FileText, Download, BarChart2, Users, Calendar, DollarSign } from 'lucide-react';
+import { FileText, Download, BarChart2, Users, Calendar, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -50,7 +50,7 @@ export default function Reports() {
 
   const reports = [
     { id: 'attendance', label: 'Attendance Summary', icon: Calendar },
-    { id: 'payroll', label: 'Payroll Register', icon: DollarSign },
+    { id: 'payroll', label: 'Payroll Register', icon: Banknote },
     { id: 'contributions', label: 'Gov\'t Contributions', icon: Users },
   ];
 

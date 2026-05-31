@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Users, Clock, DollarSign, AlertTriangle, UserCheck, UserX, CalendarOff, TrendingUp } from 'lucide-react';
+import { Users, Clock, Banknote, AlertTriangle, UserCheck, UserX, CalendarOff, TrendingUp } from 'lucide-react';
 import StatCard from '@/components/shared/StatCard';
 import { format } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -100,7 +100,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <StatCard title="Pending Leave Requests" value={loading ? '—' : stats.pendingLeaves} subtitle="Awaiting approval" icon={AlertTriangle} color="orange" />
         <StatCard title="Pending Overtime" value={loading ? '—' : stats.pendingOT} subtitle="Awaiting approval" icon={Clock} color="purple" />
-        <StatCard title="Payroll Due" value="May 31" subtitle="Next payroll release date" icon={DollarSign} color="green" />
+        <StatCard title="Payroll Due" value="May 31" subtitle="Next payroll release date" icon={Banknote} color="green" />
       </div>
 
       {/* Charts + Today's attendance */}
