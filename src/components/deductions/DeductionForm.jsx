@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getAirtableEmployeeName } from '@/utils/airtableEmployee';
 
-export default function DeductionForm({ kind, employees, onClose, onSaved }) {
+export default function DeductionForm({ kind, employees, companies = [], onClose, onSaved }) {
   const isDeduction = kind === 'deduction';
   const [form, setForm] = useState({
     employee_id: '',
+    company: '',
     label: '',
     amount_per_cutoff: '',
     total_amount: '',
@@ -34,6 +35,7 @@ export default function DeductionForm({ kind, employees, onClose, onSaved }) {
     await base44.entities.EmployeeDeduction.create({
       employee_id: form.employee_id,
       employee_name: emp ? getAirtableEmployeeName(emp) : '',
+      company: form.company || '',
       kind,
       label: form.label,
       amount_per_cutoff: parseFloat(form.amount_per_cutoff) || 0,
@@ -62,6 +64,14 @@ export default function DeductionForm({ kind, employees, onClose, onSaved }) {
               <option value="">Select employee</option>
               {employees.map(e => <option key={e.id} value={e.id}>{getAirtableEmployeeName(e)}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Company / Payroll{isDeduction ? '' : '*'}</label>
+            <select value={form.company} onChange={e => set('company', e.target.value)} required={!isDeduction} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card">
+              <option value="">{isDeduction ? 'All companies (default)' : 'Select company'}</option>
+              {companies.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <p className="text-[11px] text-muted-foreground mt-1">{isDeduction ? 'Leave blank to charge across all companies.' : 'One employee can receive separate allowances through multiple companies — add one per company.'}</p>
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">{isDeduction ? 'Charge Label*' : 'Allowance Label*'}</label>

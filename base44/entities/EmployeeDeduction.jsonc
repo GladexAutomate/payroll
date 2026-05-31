@@ -9,6 +9,10 @@
     "employee_name": {
       "type": "string"
     },
+    "company": {
+      "type": "string",
+      "description": "Company whose payroll this allowance/charge is paid through. Blank = all/default company"
+    },
     "kind": {
       "type": "string",
       "enum": [

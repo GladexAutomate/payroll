@@ -145,6 +145,9 @@ Deno.serve(async (req) => {
     await wait(600);
     const paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
     await wait(600);
+    const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
+    await wait(400);
+    const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
     const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
     for (const record of oldRecords) {
       await withRetry(() => base44.asServiceRole.entities.PayrollRecord.delete(record.id));
@@ -196,9 +199,13 @@ Deno.serve(async (req) => {
       const regularPay = summary.regular_pay != null
         ? Number(summary.regular_pay) + leavePay
         : Math.max(grossPay - overtimePay, 0);
-      const sss = getSSSContribution(monthlySalary);
-      const ph = getPhilHealthContribution(monthlySalary);
-      const pi = getPagIBIGContribution(monthlySalary);
+      const gov = govByEmp[emp.id] || {};
+      const sssOn = gov.sss_enabled !== false;
+      const phOn = gov.philhealth_enabled !== false;
+      const piOn = gov.pagibig_enabled !== false;
+      const sss = sssOn ? getSSSContribution(monthlySalary) : { employee: 0, employer: 0 };
+      const ph = phOn ? getPhilHealthContribution(monthlySalary) : { employee: 0, employer: 0 };
+      const pi = piOn ? getPagIBIGContribution(monthlySalary) : { employee: 0, employer: 0 };
       const sssEE = sss.employee / 2;
       const sssER = sss.employer / 2;
       const phEE = ph.employee / 2;

@@ -4,6 +4,7 @@ import { Plus, Trash2, Send, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
 import DeductionForm from '@/components/deductions/DeductionForm';
+import GovernmentSettings from '@/components/deductions/GovernmentSettings';
 
 const peso = (v) => `₱${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -19,6 +20,7 @@ const ATD_BADGE = {
 export default function Deductions() {
   const [items, setItems] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('deduction');
   const [showForm, setShowForm] = useState(false);
@@ -27,12 +29,14 @@ export default function Deductions() {
 
   const loadData = async () => {
     setLoading(true);
-    const [list, emps] = await Promise.all([
+    const [list, emps, comps] = await Promise.all([
       base44.entities.EmployeeDeduction.list('-created_date', 500),
       base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+      base44.entities.Company.list('-created_date', 500),
     ]);
     setItems(list);
     setEmployees(emps.filter(isActiveAirtableEmployee).sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b))));
+    setCompanies([...new Set(comps.map(c => c.name).filter(Boolean))].sort());
     setLoading(false);
   };
 
@@ -63,17 +67,24 @@ export default function Deductions() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
-          {[['deduction', 'Charges / ATD'], ['allowance', 'Allowances']].map(([k, label]) => (
+          {[['deduction', 'Charges / ATD'], ['allowance', 'Allowances'], ['government', 'Gov. Deductions']].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${tab === k ? 'bg-primary text-white border-primary' : 'bg-card border-border text-muted-foreground hover:text-foreground'}`}>
               {label}
             </button>
           ))}
         </div>
-        <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4 mr-1.5" /> New {tab === 'allowance' ? 'Allowance' : 'Charge'}
-        </Button>
+        {tab !== 'government' && (
+          <Button size="sm" onClick={() => setShowForm(true)}>
+            <Plus className="w-4 h-4 mr-1.5" /> New {tab === 'allowance' ? 'Allowance' : 'Charge'}
+          </Button>
+        )}
       </div>
+
+      {tab === 'government' ? (
+        <GovernmentSettings employees={employees} />
+      ) : (
+      <>)
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
@@ -81,6 +92,7 @@ export default function Deductions() {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Employee</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Company</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Label</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Per Cutoff</th>
                 {tab === 'deduction' && <>
@@ -94,14 +106,15 @@ export default function Deductions() {
             </thead>
             <tbody>
               {loading ? (
-                [...Array(4)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(tab === 'deduction' ? 8 : 4)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}</tr>)
+                [...Array(4)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(tab === 'deduction' ? 9 : 5)].map((_, j) => <td key={j} className="py-3.5 px-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">No {tab === 'allowance' ? 'allowances' : 'charges'} yet.</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No {tab === 'allowance' ? 'allowances' : 'charges'} yet.</td></tr>
               ) : filtered.map(item => {
                 const emp = empMap[item.employee_id];
                 return (
                   <tr key={item.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3.5 px-4 font-medium">{emp ? getAirtableEmployeeName(emp) : item.employee_name || item.employee_id}</td>
+                    <td className="py-3.5 px-4 text-xs text-muted-foreground">{item.company || '—'}</td>
                     <td className="py-3.5 px-4">{item.label}</td>
                     <td className="py-3.5 px-4 text-right">{peso(item.amount_per_cutoff)}</td>
                     {tab === 'deduction' && <>
@@ -135,7 +148,9 @@ export default function Deductions() {
       </div>
 
       {showForm && (
-        <DeductionForm kind={tab} employees={employees} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+        <DeductionForm kind={tab} employees={employees} companies={companies} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData(); }} />
+      )}
+      </>
       )}
     </div>
   );

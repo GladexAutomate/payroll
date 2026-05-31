@@ -1,0 +1,31 @@
+{
+  "name": "EmployeeGovernmentSetting",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID (unique per employee)"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "sss_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Deduct SSS contribution"
+    },
+    "philhealth_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Deduct PhilHealth contribution"
+    },
+    "pagibig_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Deduct Pag-IBIG contribution"
+    }
+  },
+  "required": [
+    "employee_id"
+  ]
+}
