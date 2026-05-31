@@ -223,7 +223,11 @@ Deno.serve(async (req) => {
 
     // Statutory contributions (SSS/PhilHealth/Pag-IBIG) + withholding tax are deducted
     // only on the 2nd cutoff (2nd half of the month) — i.e. when the period starts on/after the 16th.
-    const periodStartDay = run.period_start ? new Date(run.period_start).getDate() : 1;
+    // Parse the day directly from the YYYY-MM-DD string to avoid timezone shifting (new Date().getDate()
+    // can roll "2026-04-01" back to day 31 of the previous month on some server timezones).
+    const periodStartDay = run.period_start
+      ? Number(String(run.period_start).split('-')[2]) || 1
+      : 1;
     const isSecondCutoff = periodStartDay >= 16;
 
     const selectedBranch = normalizeText(run.branch_name);
