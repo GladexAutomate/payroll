@@ -218,6 +218,11 @@ Deno.serve(async (req) => {
       await wait(80);
     }
 
+    // Statutory contributions (SSS/PhilHealth/Pag-IBIG) + withholding tax are deducted
+    // only on the 2nd cutoff (2nd half of the month) — i.e. when the period starts on/after the 16th.
+    const periodStartDay = run.period_start ? new Date(run.period_start).getDate() : 1;
+    const isSecondCutoff = periodStartDay >= 16;
+
     const selectedBranch = normalizeText(run.branch_name);
     const employees = allEmployees.filter(employee => {
       // Always include employees who have a qualifying allowance for this run (e.g. consultants
@@ -274,14 +279,16 @@ Deno.serve(async (req) => {
       const sss = sssOn ? getSSSContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
       const ph = phOn ? getPhilHealthContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
       const pi = piOn ? getPagIBIGContribution(monthlySalary, policy) : { employee: 0, employer: 0 };
-      const sssEE = sss.employee / 2;
-      const sssER = sss.employer / 2;
-      const phEE = ph.employee / 2;
-      const phER = ph.employer / 2;
-      const piEE = pi.employee / 2;
-      const piER = pi.employer / 2;
+      // Full monthly contribution charged on the 2nd cutoff only; nothing on the 1st cutoff.
+      const cutoffFactor = isSecondCutoff ? 1 : 0;
+      const sssEE = sss.employee * cutoffFactor;
+      const sssER = sss.employer * cutoffFactor;
+      const phEE = ph.employee * cutoffFactor;
+      const phER = ph.employer * cutoffFactor;
+      const piEE = pi.employee * cutoffFactor;
+      const piER = pi.employer * cutoffFactor;
       const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
-      const periodTax = computeMonthlyWithholdingTax(monthlyTaxable) / 2;
+      const periodTax = computeMonthlyWithholdingTax(monthlyTaxable) * cutoffFactor;
       const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + otherDeductions;
       const grossWithAllowance = grossPay + allowances;
       const netPay = grossWithAllowance - totalDeductionsForEmp;
