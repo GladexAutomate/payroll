@@ -32,7 +32,7 @@ export default function Payroll() {
     setLoading(false);
   };
 
-  const handleCompute = async (run) => {
+  const handleCompute = async (run, reconcile = false) => {
     setComputing(run.id);
     setRuns(prev => prev.map(item => item.id === run.id ? {
       ...item,
@@ -42,14 +42,14 @@ export default function Payroll() {
       compute_total: item.employee_count || 0
     } : item));
 
-    base44.functions.invoke('computePayroll', { payroll_run_id: run.id })
+    base44.functions.invoke('computePayroll', { payroll_run_id: run.id, reconcile })
       .then(loadRuns)
       .finally(() => setComputing(null));
   };
 
   const handleRecompute = async (run) => {
-    if (!window.confirm(`Recompute ${run.period_label}? This will regenerate all payroll records for this run.`)) return;
-    handleCompute(run);
+    if (!window.confirm(`Recompute ${run.period_label}? This regenerates payroll records from the saved attendance summaries.`)) return;
+    handleCompute(run, false);
   };
 
   const handleApprove = async (run) => {

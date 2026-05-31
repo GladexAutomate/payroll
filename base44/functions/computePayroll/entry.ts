@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { payroll_run_id } = body;
+    const { payroll_run_id, reconcile = false } = body;
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
     globalThis.__activePayrollRunId = payroll_run_id;
 
@@ -156,25 +156,28 @@ Deno.serve(async (req) => {
     const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
     await wait(600);
 
-    // Reconcile the period first so payroll reads fully-reconciled summaries:
-    // approved schedules (SL/VL/holidays), approved-only overtime, and offset-adjusted lates/undertime.
-    // Use the caller's authenticated client (not service role) so the nested function invoke
-    // carries the user token — service-role function invokes are rejected with 403.
-    // Non-fatal: if reconcile fails, fall back to the existing saved summaries so a recompute
-    // still regenerates payroll records instead of getting stuck.
-    try {
-      await withRetry(() => base44.functions.invoke('reconcilePeriod', {
-        period_start: run.period_start,
-        period_end: run.period_end,
-        period_label: run.period_label,
-      }));
-    } catch (reconcileError) {
-      console.warn('reconcilePeriod failed, using existing summaries:', reconcileError?.message);
-    }
+    let paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
     await wait(600);
 
-    const paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
-    await wait(600);
+    // Reconcile the period when explicitly requested, or automatically when no saved summaries
+    // exist yet (first-ever compute of this period). We avoid reconciling on every recompute
+    // because reconcile makes many DB calls and, chained with compute, can trip the rate limiter
+    // (429) and leave the run stuck. Recompute reads the already-saved AttendancePaySummary records.
+    // Non-fatal: if reconcile fails, fall back to whatever summaries already exist.
+    if (reconcile || paySummaries.length === 0) {
+      try {
+        await withRetry(() => base44.functions.invoke('reconcilePeriod', {
+          period_start: run.period_start,
+          period_end: run.period_end,
+          period_label: run.period_label,
+        }));
+        await wait(600);
+        paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000));
+        await wait(600);
+      } catch (reconcileError) {
+        console.warn('reconcilePeriod failed, using existing summaries:', reconcileError?.message);
+      }
+    }
     const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
     await wait(400);
     const policyRows = await withRetry(() => base44.asServiceRole.entities.PayrollPolicy.filter({ key: 'default' }));
