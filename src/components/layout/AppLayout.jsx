@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import PagePermissionGate from '@/components/auth/PagePermissionGate';
 
 const pageTitles = {
   '/': 'Dashboard',
@@ -24,6 +25,7 @@ const pageTitles = {
   '/payroll': 'Payroll',
   '/reports': 'Reports',
   '/settings': 'Settings',
+  '/permissions': 'Page Permissions',
 };
 
 export default function AppLayout() {
@@ -37,7 +39,9 @@ export default function AppLayout() {
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
         <TopBar onMenuClick={() => setSidebarOpen(true)} title={title} />
         <main className="flex-1 p-4 lg:p-6 overflow-auto">
-          <Outlet />
+          <PagePermissionGate>
+            <Outlet />
+          </PagePermissionGate>
         </main>
       </div>
     </div>

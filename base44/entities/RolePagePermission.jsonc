@@ -1,0 +1,25 @@
+{
+  "name": "RolePagePermission",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "Internal role name (employee Job Title). Stored lowercase for matching."
+    },
+    "role_label": {
+      "type": "string",
+      "description": "Original display label of the role"
+    },
+    "allowed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of page route paths this role is allowed to access",
+      "default": []
+    }
+  },
+  "required": [
+    "role"
+  ]
+}

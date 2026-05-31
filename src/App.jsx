@@ -37,6 +37,7 @@ import Branches from './pages/Branches';
 import DepartmentRoles from './pages/SubDepartments';
 import Teams from './pages/Teams';
 import UserManagement from './pages/UserManagement';
+import Permissions from './pages/Permissions';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -91,6 +92,7 @@ const GatedRoutes = () => {
         <Route path="/department-roles" element={<DepartmentRoles />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/user-management" element={<UserManagement />} />
+        <Route path="/permissions" element={<Permissions />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/attendance-upload" element={<AttendanceUpload />} />
         <Route path="/shifts" element={<Shifts />} />
