@@ -4,9 +4,9 @@ import { KeyRound, Save, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { navGroups } from '@/lib/navConfig';
 import { usePagePermissions } from '@/lib/usePagePermissions';
-import { groupRolesByTier } from '@/lib/roleHierarchy';
+import { groupRolesByTier, tierPermissionKey } from '@/lib/roleHierarchy';
 import PermissionGroup from '@/components/permissions/PermissionGroup';
-import RoleSelect from '@/components/permissions/RoleSelect';
+import TierSelect from '@/components/permissions/TierSelect';
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase();
 // Groups whose pages can be toggled (exclude adminOnly items via navConfig filtering below).
@@ -16,9 +16,8 @@ const editableGroups = navGroups
 
 export default function Permissions() {
   const { isAdmin, loading: loadingPerms } = usePagePermissions();
-  const [roles, setRoles] = useState([]);
-  const [overrides, setOverrides] = useState({});
-  const [selectedRole, setSelectedRole] = useState(null);
+  const [counts, setCounts] = useState({});
+  const [selectedTier, setSelectedTier] = useState(null);
   const [allowed, setAllowed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,18 +34,20 @@ export default function Permissions() {
         .filter(Boolean))]
         .sort((a, b) => a.localeCompare(b))
         .map((label) => ({ label, value: normalizeRole(label) }));
-      setRoles(titles);
       const map = {};
       hierarchyRecords.forEach((r) => { map[r.role] = r.tier; });
-      setOverrides(map);
+      const grouped = groupRolesByTier(titles, map);
+      const countMap = {};
+      grouped.forEach((tier) => { countMap[tier.key] = tier.roles.length; });
+      setCounts(countMap);
       setLoading(false);
     })();
   }, []);
 
-  const selectRole = async (role) => {
-    setSelectedRole(role);
+  const selectTier = async (tier) => {
+    setSelectedTier(tier);
     setSavedNote('');
-    const records = await base44.entities.RolePagePermission.filter({ role: role.value }, '-updated_date', 1);
+    const records = await base44.entities.RolePagePermission.filter({ role: tierPermissionKey(tier.key) }, '-updated_date', 1);
     setAllowed(records.length ? (records[0].allowed_paths || []) : ['/']);
   };
 
@@ -61,14 +62,15 @@ export default function Permissions() {
   };
 
   const save = async () => {
-    if (!selectedRole) return;
+    if (!selectedTier) return;
     setSaving(true);
-    const existing = await base44.entities.RolePagePermission.filter({ role: selectedRole.value }, '-updated_date', 1);
-    const data = { role: selectedRole.value, role_label: selectedRole.label, allowed_paths: allowed };
+    const key = tierPermissionKey(selectedTier.key);
+    const existing = await base44.entities.RolePagePermission.filter({ role: key }, '-updated_date', 1);
+    const data = { role: key, role_label: selectedTier.label, allowed_paths: allowed };
     if (existing.length) await base44.entities.RolePagePermission.update(existing[0].id, data);
     else await base44.entities.RolePagePermission.create(data);
     setSaving(false);
-    setSavedNote('Permissions saved. Users with this role will see the change on their next page load.');
+    setSavedNote('Permissions saved. Everyone in this tier will see the change on their next page load.');
   };
 
   if (loadingPerms) {
@@ -93,13 +95,13 @@ export default function Permissions() {
         </div>
         <div>
           <h1 className="text-lg font-semibold">Page Permissions</h1>
-          <p className="text-sm text-muted-foreground">Control which pages each role can access. Admins always see everything.</p>
+          <p className="text-sm text-muted-foreground">Control which pages each hierarchy tier can access. Admins always see everything.</p>
         </div>
       </div>
 
-      <RoleSelect roles={roles} loading={loading} selected={selectedRole} onSelect={selectRole} overrides={overrides} />
+      <TierSelect counts={counts} loading={loading} selected={selectedTier} onSelect={selectTier} />
 
-      {selectedRole && (
+      {selectedTier && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {editableGroups.map((group) => (
@@ -115,7 +117,7 @@ export default function Permissions() {
 
           <div className="sticky bottom-0 bg-background/90 backdrop-blur border-t border-border py-3 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {savedNote || `${allowed.length} page${allowed.length === 1 ? '' : 's'} enabled for ${selectedRole.label}`}
+              {savedNote || `${allowed.length} page${allowed.length === 1 ? '' : 's'} enabled for ${selectedTier.label}`}
             </p>
             <Button onClick={save} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}

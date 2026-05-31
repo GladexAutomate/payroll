@@ -36,6 +36,11 @@ export function resolveTier(role, overrides = {}) {
   return overrides[role.value] || classifyRole(role.label);
 }
 
+// RolePagePermission.role value used to store permissions for a whole tier.
+export function tierPermissionKey(tierKey) {
+  return `tier:${tierKey}`;
+}
+
 export function groupRolesByTier(roles, overrides = {}) {
   const buckets = { hr: [], managers: [], leaders: [], employees: [] };
   roles.forEach((role) => {
