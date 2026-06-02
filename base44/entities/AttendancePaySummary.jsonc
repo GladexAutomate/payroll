@@ -26,6 +26,16 @@
     "employee_name": {
       "type": "string"
     },
+    "basic_salary": {
+      "type": "number",
+      "default": 0,
+      "description": "Monthly salary used when this attendance pay summary was computed"
+    },
+    "hourly_rate": {
+      "type": "number",
+      "default": 0,
+      "description": "Hourly rate used when this attendance pay summary was computed"
+    },
     "hours": {
       "type": "number",
       "default": 0

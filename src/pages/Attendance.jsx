@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Search, Filter, Pencil, Clock } from 'lucide-react';
+import { Search, Filter, Pencil, Clock, CalendarDays } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -11,6 +11,7 @@ export default function Attendance() {
   const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'cutoff' | 'monthly'
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [periodMonth, setPeriodMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [cutoffHalf, setCutoffHalf] = useState('first'); // 'first' (1-15) | 'second' (16-end)
@@ -44,18 +45,24 @@ export default function Attendance() {
 
   const loadData = async () => {
     setLoading(true);
-    const [logsData, empsData, hiddenUploads] = await Promise.all([
+    const [logsData, empsData, hiddenUploads, holidaysData] = await Promise.all([
       base44.entities.AttendanceLog.filter({ date: filterDate }),
       base44.entities.Employee.filter({ status: 'active' }),
-      base44.entities.AttendanceUpload.list('-created_date', 200)
+      base44.entities.AttendanceUpload.list('-created_date', 200),
+      base44.entities.HolidayCalendar.list('-date', 500)
     ]);
     const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
     setLogs(logsData.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id)));
     setEmployees(empsData);
+    setHolidays(holidaysData);
     setLoading(false);
   };
 
   const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.biometric_id]: e }), {});
+  const selectedHoliday = holidays.find(holiday => String(holiday.date || '').slice(0, 10) === filterDate);
+  const selectedHolidayType = selectedHoliday
+    ? String(selectedHoliday.type || '').toLowerCase() === 'regular' ? 'Regular Holiday' : 'Special Holiday'
+    : '';
 
   const filtered = logs.filter(l => {
     const emp = empMap[l.employee_id] || empMap[l.biometric_id];
@@ -137,6 +144,16 @@ export default function Attendance() {
           <Filter className="w-4 h-4 mr-1.5" /> Refresh
         </Button>
       </div>
+      )}
+
+      {viewMode === 'daily' && selectedHoliday && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+          <CalendarDays className="h-5 w-5 text-amber-600" />
+          <div>
+            <p className="text-sm font-semibold">{selectedHoliday.name || selectedHolidayType}</p>
+            <p className="text-xs text-amber-700">{selectedHolidayType}</p>
+          </div>
+        </div>
       )}
 
       {/* Period controls (cutoff / monthly) */}

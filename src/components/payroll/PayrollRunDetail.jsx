@@ -42,11 +42,22 @@ export default function PayrollRunDetail({ run, onClose }) {
 
   const empMap = employees.reduce((m, e) => ({ ...m, [e.id]: e, [e.airtable_record_id]: e }), {});
   const activeRecords = records.filter(record => !record.is_held);
+  const payrollHoursForRecord = (record) => {
+    const daysWorked = Number(record.days_worked) || 0;
+    return daysWorked > 0 ? daysWorked * 8 : Number(record.total_hours) || 0;
+  };
+  const grossForRecord = (record) => {
+    const basic = Number(record.basic_salary) || 0;
+    const hours = payrollHoursForRecord(record);
+    return basic > 0 ? (basic / 26 / 8) * hours : Number(record.gross_pay) || 0;
+  };
+  const deductionsForRecord = (record) => Number(record.total_deductions) || 0;
+  const netForRecord = (record) => grossForRecord(record) - deductionsForRecord(record);
   const heldCount = records.length - activeRecords.length;
   const totals = activeRecords.reduce((sum, record) => ({
-    gross: sum.gross + Number(record.gross_pay || 0),
-    deductions: sum.deductions + Number(record.total_deductions || 0),
-    net: sum.net + Number(record.net_pay || 0),
+    gross: sum.gross + grossForRecord(record),
+    deductions: sum.deductions + deductionsForRecord(record),
+    net: sum.net + netForRecord(record),
   }), { gross: 0, deductions: 0, net: 0 });
   const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 
@@ -65,9 +76,9 @@ export default function PayrollRunDetail({ run, onClose }) {
 
     const active = updatedRecords.filter(item => !item.is_held);
     const nextTotals = active.reduce((sum, item) => ({
-      gross: sum.gross + Number(item.gross_pay || 0),
-      deductions: sum.deductions + Number(item.total_deductions || 0),
-      net: sum.net + Number(item.net_pay || 0),
+      gross: sum.gross + grossForRecord(item),
+      deductions: sum.deductions + deductionsForRecord(item),
+      net: sum.net + netForRecord(item),
     }), { gross: 0, deductions: 0, net: 0 });
 
     await base44.entities.PayrollRecord.update(record.id, { is_held: nextValue });
@@ -151,6 +162,9 @@ export default function PayrollRunDetail({ run, onClose }) {
                 <tbody>
                   {displayedRecords.map(rec => {
                     const emp = empMap[rec.employee_id];
+                    const payrollHours = payrollHoursForRecord(rec);
+                    const gross = grossForRecord(rec);
+                    const net = netForRecord(rec);
                     return (
                       <tr key={rec.id} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rec.is_held ? 'bg-orange-50/50 text-muted-foreground' : ''}`}>
                         <td className="py-3 px-3 text-center">
@@ -168,14 +182,16 @@ export default function PayrollRunDetail({ run, onClose }) {
                           {rec.employee_code && <p className="text-[10px] text-muted-foreground">{rec.employee_code}</p>}
                         </td>
                         <td className="py-3 px-3 text-right text-muted-foreground text-xs">{fmt(rec.basic_salary)}</td>
-                        <td className="py-3 px-3 text-right text-xs">{rec.total_hours ?? rec.days_worked}</td>
+                        <td className="py-3 px-3 text-right text-xs">{payrollHours}</td>
                         <td className="py-3 px-3 text-right text-xs">{fmt(rec.overtime_pay)}</td>
-                        <td className="py-3 px-3 text-right font-medium">{fmt(rec.gross_pay)}</td>
+                        <td className="py-3 px-3 text-right font-medium">
+                          {fmt(gross)}
+                        </td>
                         <td className="py-3 px-3 text-right text-xs text-red-600">{fmt(rec.sss_employee)}</td>
                         <td className="py-3 px-3 text-right text-xs text-red-600">{fmt(rec.philhealth_employee)}</td>
                         <td className="py-3 px-3 text-right text-xs text-red-600">{fmt(rec.pagibig_employee)}</td>
                         <td className="py-3 px-3 text-right text-xs text-red-600">{fmt(rec.withholding_tax)}</td>
-                        <td className="py-3 px-3 text-right font-bold text-green-600">{fmt(rec.net_pay)}</td>
+                        <td className="py-3 px-3 text-right font-bold text-green-600">{fmt(net)}</td>
                         <td className="py-3 px-3">
                           <button
                             onClick={() => setSelectedRecord(rec)}

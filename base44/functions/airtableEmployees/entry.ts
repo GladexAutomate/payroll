@@ -352,7 +352,7 @@ Deno.serve(async (req) => {
         return {
           airtable_record_id: record.airtable_record_id,
           full_name: record.full_name || fields['Full Name'],
-          email: fields['Email'] || fields['Business email'],
+          email: fields['Business email'] || fields['Email'],
           employee_code: fields['Employee Code'] || fields['Employee Code ID'] || record.employee_code,
           generated_password: generatedPassword(fields),
           job_title: fields['Job Title'],
@@ -384,7 +384,7 @@ Deno.serve(async (req) => {
       const matched = allRecords.find(record => clean(record.fields?.['Employee Code'] || record.fields?.['Employee Code ID'] || record.employee_code).toLowerCase() === clean(employeeCode).toLowerCase());
       if (!matched || !isActive(matched)) return Response.json({ allowed: false, message: 'Employee account is inactive or not found.' });
       const fields = matched.fields || {};
-      const recordEmail = clean(fields['Email'] || fields['Business email']).toLowerCase();
+      const recordEmail = clean(fields['Business email'] || fields['Email']).toLowerCase();
       if (recordEmail && recordEmail !== clean(currentUser.email).toLowerCase()) return Response.json({ allowed: false, message: 'This employee code does not match your logged-in email.' });
       if (clean(password).toUpperCase() !== generatedPassword(fields).toUpperCase()) return Response.json({ allowed: false, message: 'Invalid employee code or password.' });
       await base44.auth.updateMe({

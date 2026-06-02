@@ -17,9 +17,23 @@ import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
 import { exportApprovedScheduleToExcel } from '@/components/schedule/exportApprovedSchedule';
 import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
 
+const getCurrentPayPeriod = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const isFirstHalf = today.getDate() <= 15;
+  const start = new Date(year, month, isFirstHalf ? 1 : 16);
+  const end = isFirstHalf ? new Date(year, month, 15) : new Date(year, month + 1, 0);
+  return {
+    start: format(start, 'yyyy-MM-dd'),
+    end: format(end, 'yyyy-MM-dd'),
+  };
+};
+
 export default function ApprovedSchedule({ readOnly = false }) {
-  const [periodStart, setPeriodStart] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [periodEnd, setPeriodEnd] = useState(format(addDays(new Date(), 15), 'yyyy-MM-dd'));
+  const defaultPeriod = useMemo(() => getCurrentPayPeriod(), []);
+  const [periodStart, setPeriodStart] = useState(defaultPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end);
   const [records, setRecords] = useState([]);
   const [shiftTemplates, setShiftTemplates] = useState([]);
   const [plotted, setPlotted] = useState([]);
@@ -27,6 +41,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [localEmployees, setLocalEmployees] = useState([]);
   const [airtableMatches, setAirtableMatches] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [approvedProposals, setApprovedProposals] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
@@ -48,7 +63,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const loadBase = async () => {
     setLoading(true);
     const [res, shifts, locals, matches, teamData] = await Promise.all([
-      base44.functions.invoke('airtableEmployees', { action: 'list', pageSize: 100 }),
+      base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
       base44.entities.ShiftTemplate.list(),
       base44.entities.Employee.list('-updated_date', 5000),
       base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
@@ -64,17 +79,19 @@ export default function ApprovedSchedule({ readOnly = false }) {
   };
 
   const loadRange = async () => {
-    const [plottedData, leaveData, logsData] = await Promise.all([
+    const [plottedData, leaveData, logsData, proposalData] = await Promise.all([
       base44.entities.ApprovedSchedule.filter({ date: { $gte: periodStart, $lte: periodEnd } }, '-date', 5000),
       base44.entities.LeaveRequest.filter({
         date_from: { $lte: periodEnd },
         date_to: { $gte: periodStart },
       }, '-date_from', 5000),
       base44.entities.AttendanceLog.filter({ date: { $gte: periodStart, $lte: periodEnd } }, 'date', 5000),
+      base44.entities.AttendanceProposal.list('-created_date', 1000),
     ]);
     setPlotted(plottedData || []);
     setLeaves(leaveData || []);
     setAttendanceLogs(logsData || []);
+    setApprovedProposals(proposalData || []);
   };
 
   const handleReconcile = async () => {
@@ -104,6 +121,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
     branch_name: record.fields?.Branch || record.fields?.BRANCH || '',
     department_name: record.fields?.Department || '',
     department_role: record.fields?.['Department Role'] || '',
+    team: record.fields?.Team || record.fields?.TEAM || '',
   })), [records]);
 
   const cell = (v) => String(v || '').trim().toLowerCase();
@@ -116,26 +134,90 @@ export default function ApprovedSchedule({ readOnly = false }) {
   // Scope filter from URL (?scope=branch|department|department_role|team&value=...)
   const scopedEmployees = useMemo(() => {
     if (!scope || !scopeValue) return employees;
+    const [teamScopeValue, proposalScopeId] = scope === 'team' && scopeParts.length > 1 ? scopeParts : [scopeValue, ''];
+    const matchingTeams = scope === 'team'
+      ? teams.filter(t => String(t.id) === teamScopeValue || cell(t.name) === cell(teamScopeValue))
+      : [];
+    const team = matchingTeams[0] || null;
+    const teamName = team?.name || teamScopeValue;
+    const proposalEmployeeIds = new Set();
+    const proposalEmployeeSnapshots = [];
+    const plottedSourceIds = new Set(plotted.map(row => row.source_proposal_id).filter(Boolean).map(String));
+    approvedProposals.forEach(proposal => {
+      if (plottedSourceIds.size > 0 && !plottedSourceIds.has(String(proposal.id))) return;
+      let matches = false;
+      if (scope === 'branch') {
+        const [company, branch] = scopeParts.length > 1 ? scopeParts : ['', scopeParts[0]];
+        matches = matchesPart(proposal.company_name, company) && matchesPart(proposal.branch_name, branch);
+      } else if (scope === 'department') {
+        const [company, branch, dept] = scopeParts.length > 1 ? scopeParts : ['', '', scopeParts[0]];
+        matches = matchesPart(proposal.company_name, company) && matchesPart(proposal.branch_name, branch) && matchesPart(proposal.department_name, dept);
+      } else if (scope === 'department_role') {
+        const [company, branch, dept, role] = scopeParts.length > 1 ? scopeParts : ['', '', '', scopeParts[0]];
+        matches = matchesPart(proposal.company_name, company) && matchesPart(proposal.branch_name, branch) && matchesPart(proposal.department_name, dept) && matchesPart(proposal.department_role, role);
+      } else if (scope === 'team') {
+        matches = proposalScopeId
+          ? String(proposal.id) === proposalScopeId
+          : cell(proposal.team_name) === cell(teamName);
+      }
+      if (!matches) return;
+      (proposal.employees || []).forEach(emp => {
+        [emp.id, emp.airtable_record_id, emp.backend_id].filter(Boolean).forEach(id => proposalEmployeeIds.add(String(id)));
+        proposalEmployeeSnapshots.push({
+          id: emp.id,
+          backend_id: emp.backend_id,
+          airtable_record_id: emp.airtable_record_id || emp.id,
+          name: emp.name || emp.employee_name || '',
+          monthly_salary: emp.monthly_salary || 0,
+          department: emp.department || emp.department_role || '',
+          company_name: emp.company || emp.company_name || proposal.company_name || '',
+          branch_name: emp.branch || emp.branch_name || proposal.branch_name || '',
+          department_name: emp.department || emp.department_name || proposal.department_name || '',
+          department_role: emp.department_role || proposal.department_role || '',
+          team: emp.team || proposal.team_name || '',
+        });
+      });
+    });
+    const matchesProposalEmployee = (e) =>
+      proposalEmployeeIds.has(String(e.id)) ||
+      proposalEmployeeIds.has(String(e.airtable_record_id)) ||
+      proposalEmployeeIds.has(String(e.backend_id));
+    const withProposalFallback = (baseEmployees) => {
+      const seen = new Set();
+      const merged = [];
+      [...baseEmployees, ...proposalEmployeeSnapshots].forEach(emp => {
+        const key = String(emp.id || emp.airtable_record_id || emp.backend_id || emp.name || '').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(emp);
+      });
+      return merged;
+    };
+
     if (scope === 'branch') {
       const [company, branch] = scopeParts.length > 1 ? scopeParts : ['', scopeParts[0]];
-      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch));
+      return withProposalFallback(employees.filter(e => matchesProposalEmployee(e) || (matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch))));
     }
     if (scope === 'department') {
       const [company, branch, dept] = scopeParts.length > 1 ? scopeParts : ['', '', scopeParts[0]];
-      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept));
+      return withProposalFallback(employees.filter(e => matchesProposalEmployee(e) || (matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept))));
     }
     if (scope === 'department_role') {
       const [company, branch, dept, role] = scopeParts.length > 1 ? scopeParts : ['', '', '', scopeParts[0]];
-      return employees.filter(e => matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept) && matchesPart(e.department_role, role));
+      return withProposalFallback(employees.filter(e => matchesProposalEmployee(e) || (matchesPart(e.company_name, company) && matchesPart(e.branch_name, branch) && matchesPart(e.department_name, dept) && matchesPart(e.department_role, role))));
     }
     if (scope === 'team') {
-      const team = teams.find(t => cell(t.name) === cell(scopeValue));
-      const memberIds = new Set((team?.member_record_ids || []).map(String));
-      if (memberIds.size === 0) return [];
-      return employees.filter(e => memberIds.has(String(e.airtable_record_id)) || memberIds.has(String(e.backend_id)) || memberIds.has(String(e.id)));
+      const memberIds = new Set(matchingTeams.flatMap(t => t.member_record_ids || []).map(String));
+      return withProposalFallback(employees.filter(e =>
+        matchesProposalEmployee(e) ||
+        memberIds.has(String(e.airtable_record_id)) ||
+        memberIds.has(String(e.backend_id)) ||
+        memberIds.has(String(e.id)) ||
+        cell(e.team) === cell(teamName)
+      ));
     }
     return employees;
-  }, [employees, teams, scope, scopeValue, scopeParts]);
+  }, [employees, teams, approvedProposals, plotted, scope, scopeValue, scopeParts]);
 
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();

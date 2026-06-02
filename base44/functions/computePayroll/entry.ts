@@ -102,6 +102,33 @@ function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function rebaseSummaryPay(summary, currentHourlyRate, payrollHours) {
+  const hours = Number(payrollHours) || 0;
+  const overtimeHours = Number(summary?.overtime_hours) || 0;
+  const gross = hours * currentHourlyRate;
+  const overtime = overtimeHours * currentHourlyRate * 1.25;
+
+  if (!summary || !currentHourlyRate) {
+    return {
+      gross: Number(summary?.gross) || 0,
+      regular: Number(summary?.regular_pay) || 0,
+      overtime: Number(summary?.overtime_pay) || 0,
+      holiday: Number(summary?.holiday_pay) || 0,
+      leave: Number(summary?.leave_pay) || 0,
+      latesDeduction: Number(summary?.lates_deduction) || 0,
+    };
+  }
+
+  return {
+    gross,
+    regular: gross,
+    overtime,
+    holiday: Number(summary.holiday_pay) || 0,
+    leave: Number(summary.leave_pay) || 0,
+    latesDeduction: ((Number(summary.late_minutes) || 0) / 60) * currentHourlyRate,
+  };
+}
+
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -272,7 +299,7 @@ Deno.serve(async (req) => {
       const fields = getFields(emp);
       const employeeName = getEmployeeName(emp);
       const employeeCode = getEmployeeCode(emp);
-      const monthlySalary = parseMoney(fields['Monthly Salary']);
+      const monthlySalary = parseMoney(fields['Basic Salary'] || fields['Monthly Salary'] || fields.Salary);
       const hourlyRate = monthlySalary > 0 ? monthlySalary / 26 / 8 : 0;
       const summary = summaryByEmployeeId[emp.id] || {};
       const totalHours = Number(summary.hours) || 0;
@@ -280,18 +307,17 @@ Deno.serve(async (req) => {
       const totalLateMin = Number(summary.late_minutes) || 0;
       const totalUndertimeMin = 0;
       const daysWorked = Number(summary.days_worked) || (totalHours > 0 ? Math.ceil(totalHours / 8) : 0);
+      const payrollHours = daysWorked * 8;
       const daysAbsent = Number(summary.days_absent) || 0;
-      const grossPay = Number(summary.gross) || 0;
-      const lateDeduction = Number(summary.lates_deduction) || 0;
+      const currentPay = rebaseSummaryPay(summary, hourlyRate, payrollHours);
+      const grossPay = currentPay.gross;
+      const lateDeduction = currentPay.latesDeduction;
       const allowances = Number(allowanceByEmp[emp.id]) || 0;
       const otherDeductions = Number(deductionByEmp[emp.id]) || 0;
-      // Use reconciled pay breakdown when available; fall back to legacy derivation.
-      const overtimePay = summary.overtime_pay != null ? Number(summary.overtime_pay) : overtimeHours * hourlyRate * 1.25;
-      const holidayPay = Number(summary.holiday_pay) || 0;
-      const leavePay = Number(summary.leave_pay) || 0;
-      const regularPay = summary.regular_pay != null
-        ? Number(summary.regular_pay) + leavePay
-        : Math.max(grossPay - overtimePay, 0);
+      const overtimePay = currentPay.overtime;
+      const holidayPay = currentPay.holiday;
+      const leavePay = currentPay.leave;
+      const regularPay = currentPay.regular;
       const gov = govByEmp[emp.id] || {};
       const sssOn = gov.sss_enabled !== false;
       const phOn = gov.philhealth_enabled !== false;
@@ -325,7 +351,7 @@ Deno.serve(async (req) => {
         regular_pay: money(regularPay),
         days_worked: daysWorked,
         days_absent: daysAbsent,
-        total_hours: money(totalHours),
+        total_hours: money(payrollHours),
         late_minutes: totalLateMin,
         undertime_minutes: totalUndertimeMin,
         overtime_hours: money(overtimeHours),
@@ -378,6 +404,9 @@ Deno.serve(async (req) => {
       total_net: money(totalNet),
       employee_count: employees.length,
       status: 'processing',
+      notes: money(totalGross) <= 0
+        ? 'Computed with ₱0.00 gross pay. Check approved schedules, attendance logs, and payroll reconciliation for this period/branch.'
+        : '',
       compute_progress: 100,
       compute_processed: employees.length,
       compute_total: employees.length,

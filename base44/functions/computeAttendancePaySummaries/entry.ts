@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
 
     for (const employee of employees) {
       const fields = getFields(employee);
-      const monthlySalary = parseMoney(fields['Monthly Salary'] || fields['Basic Salary'] || fields.Salary);
+      const monthlySalary = parseMoney(fields['Basic Salary'] || fields['Monthly Salary'] || fields.Salary);
       const hourlyRate = monthlySalary > 0 ? monthlySalary / 26 / 8 : 0;
       const keys = new Set(buildEmployeeKeys(employee));
       for (const [localId, airtableId] of Object.entries(airtableByLocalId)) {
@@ -126,6 +126,8 @@ Deno.serve(async (req) => {
         airtable_record_id: employee.airtable_record_id,
         employee_code: getEmployeeCode(employee),
         employee_name: getEmployeeName(employee),
+        basic_salary: money(monthlySalary),
+        hourly_rate: money(hourlyRate),
         hours: money(hours),
         overtime_hours: money(overtimeHours),
         late_minutes: lateMinutes,

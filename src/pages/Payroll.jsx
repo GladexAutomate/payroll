@@ -9,6 +9,10 @@ import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
 import { format } from 'date-fns';
 
+const formatPeso = (value) => (
+  value == null ? '—' : `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+);
+
 export default function Payroll() {
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,15 +27,15 @@ export default function Payroll() {
   useEffect(() => {
     const hasComputingRun = runs.some(run => run.status === 'computing');
     if (!hasComputingRun) return;
-    const timer = setInterval(loadRuns, 2000);
+    const timer = setInterval(() => loadRuns({ silent: true }), 2000);
     return () => clearInterval(timer);
   }, [runs]);
 
-  const loadRuns = async () => {
-    setLoading(true);
+  const loadRuns = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const data = await base44.entities.PayrollRun.list('-period_start', 50);
     setRuns(data);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const handleCompute = async (run, reconcile = false) => {
@@ -45,7 +49,14 @@ export default function Payroll() {
     } : item));
 
     base44.functions.invoke('computePayroll', { payroll_run_id: run.id, reconcile })
-      .then(loadRuns)
+      .then(() => loadRuns({ silent: true }))
+      .catch(error => {
+        setDialog({
+          title: 'Payroll computation failed',
+          description: error?.response?.data?.error || error?.message || 'Unable to compute payroll. Please retry.',
+        });
+        loadRuns({ silent: true });
+      })
       .finally(() => setComputing(null));
   };
 
@@ -76,19 +87,23 @@ export default function Payroll() {
     });
   };
 
-  const performDelete = async (run) => {
+  const performDelete = (run) => {
     setDeleting(run.id);
     setRuns(prev => prev.filter(item => item.id !== run.id));
-    try {
-      await base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id });
-    } catch (error) {
-      setDialog({
-        title: 'Cleanup in progress',
-        description: 'Delete is still running slowly in the backend. The row will stay hidden while cleanup continues.',
+    setSelectedRun(prev => prev?.id === run.id ? null : prev);
+    const releaseDeleteState = setTimeout(() => setDeleting(current => current === run.id ? null : current), 3000);
+    base44.functions.invoke('deletePayrollRun', { payroll_run_id: run.id })
+      .catch(() => {
+        setDialog({
+          title: 'Cleanup in progress',
+          description: 'The payroll row was removed from the screen. Backend cleanup is still running or needs a later retry.',
+        });
+      })
+      .finally(() => {
+        clearTimeout(releaseDeleteState);
+        setDeleting(null);
+        loadRuns({ silent: true });
       });
-    } finally {
-      setDeleting(null);
-    }
   };
 
   return (
@@ -124,7 +139,9 @@ export default function Payroll() {
                 ))
               ) : runs.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">No payroll runs yet. Create one to get started.</td></tr>
-              ) : runs.map(run => (
+              ) : runs.map(run => {
+                const missingComputedTotals = run.status === 'processing' && run.total_gross == null && run.total_net == null;
+                return (
                 <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-3.5 px-4">
                     <p className="font-medium">{run.period_label}</p>
@@ -134,17 +151,19 @@ export default function Payroll() {
                   <td className="py-3.5 px-4 text-muted-foreground">{run.pay_date || '—'}</td>
                   <td className="py-3.5 px-4 text-right">{run.employee_count || '—'}</td>
                   <td className="py-3.5 px-4 text-right font-medium">
-                    {run.total_gross ? `₱${run.total_gross.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                    {formatPeso(run.total_gross)}
                   </td>
                   <td className="py-3.5 px-4 text-right text-red-600">
-                    {run.total_deductions ? `₱${run.total_deductions.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                    {formatPeso(run.total_deductions)}
                   </td>
                   <td className="py-3.5 px-4 text-right font-bold text-green-600">
-                    {run.total_net ? `₱${run.total_net.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                    {formatPeso(run.total_net)}
                   </td>
                   <td className="py-3.5 px-4">
-                    <StatusBadge status={run.status} />
+                    <StatusBadge status={run.status} label={run.status === 'processing' ? 'Computed' : undefined} />
                     <PayrollProgress run={run} />
+                    {missingComputedTotals && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">No totals were saved. Click recompute.</p>}
+                    {run.notes && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">{run.notes}</p>}
                   </td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center justify-end gap-1">
@@ -186,7 +205,7 @@ export default function Payroll() {
                       )}
                       <button
                         onClick={() => handleDelete(run)}
-                        disabled={!!deleting}
+                        disabled={deleting === run.id}
                         className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
                         title="Delete payroll run"
                       >
@@ -195,7 +214,7 @@ export default function Payroll() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>

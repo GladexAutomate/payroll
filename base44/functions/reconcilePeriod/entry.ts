@@ -12,7 +12,7 @@ function getEmployeeName(e) {
 function getEmployeeCode(e) { const f = getFields(e); return cleanText(e.employee_code || f['Employee Code ID'] || f['Employee Code']); }
 function getBiometricNumber(e) { return cleanText(getFields(e)['Biometrics Number']); }
 function isActiveEmployee(e) { return cleanText(getFields(e).Status).toLowerCase() === 'active'; }
-function getMonthlySalary(e) { const f = getFields(e); return parseMoney(f['Monthly Salary'] || f['Basic Salary'] || f.Salary); }
+function getMonthlySalary(e) { const f = getFields(e); return parseMoney(f['Basic Salary'] || f['Monthly Salary'] || f.Salary); }
 function buildEmployeeKeys(e) {
   return [e.id, e.airtable_record_id, getEmployeeCode(e), getBiometricNumber(e), normalizeName(getEmployeeName(e))]
     .filter(Boolean).map(k => String(k).trim());
@@ -449,6 +449,8 @@ Deno.serve(async (req) => {
         airtable_record_id: employee.airtable_record_id,
         employee_code: getEmployeeCode(employee),
         employee_name: getEmployeeName(employee),
+        basic_salary: money(monthlySalary),
+        hourly_rate: money(hourlyRate),
         hours: money(regularHours),
         overtime_hours: money(overtimeHours),
         late_minutes: lateMinutes,

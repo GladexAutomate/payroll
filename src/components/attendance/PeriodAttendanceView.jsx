@@ -9,9 +9,11 @@ import {
   buildAirtableEmployeeLookup,
   getAirtableBiometricNumber,
   getAirtableEmployeeCode,
+  getAirtableEmployeeFields,
   getAirtableEmployeeName,
   isActiveAirtableEmployee,
   normalizeEmployeeName,
+  parseMoney,
 } from '@/utils/airtableEmployee';
 
 /**
@@ -25,6 +27,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
   const [localEmployees, setLocalEmployees] = useState([]);
   const [employeeMatches, setEmployeeMatches] = useState([]);
   const [paySummaries, setPaySummaries] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -33,7 +36,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     const load = async () => {
       setLoading(true);
       // Fetch all logs in the date range. Filter API supports $gte/$lte.
-      const [logsData, empsData, localEmpsData, matchesData, hiddenUploads, summariesData] = await Promise.all([
+      const [logsData, empsData, localEmpsData, matchesData, hiddenUploads, summariesData, holidaysData] = await Promise.all([
         base44.entities.AttendanceLog.filter(
           { date: { $gte: startDate, $lte: endDate } },
           'date',
@@ -44,6 +47,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         base44.entities.EmployeeAirtableMatch.list('-updated_date', 5000),
         base44.entities.AttendanceUpload.list('-created_date', 200),
         base44.entities.AttendancePaySummary.filter({ period_start: startDate, period_end: endDate }, '-updated_date', 5000),
+        base44.entities.HolidayCalendar.list('-date', 500),
       ]);
       if (cancelled) return;
       const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
@@ -52,6 +56,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
       setLocalEmployees(localEmpsData);
       setEmployeeMatches(matchesData);
       setPaySummaries(summariesData);
+      setHolidays(holidaysData);
       setLoading(false);
     };
     load();
@@ -84,6 +89,73 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     () => paySummaries.reduce((map, item) => ({ ...map, [item.employee_id]: item }), {}),
     [paySummaries]
   );
+
+  const holidayByDate = useMemo(() => {
+    return holidays.reduce((map, item) => {
+      const date = String(item.date || '').slice(0, 10);
+      if (date >= startDate && date <= endDate) map[date] = item;
+      return map;
+    }, {});
+  }, [holidays, startDate, endDate]);
+
+  const holidaysInRange = useMemo(
+    () => Object.values(holidayByDate).sort((a, b) => String(a.date).localeCompare(String(b.date))),
+    [holidayByDate]
+  );
+
+  const holidayTypeLabel = (holiday) => {
+    if (!holiday) return '';
+    return String(holiday.type || '').toLowerCase() === 'regular' ? 'Regular Holiday' : 'Special Holiday';
+  };
+
+  const holidayTone = (holiday) => {
+    const isRegular = String(holiday?.type || '').toLowerCase() === 'regular';
+    return isRegular
+      ? {
+          badge: 'border-rose-200 bg-rose-50 text-rose-800',
+          header: 'min-w-[118px] bg-rose-100 text-rose-900 border-rose-200',
+          name: 'text-rose-700',
+          type: 'text-rose-800',
+          cell: 'bg-rose-50 ring-1 ring-inset ring-rose-200 hover:bg-rose-100',
+          dot: 'bg-rose-500',
+        }
+      : {
+          badge: 'border-sky-200 bg-sky-50 text-sky-800',
+          header: 'min-w-[118px] bg-sky-100 text-sky-900 border-sky-200',
+          name: 'text-sky-700',
+          type: 'text-sky-800',
+          cell: 'bg-sky-50 ring-1 ring-inset ring-sky-200 hover:bg-sky-100',
+          dot: 'bg-sky-500',
+        };
+  };
+
+  const getCurrentMonthlySalary = (employee) => {
+    const fields = getAirtableEmployeeFields(employee);
+    return parseMoney(fields['Basic Salary'] || fields['Monthly Salary'] || fields.Salary);
+  };
+
+  const getCurrentPayValues = (employee, summary, displayedHours) => {
+    if (!summary) return { gross: 0, latesDeduction: 0, stale: false };
+
+    const currentMonthlySalary = getCurrentMonthlySalary(employee);
+    const currentHourlyRate = currentMonthlySalary > 0 ? currentMonthlySalary / 26 / 8 : 0;
+    const savedMonthlySalary = Number(summary.basic_salary) || 0;
+    const stale = currentMonthlySalary > 0 && savedMonthlySalary > 0 && Math.abs(currentMonthlySalary - savedMonthlySalary) >= 0.01;
+
+    if (!currentHourlyRate) {
+      return {
+        gross: Number(summary.gross) || 0,
+        latesDeduction: Number(summary.lates_deduction) || 0,
+        stale,
+      };
+    }
+
+    return {
+      gross: (Number(displayedHours) || 0) * currentHourlyRate,
+      latesDeduction: ((Number(summary.late_minutes) || 0) / 60) * currentHourlyRate,
+      stale,
+    };
+  };
 
   // Group logs by canonical employee key (Employee.id when resolvable),
   // so old logs stored under Person Code and new logs stored under Employee.id
@@ -290,6 +362,22 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
         <div className="text-sm text-muted-foreground">
           <strong className="text-foreground">{periodLabel}</strong> · {days.length} days · {rows.length} employees
         </div>
+        {holidaysInRange.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {holidaysInRange.map(holiday => {
+              const tone = holidayTone(holiday);
+              return (
+                <span
+                  key={`${holiday.date}-${holiday.name}`}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-medium ${tone.badge}`}
+                  title={holidayTypeLabel(holiday)}
+                >
+                  {format(parseISO(String(holiday.date).slice(0, 10)), 'MMM d')} - {holiday.name || holidayTypeLabel(holiday)} ({holidayTypeLabel(holiday)})
+                </span>
+              );
+            })}
+          </div>
+        )}
         <div className="ml-auto">
           <Button variant="outline" size="sm" onClick={exportToExcel} disabled={loading || rows.length === 0}>
             <Download className="w-4 h-4 mr-1.5" /> Export Excel
@@ -305,15 +393,35 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                 <th className="sticky left-0 z-20 bg-muted text-left py-2.5 px-3 font-medium text-muted-foreground uppercase tracking-wide border-b border-r border-border min-w-[200px]">
                   Employee
                 </th>
-                {days.map(d => (
-                  <th
-                    key={d.toISOString()}
-                    className="py-2 px-2 font-medium text-center text-muted-foreground border-b border-border min-w-[60px]"
-                  >
-                    <div className="text-[10px]">{format(d, 'EEE')}</div>
-                    <div className="text-xs font-semibold text-foreground">{format(d, 'd')}</div>
-                  </th>
-                ))}
+                {days.map(d => {
+                  const ds = format(d, 'yyyy-MM-dd');
+                  const holiday = holidayByDate[ds];
+                  const tone = holiday ? holidayTone(holiday) : null;
+                  return (
+                    <th
+                      key={d.toISOString()}
+                      title={holiday ? `${holiday.name || holidayTypeLabel(holiday)} - ${holidayTypeLabel(holiday)}` : undefined}
+                      className={`py-2 px-2 font-medium text-center border-b border-border ${
+                        holiday
+                          ? tone.header
+                          : 'min-w-[74px] text-muted-foreground'
+                      }`}
+                    >
+                      <div className="text-[10px]">{format(d, 'EEE')}</div>
+                      <div className="text-xs font-semibold text-foreground">{format(d, 'd')}</div>
+                      {holiday && (
+                        <>
+                          <div className={`mt-0.5 max-w-[104px] truncate text-[9px] font-semibold ${tone.name}`}>
+                            {holiday.name || holidayTypeLabel(holiday)}
+                          </div>
+                          <div className={`mt-0.5 text-[8px] font-semibold uppercase tracking-wide ${tone.type}`}>
+                            {holidayTypeLabel(holiday)}
+                          </div>
+                        </>
+                      )}
+                    </th>
+                  );
+                })}
                 <th className="py-2 px-3 font-medium text-center text-muted-foreground border-b border-l border-border min-w-[60px]">
                   Days
                 </th>
@@ -350,6 +458,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
               ) : pagedRows.map(r => {
                 const s = summarize(r.logs);
                 const pay = paySummaryMap[r.key];
+                const currentPay = getCurrentPayValues(r.emp, pay, s.hours);
                 return (
                   <tr key={r.key} className="border-b border-border/50 hover:bg-muted/20">
                     <td className="sticky left-0 z-10 bg-card hover:bg-muted/20 py-2 px-3 border-r border-border">
@@ -360,15 +469,28 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                       const ds = format(d, 'yyyy-MM-dd');
                       const log = r.logs[ds];
                       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                      const holiday = holidayByDate[ds];
+                      const tone = holiday ? holidayTone(holiday) : null;
                       return (
                         <td
                           key={ds}
                           onClick={() => setEditCell({ row: r, dateStr: ds, log })}
-                          className={`py-1.5 px-1 text-center border-r border-border/30 cursor-pointer hover:bg-primary/10 ${
-                            isWeekend ? 'bg-muted/30' : ''
+                          title={holiday ? `${holiday.name || holidayTypeLabel(holiday)} - ${holidayTypeLabel(holiday)}` : undefined}
+                          className={`relative py-1.5 px-1 text-center border-r border-border/30 cursor-pointer hover:bg-primary/10 ${
+                            holiday
+                              ? tone.cell
+                              : isWeekend ? 'bg-muted/30' : ''
                           }`}
                         >
+                          {holiday && (
+                            <span className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+                          )}
                           {cellContent(log)}
+                          {holiday && (
+                            <div className={`mx-auto mt-0.5 max-w-[94px] truncate text-[9px] font-medium ${tone.name}`}>
+                              {holiday.name || holidayTypeLabel(holiday)} - {holidayTypeLabel(holiday)}
+                            </div>
+                          )}
                         </td>
                       );
                     })}
@@ -384,11 +506,16 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
                     <td className="py-1.5 px-3 text-center text-orange-600 text-xs">
                       {s.late > 0 ? `${s.late}m` : '—'}
                     </td>
-                    <td className="py-1.5 px-3 text-right font-mono text-xs font-semibold">
-                      ₱{Number(pay?.gross || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    <td
+                      className={`py-1.5 px-3 text-right font-mono text-xs font-semibold ${
+                        currentPay.stale ? 'text-amber-700' : ''
+                      }`}
+                      title={currentPay.stale ? 'Updated using current salary; saved summary was computed from an older salary.' : undefined}
+                    >
+                      ₱{Number(currentPay.gross || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="py-1.5 px-3 text-right font-mono text-xs text-red-600">
-                      ₱{Number(pay?.lates_deduction || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                      ₱{Number(currentPay.latesDeduction || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 );
