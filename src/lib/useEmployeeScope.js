@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { ADMIN_USER, hasAdminAccess } from '@/lib/adminAccess';
 import { resolveTier } from '@/lib/roleHierarchy';
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase();
@@ -22,6 +23,13 @@ export function useEmployeeScope() {
     let active = true;
     (async () => {
       try {
+        if (hasAdminAccess()) {
+          setUser(ADMIN_USER);
+          setSelfOnly(false);
+          setLoading(false);
+          return;
+        }
+
         const me = await base44.auth.me();
         if (!active) return;
         setUser(me);

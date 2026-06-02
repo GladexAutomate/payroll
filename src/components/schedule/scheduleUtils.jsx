@@ -56,7 +56,26 @@ export const getMonthlyWorkDays = (dateValue) => {
   return Math.max(1, daysInMonth - requiredDaysOff);
 };
 
-export const buildScheduleSummary = ({ employees, assignments, periodStart, periodEnd }) => {
+const getShiftTemplateForType = (type, shiftTemplates = []) => {
+  if (!type?.startsWith?.('shift:')) return null;
+  const { baseType } = parseShiftValue(type);
+  const id = baseType.slice('shift:'.length);
+  return shiftTemplates.find(template => String(template.id) === String(id));
+};
+
+const isWorkScheduleType = (type) => MANPOWER_TYPES.has(type) || type?.startsWith?.('shift:');
+
+const isCostCountedType = (type) => COST_COUNTED_TYPES.has(type) || type?.startsWith?.('shift:');
+
+const isWfhScheduleType = (type) => type === 'wfh' || parseShiftValue(type).mode === 'wfh';
+
+const matchesShiftName = (type, shiftTemplates, pattern) => {
+  if (type === pattern) return true;
+  const template = getShiftTemplateForType(type, shiftTemplates);
+  return pattern.test?.(String(template?.name || '').toLowerCase()) || false;
+};
+
+export const buildScheduleSummary = ({ employees, assignments, periodStart, periodEnd, shiftTemplates = [] }) => {
   const days = getScheduleDays(periodStart, periodEnd);
   const employeeCount = employees.length;
   const dailyRows = days.map(day => {
@@ -71,12 +90,12 @@ export const buildScheduleSummary = ({ employees, assignments, periodStart, peri
     employees.forEach(emp => {
       const type = assignments?.[emp.id]?.[date] || 'none';
       const dailyRate = (Number(emp.monthly_salary) || 0) / getMonthlyWorkDays(date);
-      if (MANPOWER_TYPES.has(type)) onDuty += 1;
+      if (isWorkScheduleType(type)) onDuty += 1;
       if (OFF_TYPES.has(type)) offVl += 1;
-      if (type === 'wfh') wfh += 1;
-      if (type === 'opener') hasOpener = true;
-      if (type === 'closer') hasCloser = true;
-      if (COST_COUNTED_TYPES.has(type)) dailyCost += dailyRate;
+      if (isWfhScheduleType(type)) wfh += 1;
+      if (matchesShiftName(type, shiftTemplates, /opener/)) hasOpener = true;
+      if (matchesShiftName(type, shiftTemplates, /closer/)) hasCloser = true;
+      if (isCostCountedType(type)) dailyCost += dailyRate;
     });
 
     const status = onDuty === 0 ? 'Low Manpower' : offVl === 0 ? 'No Day-Off' : (!hasOpener || !hasCloser) ? 'No Opener/Closer' : 'OK';

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
+import { ADMIN_USER, clearAdminAccess, hasAdminAccess } from '@/lib/adminAccess';
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
 
 const AuthContext = createContext();
@@ -20,6 +21,16 @@ export const AuthProvider = ({ children }) => {
 
   const checkAppState = async () => {
     try {
+      if (hasAdminAccess()) {
+        setUser(ADMIN_USER);
+        setIsAuthenticated(true);
+        setAuthChecked(true);
+        setIsLoadingPublicSettings(false);
+        setIsLoadingAuth(false);
+        setAuthError(null);
+        return;
+      }
+
       setIsLoadingPublicSettings(true);
       setAuthError(null);
       
@@ -115,6 +126,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = (shouldRedirect = true) => {
+    clearAdminAccess();
     setUser(null);
     setIsAuthenticated(false);
     

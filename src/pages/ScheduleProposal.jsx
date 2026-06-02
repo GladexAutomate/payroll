@@ -157,7 +157,13 @@ export default function ScheduleProposal() {
     return merged;
   }, [selectedEmployees, leaveOverlay, assignments]);
 
-  const summary = useMemo(() => buildScheduleSummary({ employees: selectedEmployees, assignments: effectiveAssignments, periodStart: form.period_start, periodEnd: form.period_end }), [selectedEmployees, effectiveAssignments, form.period_start, form.period_end]);
+  const summary = useMemo(() => buildScheduleSummary({
+    employees: selectedEmployees,
+    assignments: effectiveAssignments,
+    periodStart: form.period_start,
+    periodEnd: form.period_end,
+    shiftTemplates,
+  }), [selectedEmployees, effectiveAssignments, form.period_start, form.period_end, shiftTemplates]);
 
   const branchOptions = useMemo(() => hierarchy.branches.filter(b => !form.company_name || b.company_name === form.company_name), [hierarchy, form.company_name]);
   const departmentOptions = useMemo(() => hierarchy.departments.filter(d => (!form.company_name || d.company_name === form.company_name) && (!form.branch_name || d.branch_name === form.branch_name)), [hierarchy, form.company_name, form.branch_name]);

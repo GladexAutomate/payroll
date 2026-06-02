@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
+import { grantAdminAccess, hasAdminAccess, isAdminEmployeeLogin } from '@/lib/adminAccess';
 
 export default function EmployeeAccessGate({ children }) {
   const { logout, user } = useAuth();
@@ -17,6 +18,12 @@ export default function EmployeeAccessGate({ children }) {
   const [error, setError] = useState('');
 
   const checkAccess = async (attempt = 0) => {
+    if (hasAdminAccess()) {
+      setAllowed(true);
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccessStatus' });
       setAllowed(!!res.data.allowed);
@@ -42,6 +49,13 @@ export default function EmployeeAccessGate({ children }) {
     setSubmitting(true);
     setError('');
     try {
+      if (isAdminEmployeeLogin(employeeCode, password)) {
+        grantAdminAccess();
+        setAllowed(true);
+        setSubmitting(false);
+        return;
+      }
+
       const res = await base44.functions.invoke('airtableEmployees', {
         action: 'validateEmployeeAccess',
         employeeCode,

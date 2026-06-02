@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { allAssignablePaths } from '@/lib/navConfig';
+import { hasAdminAccess } from '@/lib/adminAccess';
 import { resolveTier, tierPermissionKey } from '@/lib/roleHierarchy';
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase();
@@ -21,6 +22,14 @@ export function usePagePermissions() {
     let active = true;
     (async () => {
       try {
+        if (hasAdminAccess()) {
+          setIsAdmin(true);
+          setRole('admin');
+          setAllowedPaths(allAssignablePaths);
+          setLoading(false);
+          return;
+        }
+
         const user = await base44.auth.me();
         if (!active) return;
 

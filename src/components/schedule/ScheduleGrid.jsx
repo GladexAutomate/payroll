@@ -133,7 +133,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
             <tr className="bg-blue-900 text-white">
               <th className="sticky left-0 z-20 bg-blue-900 text-left py-2.5 px-3 min-w-[170px]">Employee</th>
               {days.map(day => (
-                <th key={day.toISOString()} className="py-2 px-2 text-center min-w-[62px]">
+                <th key={day.toISOString()} className="py-2 px-2 text-center min-w-[76px]">
                   <div className="font-semibold">{format(day, 'MM-dd')}</div>
                   <div className="text-[10px] opacity-80">{format(day, 'EEE')}</div>
                 </th>
@@ -159,7 +159,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                   const isPreview = previewSet?.has(cellKey);
                   const showMenu = menuCell && menuCell.employeeId === emp.id && menuCell.date === date;
                   return (
-                    <td key={date} className="relative p-1 text-center border-r border-border/30"
+                    <td key={date} className="relative p-1 text-center border-r border-border/30 min-w-[76px]"
                       onMouseEnter={editable ? () => onCellEnter(emp.id, date) : undefined}>
                       <button
                         type="button"
@@ -169,7 +169,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
                         onDragLeave={editable ? () => setDragOver(prev => prev === cellKey ? null : prev) : undefined}
                         onDrop={editable ? (e) => handleDrop(e, emp.id, date) : undefined}
                         style={config.color ? { backgroundColor: config.color, borderColor: config.color } : undefined}
-                        className={`relative w-[58px] min-h-[34px] rounded border px-1 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${fillDrag ? 'pointer-events-none' : ''} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''} ${showMenu ? 'ring-2 ring-primary' : ''}`}
+                        className={`relative w-[68px] min-h-[40px] rounded border px-1.5 py-1 text-[10px] font-bold leading-tight whitespace-pre-line ${config.className} ${editable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'} ${fillDrag ? 'pointer-events-none' : ''} ${isDragOver ? 'ring-2 ring-primary scale-110' : ''} ${showMenu ? 'ring-2 ring-primary' : ''}`}
                         title={isPendingLeave ? `Pending leave request: ${pendingConfig?.short}` : editable ? (type === 'none' ? 'Drag a card here' : 'Click to fill / delete') : config.short}
                       >
                         {isPendingLeave && (

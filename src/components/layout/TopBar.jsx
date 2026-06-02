@@ -1,6 +1,5 @@
 import { Menu, Bell, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import { base44 } from '@/api/base44Client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export default function TopBar({ onMenuClick, title }) {
-  const { user } = useAuth();
+  const { logout, user } = useAuth();
 
   return (
     <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-white border-b border-border sticky top-0 z-10">
@@ -49,7 +48,7 @@ export default function TopBar({ onMenuClick, title }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive"
-              onClick={() => base44.auth.logout()}
+              onClick={() => logout(false)}
             >
               Sign Out
             </DropdownMenuItem>

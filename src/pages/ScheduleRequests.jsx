@@ -26,13 +26,18 @@ export default function ScheduleRequests() {
   const [filter, setFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [shiftTemplates, setShiftTemplates] = useState([]);
 
   useEffect(() => { loadRequests(); }, []);
 
   const loadRequests = async () => {
     setLoading(true);
-    const data = await base44.entities.AttendanceProposal.list('-created_date', 100);
+    const [data, shifts] = await Promise.all([
+      base44.entities.AttendanceProposal.list('-created_date', 100),
+      base44.entities.ShiftTemplate.list('sort_order'),
+    ]);
     setRequests(data);
+    setShiftTemplates(shifts || []);
     setLoading(false);
   };
 
@@ -78,7 +83,13 @@ export default function ScheduleRequests() {
         <div className="bg-white rounded-xl p-8 text-center text-sm text-slate-500">No schedule requests found.</div>
       ) : filtered.map(request => {
         const expanded = expandedId === request.id;
-        const summary = request.summary?.dailyRows ? request.summary : buildScheduleSummary({ employees: request.employees || [], assignments: request.assignments || {}, periodStart: request.period_start, periodEnd: request.period_end });
+        const summary = buildScheduleSummary({
+          employees: request.employees || [],
+          assignments: request.assignments || {},
+          periodStart: request.period_start,
+          periodEnd: request.period_end,
+          shiftTemplates,
+        });
         return (
           <div key={request.id} className="bg-white rounded-xl overflow-hidden shadow-sm">
             <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 p-5">
@@ -106,7 +117,13 @@ export default function ScheduleRequests() {
 
             {expanded && (
               <div className="border-t border-slate-200 p-5 space-y-5">
-                <ScheduleGrid employees={request.employees || []} assignments={request.assignments || {}} periodStart={request.period_start} periodEnd={request.period_end} />
+                <ScheduleGrid
+                  employees={request.employees || []}
+                  assignments={request.assignments || {}}
+                  periodStart={request.period_start}
+                  periodEnd={request.period_end}
+                  shiftTemplates={shiftTemplates}
+                />
                 <ScheduleAnalytics summary={summary} />
               </div>
             )}
