@@ -218,7 +218,11 @@ Deno.serve(async (req) => {
     const runBranchNorm = normalizeText(run.branch_name);
     const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
     const allEmployeeDeductions = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-updated_date', 5000));
-    const allowanceRecords = allEmployeeDeductions.filter(r => r.kind === 'allowance');
+    const allowanceRecords = allEmployeeDeductions.filter(r => {
+      if (r.kind !== 'allowance') return false;
+      if (['cancelled', 'completed'].includes(r.atd_status)) return false;
+      return r.atd_status === 'active' || r.recurring;
+    });
     // Active ATD charges (cash advance, uniform, etc.) that reduce net pay.
     const deductionRecords = allEmployeeDeductions.filter(r => r.kind === 'deduction' && r.atd_status === 'active');
 

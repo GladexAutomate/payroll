@@ -92,7 +92,7 @@ export default function Deductions() {
       {tab === 'government' ? (
         <GovernmentSettings employees={employees} />
       ) : (
-      <>)
+        <>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
