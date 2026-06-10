@@ -373,6 +373,13 @@ Deno.serve(async (req) => {
         await base44.auth.updateMe({ employee_access_verified: false, employee_account_status: 'disabled' });
         return Response.json({ allowed: false, message: 'Your employee account is no longer active. Please contact HR.' });
       }
+      // If the employee's role (Job Title) changed in Airtable, reset verification so they
+      // re-verify and adopt the new role's access on their next refresh.
+      const currentRole = clean(matched.fields?.['Job Title']);
+      if (currentRole && clean(currentUser.internal_role).toLowerCase() !== currentRole.toLowerCase()) {
+        await base44.auth.updateMe({ employee_access_verified: false });
+        return Response.json({ allowed: false, message: 'Your role has been updated. Please sign in again to refresh your access.' });
+      }
       return Response.json({ allowed: true });
     }
 
