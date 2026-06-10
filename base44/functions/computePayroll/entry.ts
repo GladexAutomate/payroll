@@ -102,33 +102,6 @@ function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-function rebaseSummaryPay(summary, currentHourlyRate, payrollHours) {
-  const hours = Number(payrollHours) || 0;
-  const overtimeHours = Number(summary?.overtime_hours) || 0;
-  const gross = hours * currentHourlyRate;
-  const overtime = overtimeHours * currentHourlyRate * 1.25;
-
-  if (!summary || !currentHourlyRate) {
-    return {
-      gross: Number(summary?.gross) || 0,
-      regular: Number(summary?.regular_pay) || 0,
-      overtime: Number(summary?.overtime_pay) || 0,
-      holiday: Number(summary?.holiday_pay) || 0,
-      leave: Number(summary?.leave_pay) || 0,
-      latesDeduction: Number(summary?.lates_deduction) || 0,
-    };
-  }
-
-  return {
-    gross,
-    regular: gross,
-    overtime,
-    holiday: Number(summary.holiday_pay) || 0,
-    leave: Number(summary.leave_pay) || 0,
-    latesDeduction: ((Number(summary.late_minutes) || 0) / 60) * currentHourlyRate,
-  };
-}
-
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -299,29 +272,42 @@ Deno.serve(async (req) => {
     let totalDeductions = 0;
     let totalNet = 0;
 
+    const STD_HOURS = Number(policy?.standard_work_hours) || 8;
+    const WORKING_DAYS_DIVISOR = Number(policy?.working_days_divisor) || 26;
+    const auditBreakdown = [];
+
     for (const emp of employees) {
       const fields = getFields(emp);
       const employeeName = getEmployeeName(emp);
       const employeeCode = getEmployeeCode(emp);
       const monthlySalary = parseMoney(fields['Basic Salary'] || fields['Monthly Salary'] || fields.Salary);
-      const hourlyRate = monthlySalary > 0 ? monthlySalary / 26 / 8 : 0;
+      // Unified hourly rate: monthly / working_days_divisor / standard_work_hours (same as reconcilePeriod).
+      // Prefer the rate already stored on the summary when present so both stages always agree.
       const summary = summaryByEmployeeId[emp.id] || {};
-      const totalHours = Number(summary.hours) || 0;
+      const hourlyRate = Number(summary.hourly_rate) || (monthlySalary > 0 ? monthlySalary / WORKING_DAYS_DIVISOR / STD_HOURS : 0);
       const overtimeHours = Number(summary.overtime_hours) || 0;
       const totalLateMin = Number(summary.late_minutes) || 0;
-      const totalUndertimeMin = 0;
-      const daysWorked = Number(summary.days_worked) || (totalHours > 0 ? Math.ceil(totalHours / 8) : 0);
-      const payrollHours = daysWorked * 8;
+      const totalUndertimeMin = Number(summary.undertime_minutes) || 0;
+      const daysWorked = Number(summary.days_worked) || 0;
+      const payrollHours = Number(summary.hours) || 0;
       const daysAbsent = Number(summary.days_absent) || 0;
-      const currentPay = rebaseSummaryPay(summary, hourlyRate, payrollHours);
-      const grossPay = currentPay.gross;
-      const lateDeduction = currentPay.latesDeduction;
+
+      // Trust reconcile's already-computed pay components instead of recomputing a flat figure.
+      const regularPay = Number(summary.regular_pay) || 0;
+      const overtimePay = Number(summary.overtime_pay) || 0;
+      const holidayPay = Number(summary.holiday_pay) || 0;
+      const leavePay = Number(summary.leave_pay) || 0;
+      const nightDiffPay = Number(summary.night_diff_pay) || 0;
+      const earnedPay = regularPay + overtimePay + holidayPay + leavePay + nightDiffPay;
+      const grossPay = earnedPay;
+
+      // Deductions sourced from the summary (reconcile computed these from real attendance).
+      const lateDeduction = Number(summary.lates_deduction) || 0;
+      const undertimeDeduction = Number(summary.undertime_deduction) || 0;
+
+      // ATD charges sourced ONLY here (single source of truth) — reconcile's other_deductions is ignored.
       const allowances = Number(allowanceByEmp[emp.id]) || 0;
       const otherDeductions = Number(deductionByEmp[emp.id]) || 0;
-      const overtimePay = currentPay.overtime;
-      const holidayPay = currentPay.holiday;
-      const leavePay = currentPay.leave;
-      const regularPay = currentPay.regular;
       const gov = govByEmp[emp.id] || {};
       const sssOn = gov.sss_enabled !== false;
       const phOn = gov.philhealth_enabled !== false;
@@ -339,7 +325,7 @@ Deno.serve(async (req) => {
       const piER = pi.employer * cutoffFactor;
       const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
       const periodTax = computeMonthlyWithholdingTax(monthlyTaxable) * cutoffFactor;
-      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + otherDeductions;
+      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + undertimeDeduction + otherDeductions;
       const grossWithAllowance = grossPay + allowances;
       const netPay = grossWithAllowance - totalDeductionsForEmp;
 
@@ -379,6 +365,29 @@ Deno.serve(async (req) => {
       };
 
       recordsToCreate.push(payrollRecord);
+
+      // Per-employee audit row so totals can be reconciled against expected before approval.
+      auditBreakdown.push({
+        employee_code: employeeCode,
+        employee_name: employeeName,
+        hourly_rate: money(hourlyRate),
+        days_worked: daysWorked,
+        days_absent: daysAbsent,
+        regular_pay: money(regularPay),
+        overtime_pay: money(overtimePay),
+        holiday_pay: money(holidayPay),
+        leave_pay: money(leavePay),
+        night_diff_pay: money(nightDiffPay),
+        allowances: money(allowances),
+        gross_pay: money(grossWithAllowance),
+        lates_deduction: money(lateDeduction),
+        undertime_deduction: money(undertimeDeduction),
+        statutory: money(sssEE + phEE + piEE),
+        withholding_tax: money(periodTax),
+        atd_charges: money(otherDeductions),
+        total_deductions: money(totalDeductionsForEmp),
+        net_pay: money(netPay),
+      });
 
       totalGross += grossWithAllowance;
       totalDeductions += totalDeductionsForEmp;
@@ -421,7 +430,9 @@ Deno.serve(async (req) => {
       success: true,
       employee_count: employees.length,
       total_gross: money(totalGross),
+      total_deductions: money(totalDeductions),
       total_net: money(totalNet),
+      audit: auditBreakdown,
       message: `Payroll computed from saved attendance pay summaries for ${employees.length} employees.`,
     });
   } catch (error) {
