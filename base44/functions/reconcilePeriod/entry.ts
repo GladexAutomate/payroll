@@ -437,6 +437,8 @@ Deno.serve(async (req) => {
 
       const latesDeduction = (lateMinutes / 60) * hourlyRate;
       const undertimeDeduction = (undertimeMinutes / 60) * hourlyRate;
+      // Absence deduction: one daily rate (monthly / working_days_divisor) per absent day.
+      const absentDeduction = daysAbsent * dailyRate;
       const earnedPay = regularPay + overtimePay + holidayPay + leavePay + nightPay;
       const thirteenth = P.thirteenth_month_enabled ? (earnedPay / 12) : 0;
       const gross = money(earnedPay + allowanceTotal);
@@ -461,6 +463,7 @@ Deno.serve(async (req) => {
         gross,
         lates_deduction: money(latesDeduction),
         undertime_deduction: money(undertimeDeduction),
+        absent_deduction: money(absentDeduction),
         allowances: money(allowanceTotal),
         other_deductions: money(chargeTotal),
         thirteenth_month_accrual: money(thirteenth),

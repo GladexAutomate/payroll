@@ -311,6 +311,7 @@ Deno.serve(async (req) => {
       // Deductions sourced from the summary (reconcile computed these from real attendance).
       const lateDeduction = Number(summary.lates_deduction) || 0;
       const undertimeDeduction = Number(summary.undertime_deduction) || 0;
+      const absentDeduction = Number(summary.absent_deduction) || 0;
 
       // ATD charges sourced ONLY here (single source of truth) — reconcile's other_deductions is ignored.
       const allowances = Number(allowanceByEmp[emp.id]) || 0;
@@ -332,7 +333,7 @@ Deno.serve(async (req) => {
       const piER = pi.employer * cutoffFactor;
       const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
       const periodTax = computeMonthlyWithholdingTax(monthlyTaxable) * cutoffFactor;
-      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + undertimeDeduction + otherDeductions;
+      const totalDeductionsForEmp = sssEE + phEE + piEE + periodTax + lateDeduction + undertimeDeduction + absentDeduction + otherDeductions;
       const grossWithAllowance = grossPay + allowances;
       const netPay = grossWithAllowance - totalDeductionsForEmp;
 
@@ -364,7 +365,7 @@ Deno.serve(async (req) => {
         pagibig_employer: money(piER),
         withholding_tax: money(periodTax),
         late_deduction: money(lateDeduction),
-        absent_deduction: 0,
+        absent_deduction: money(absentDeduction),
         other_deductions: money(otherDeductions),
         total_deductions: money(totalDeductionsForEmp),
         net_pay: money(netPay),
@@ -389,6 +390,7 @@ Deno.serve(async (req) => {
         gross_pay: money(grossWithAllowance),
         lates_deduction: money(lateDeduction),
         undertime_deduction: money(undertimeDeduction),
+        absent_deduction: money(absentDeduction),
         statutory: money(sssEE + phEE + piEE),
         withholding_tax: money(periodTax),
         atd_charges: money(otherDeductions),
