@@ -102,7 +102,31 @@ async function ensureTable(baseUrl, key, table) {
   }
 }
 
+// Load per-entity cursors so we only push records changed since the last run.
+async function loadCursors(base44) {
+  const rows = await base44.asServiceRole.entities.SyncState.list('-updated_date', 1000).catch(() => []);
+  const map = {};
+  const idByEntity = {};
+  for (const row of rows) {
+    if (!map[row.entity_name] || String(row.last_synced_at || '') > String(map[row.entity_name] || '')) {
+      map[row.entity_name] = row.last_synced_at || '';
+    }
+    idByEntity[row.entity_name] = row.id;
+  }
+  return { map, idByEntity };
+}
+
+async function saveCursor(base44, idByEntity, entity, lastSyncedAt) {
+  const data = { entity_name: entity, last_synced_at: lastSyncedAt };
+  if (idByEntity[entity]) await base44.asServiceRole.entities.SyncState.update(idByEntity[entity], data);
+  else {
+    const created = await base44.asServiceRole.entities.SyncState.create(data);
+    idByEntity[entity] = created.id;
+  }
+}
+
 Deno.serve(async (req) => {
+  const startedAt = new Date();
   try {
     const base44 = createClientFromRequest(req);
 
@@ -119,44 +143,90 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Supabase secrets not configured' }, { status: 500 });
     }
 
+    // full=true forces a full re-sync (ignores cursors), e.g. for the first run or backfills.
+    let fullSync = false;
+    try { const body = await req.json(); fullSync = !!body?.full; } catch (_e) { /* no body */ }
+
+    const { map: cursors, idByEntity } = await loadCursors(base44);
+
     const summary = {};
+    let totalSynced = 0;
+    let errorCount = 0;
+
     for (const entity of ENTITIES) {
       const sdkEntity = base44.asServiceRole.entities[entity];
       if (!sdkEntity) { summary[entity] = 'skipped (no entity)'; continue; }
       const table = tableName(entity);
+      const since = fullSync ? '' : (cursors[entity] || '');
 
       let synced = 0;
+      let newest = since;
       try {
         // Create the matching Supabase table on the fly if it doesn't exist yet.
         // Non-fatal: if the exec_sql helper isn't installed, existing tables still sync.
         try { await ensureTable(SUPABASE_URL, SUPABASE_SECRET_KEY, table); } catch (_e) { /* table likely exists */ }
 
-        // Page through all records to avoid loading huge datasets at once.
+        // Page through records newest-first; stop once we reach records already synced.
         let skip = 0;
         const pageSize = 200;
         for (;;) {
           const page = await withRetry(() => sdkEntity.list('-updated_date', pageSize, skip));
           if (!page || page.length === 0) break;
-          // Wrap each record as { id, data } to match the JSONB table schema, then upsert in chunks of 100.
-          const rows = page.map((r) => ({ id: r.id, data: r }));
-          for (let i = 0; i < rows.length; i += 100) {
-            const chunk = rows.slice(i, i + 100);
-            await upsertBatch(SUPABASE_URL, SUPABASE_SECRET_KEY, table, chunk);
+
+          // Incremental: only keep records updated after our cursor.
+          const fresh = since ? page.filter((r) => String(r.updated_date || '') > since) : page;
+          if (fresh.length) {
+            const rows = fresh.map((r) => ({ id: r.id, data: r }));
+            for (let i = 0; i < rows.length; i += 100) {
+              await upsertBatch(SUPABASE_URL, SUPABASE_SECRET_KEY, table, rows.slice(i, i + 100));
+            }
+            synced += fresh.length;
+            const pageNewest = fresh[0]?.updated_date || '';
+            if (String(pageNewest) > String(newest)) newest = pageNewest;
           }
-          synced += page.length;
+
+          // Newest-first ordering means once a page is fully older than the cursor, we're done.
+          if (since && fresh.length < page.length) break;
           skip += page.length;
           if (page.length < pageSize) break;
           await wait(150);
         }
+
+        if (newest && String(newest) > String(since)) await saveCursor(base44, idByEntity, entity, newest);
         summary[entity] = synced;
+        totalSynced += synced;
       } catch (error) {
         summary[entity] = `error: ${error.message}`;
+        errorCount += 1;
       }
-      await wait(120);
+      await wait(80);
     }
 
-    return Response.json({ success: true, synced_at: new Date().toISOString(), summary });
+    const finishedAt = new Date();
+    const status = errorCount > 0 ? (totalSynced > 0 ? 'partial' : 'error') : 'success';
+    await base44.asServiceRole.entities.SyncLog.create({
+      kind: 'supabase',
+      status,
+      started_at: startedAt.toISOString(),
+      finished_at: finishedAt.toISOString(),
+      duration_ms: finishedAt - startedAt,
+      total_synced: totalSynced,
+      error_count: errorCount,
+      summary,
+      message: fullSync ? 'Full re-sync' : 'Incremental sync',
+    }).catch(() => {});
+
+    return Response.json({ success: true, synced_at: finishedAt.toISOString(), total_synced: totalSynced, error_count: errorCount, summary });
   } catch (error) {
+    const finishedAt = new Date();
+    try {
+      const base44 = createClientFromRequest(req);
+      await base44.asServiceRole.entities.SyncLog.create({
+        kind: 'supabase', status: 'error',
+        started_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(),
+        duration_ms: finishedAt - startedAt, message: error.message,
+      });
+    } catch (_e) { /* ignore */ }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });

@@ -1,0 +1,55 @@
+{
+  "name": "SyncLog",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "supabase",
+        "airtable",
+        "consolidation"
+      ],
+      "default": "supabase",
+      "description": "Which sync process produced this log"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "error"
+      ],
+      "default": "success"
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "duration_ms": {
+      "type": "number",
+      "default": 0
+    },
+    "total_synced": {
+      "type": "number",
+      "default": 0,
+      "description": "Total records pushed across all entities"
+    },
+    "error_count": {
+      "type": "number",
+      "default": 0
+    },
+    "summary": {
+      "type": "object",
+      "description": "Per-entity result map { EntityName: count | 'error: ...' }"
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "status"
+  ]
+}

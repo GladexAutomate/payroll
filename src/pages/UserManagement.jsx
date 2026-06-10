@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import SyncStatusBanner from '@/components/sync/SyncStatusBanner';
 
 export default function UserManagement() {
   const [accounts, setAccounts] = useState([]);
@@ -48,6 +49,8 @@ export default function UserManagement() {
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>
+
+      <SyncStatusBanner />
 
       <div className="grid md:grid-cols-3 gap-4">
         <div className="rounded-xl border border-border bg-card p-4">

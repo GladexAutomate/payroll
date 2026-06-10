@@ -1,0 +1,17 @@
+{
+  "name": "SyncState",
+  "type": "object",
+  "properties": {
+    "entity_name": {
+      "type": "string",
+      "description": "Base44 entity name this cursor tracks"
+    },
+    "last_synced_at": {
+      "type": "string",
+      "description": "ISO timestamp of the newest updated_date pushed to Supabase"
+    }
+  },
+  "required": [
+    "entity_name"
+  ]
+}

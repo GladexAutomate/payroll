@@ -73,8 +73,6 @@ const namesMatch = (employee, record) => {
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const apiKey = Deno.env.get('AIRTABLE_API_KEY');
     if (!apiKey) return Response.json({ error: 'AIRTABLE_API_KEY not set' }, { status: 500 });
@@ -86,6 +84,15 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { action } = body;
+
+    // Backend-only actions can run unattended (e.g. the consolidation orchestrator via
+    // service role). All other actions require an authenticated user.
+    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus']);
+    let user = null;
+    try { user = await base44.auth.me(); } catch (_e) { user = null; }
+    if (!user && !BACKEND_ACTIONS.has(action)) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const getTableSchema = async () => {
       const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`, { headers });
@@ -390,6 +397,11 @@ Deno.serve(async (req) => {
       return Response.json({ matched, skipped });
     }
 
+    if (action === 'syncStatus') {
+      const logs = await base44.asServiceRole.entities.SyncLog.list('-created_date', 1);
+      return Response.json({ lastSync: logs[0] || null });
+    }
+
     if (action === 'employeeAccounts') {
       // Read stored accounts (no recompute). Pass refresh:true to re-sync from Airtable first.
       if (body.refresh) await syncFromAirtable();
@@ -454,7 +466,26 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'syncFromAirtable') {
-      return Response.json(await syncFromAirtable());
+      const startedAt = new Date();
+      try {
+        const result = await syncFromAirtable();
+        const finishedAt = new Date();
+        await base44.asServiceRole.entities.SyncLog.create({
+          kind: 'airtable', status: 'success',
+          started_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(),
+          duration_ms: finishedAt - startedAt, total_synced: result.synced || 0, error_count: 0,
+          summary: result, message: 'Airtable → Base44',
+        }).catch(() => {});
+        return Response.json(result);
+      } catch (error) {
+        const finishedAt = new Date();
+        await base44.asServiceRole.entities.SyncLog.create({
+          kind: 'airtable', status: 'error',
+          started_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(),
+          duration_ms: finishedAt - startedAt, message: error.message,
+        }).catch(() => {});
+        return Response.json({ error: error.message }, { status: 500 });
+      }
     }
 
     if (action === 'matchCandidates') {
