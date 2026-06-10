@@ -54,8 +54,16 @@ async function withRetry(operation, attempts = 6) {
 function tableName(entity) { return entity.toLowerCase(); }
 
 // Upsert a batch of rows into a Supabase table via the REST API (on_conflict=id).
+function restBase(rawUrl) {
+  // Accept either the project URL (https://xxx.supabase.co) or the full REST URL,
+  // and always produce ".../rest/v1".
+  let base = String(rawUrl || '').replace(/\/+$/, '');
+  if (!/\/rest\/v1$/.test(base)) base = `${base}/rest/v1`;
+  return base;
+}
+
 async function upsertBatch(baseUrl, key, table, rows) {
-  const url = `${baseUrl.replace(/\/$/, '')}/${table}?on_conflict=id`;
+  const url = `${restBase(baseUrl)}/${table}?on_conflict=id`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -102,9 +110,10 @@ Deno.serve(async (req) => {
         for (;;) {
           const page = await withRetry(() => sdkEntity.list('-updated_date', pageSize, skip));
           if (!page || page.length === 0) break;
-          // Upsert to Supabase in chunks of 100.
-          for (let i = 0; i < page.length; i += 100) {
-            const chunk = page.slice(i, i + 100);
+          // Wrap each record as { id, data } to match the JSONB table schema, then upsert in chunks of 100.
+          const rows = page.map((r) => ({ id: r.id, data: r }));
+          for (let i = 0; i < rows.length; i += 100) {
+            const chunk = rows.slice(i, i + 100);
             await upsertBatch(SUPABASE_URL, SUPABASE_SECRET_KEY, tableName(entity), chunk);
           }
           synced += page.length;
