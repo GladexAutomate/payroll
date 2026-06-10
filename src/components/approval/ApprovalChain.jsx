@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, PenLine, X as XIcon, Clock } from 'lucide-react';
-import { buildSteps, canSignCurrentStep, nextStatus, currentStepKey, STEP_LABELS } from '@/lib/approvalChain';
+import { buildSteps, canSignCurrentStep, nextStatus, currentStepKey, stepKeyForUser, STEP_LABELS } from '@/lib/approvalChain';
 import SignDialog from './SignDialog';
 
 // Renders the 3-step signed approval chain and lets the eligible current user sign/reject.
@@ -23,7 +23,9 @@ export default function ApprovalChain({ record, requestorTier, current, isOwnRec
   const rejected = chainStatus === 'rejected';
 
   const applySign = async (signatureUrl) => {
-    const stepKey = currentStepKey(chainStatus);
+    // The step this user actually signs (may be a later step than the current awaiting one,
+    // when a higher-tier approver signs early).
+    const stepKey = stepKeyForUser({ chainStatus, requestorTier, userTier: current.tier, isOwnRecord });
     const entry = {
       step: stepKey,
       required_tier: current.tier,
@@ -32,9 +34,20 @@ export default function ApprovalChain({ record, requestorTier, current, isOwnRec
       signature_url: signatureUrl,
       signed_at: new Date().toISOString(),
     };
+    // Advance the chain status to just past the step that was signed, skipping any earlier
+    // pending steps the approver leapfrogged.
+    const order = ['employee', 'mid', 'hr'];
+    const statusAfter = { employee: 'awaiting_mid', mid: 'awaiting_hr', hr: 'fully_signed' };
+    let newStatus = statusAfter[stepKey] || nextStatus(chainStatus);
+    // If an earlier step is still unsigned, keep the chain there so it can still be back-filled.
+    const signedSteps = new Set([...chain.map((c) => c.step), stepKey]);
+    for (const s of order) {
+      if (!signedSteps.has(s)) { newStatus = { employee: 'awaiting_employee', mid: 'awaiting_mid', hr: 'awaiting_hr' }[s]; break; }
+    }
     const newChain = [...chain.filter((c) => c.step !== stepKey), entry];
-    const newStatus = nextStatus(chainStatus);
-    await onUpdate({ approval_chain: newChain, chain_status: newStatus, fully_signed: newStatus === 'fully_signed' });
+    const allSigned = order.every((s) => newChain.some((c) => c.step === s));
+    if (allSigned) newStatus = 'fully_signed';
+    await onUpdate({ approval_chain: newChain, chain_status: newStatus, fully_signed: allSigned });
     setDialogOpen(false);
   };
 

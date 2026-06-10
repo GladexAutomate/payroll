@@ -34,11 +34,26 @@ export function buildSteps(requestorTier) {
 }
 
 // Can the current user (with userTier + whether this record is their own) sign the awaiting step?
+// Higher-tier approvers (mid approver / HR) may sign earlier — even while still awaiting the
+// employee's signature — in which case prior steps are auto-completed on their behalf.
 export function canSignCurrentStep({ chainStatus, requestorTier, userTier, isOwnRecord }) {
-  if (chainStatus === 'awaiting_employee') return !!isOwnRecord;
-  if (chainStatus === 'awaiting_mid') return midTiersForRequestor(requestorTier).includes(userTier);
-  if (chainStatus === 'awaiting_hr') return userTier === 'hr';
+  const isMid = midTiersForRequestor(requestorTier).includes(userTier);
+  const isHr = userTier === 'hr';
+  if (chainStatus === 'awaiting_employee') return !!isOwnRecord || isMid || isHr;
+  if (chainStatus === 'awaiting_mid') return isMid || isHr;
+  if (chainStatus === 'awaiting_hr') return isHr;
   return false;
+}
+
+// Which step key a given user actually signs when they act on the current chain status.
+// A mid/HR user acting while awaiting the employee signs the employee step (auto-advancing).
+export function stepKeyForUser({ chainStatus, requestorTier, userTier, isOwnRecord }) {
+  if (chainStatus === 'awaiting_employee') {
+    if (isOwnRecord) return 'employee';
+    if (midTiersForRequestor(requestorTier).includes(userTier)) return 'mid';
+    if (userTier === 'hr') return 'hr';
+  }
+  return currentStepKey(chainStatus);
 }
 
 // Next chain_status after signing the current one.
