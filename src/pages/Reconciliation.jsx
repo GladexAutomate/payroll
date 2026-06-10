@@ -43,15 +43,16 @@ export default function Reconciliation() {
   };
 
   const loadRuns = async () => {
-    const data = await base44.entities.ReconciliationRun.list('-started_at', 50);
-    setRuns(data || []);
+    const res = await base44.functions.invoke('reconcilePeriod', { action: 'list_runs' });
+    setRuns(res.data?.runs || []);
   };
 
   // Poll the active run for progress while it processes.
   useEffect(() => {
     if (!running || !activeRun?.id) return;
     const interval = setInterval(async () => {
-      const fresh = await base44.entities.ReconciliationRun.get(activeRun.id).catch(() => null);
+      const res = await base44.functions.invoke('reconcilePeriod', { action: 'list_runs' }).catch(() => null);
+      const fresh = res?.data?.runs?.find(r => r.id === activeRun.id);
       if (fresh) setActiveRun(fresh);
     }, 2000);
     return () => clearInterval(interval);

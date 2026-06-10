@@ -114,7 +114,15 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { period_start, period_end, period_label, branch_filter } = body;
+    const { action, period_start, period_end, period_label, branch_filter } = body;
+
+    // History list: read runs via service role (runs are created by the service account,
+    // so user-scoped reads would otherwise return nothing).
+    if (action === 'list_runs') {
+      const runs = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.list('-started_at', 50));
+      return Response.json({ runs });
+    }
+
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
     const branchScope = cleanText(branch_filter);
     const runStartedAt = new Date();
