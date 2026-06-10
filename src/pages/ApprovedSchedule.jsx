@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
@@ -43,6 +44,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [approvedProposals, setApprovedProposals] = useState([]);
   const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState({});
@@ -219,11 +221,20 @@ export default function ApprovedSchedule({ readOnly = false }) {
     return employees;
   }, [employees, teams, approvedProposals, plotted, scope, scopeValue, scopeParts]);
 
+  const branchOptions = useMemo(() => {
+    const set = new Set();
+    scopedEmployees.forEach(e => { const b = String(e.branch_name || '').trim(); if (b) set.add(b); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [scopedEmployees]);
+
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return scopedEmployees;
-    return scopedEmployees.filter(e => e.name.toLowerCase().includes(q) || (e.department || '').toLowerCase().includes(q));
-  }, [scopedEmployees, search]);
+    return scopedEmployees.filter(e => {
+      const matchesBranch = branchFilter === 'all' || cell(e.branch_name) === cell(branchFilter);
+      const matchesSearch = !q || e.name.toLowerCase().includes(q) || (e.department || '').toLowerCase().includes(q);
+      return matchesBranch && matchesSearch;
+    });
+  }, [scopedEmployees, search, branchFilter]);
 
   // Pending leaves -> glow overlay; approved leaves -> plotted onto dates
   const pendingLeaves = useMemo(() => leaves.filter(l => l.status === 'pending'), [leaves]);
@@ -398,9 +409,19 @@ export default function ApprovedSchedule({ readOnly = false }) {
             onChange={(start, end) => { setPeriodStart(start); setPeriodEnd(end); }}
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div><Label className="text-xs">Period Start</Label><Input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="mt-1" /></div>
             <div><Label className="text-xs">Period End</Label><Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="mt-1" /></div>
+            <div>
+              <Label className="text-xs">Branch</Label>
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="All branches" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All branches</SelectItem>
+                  {branchOptions.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label className="text-xs">Search Employee</Label><Input value={search} onChange={e => setSearch(e.target.value)} className="mt-1" placeholder="Name or department" /></div>
           </div>
         )}
