@@ -23,8 +23,12 @@ async function withRetry(op, attempts = 12) {
   for (let i = 0; i < attempts; i += 1) {
     try { return await op(); } catch (err) {
       last = err;
-      const m = String(err?.message || '');
-      if (!m.includes('429') && !m.toLowerCase().includes('rate limit')) throw err;
+      const m = String(err?.message || '').toLowerCase();
+      // Retry on rate limits AND transient network/connection/timeout errors.
+      const retryable = m.includes('429') || m.includes('rate limit') || m.includes('connection')
+        || m.includes('timeout') || m.includes('network') || m.includes('fetch') || m.includes('socket')
+        || m.includes('502') || m.includes('503') || m.includes('504');
+      if (!retryable) throw err;
       // Exponential backoff with jitter, capped at ~15s, so colliding runs back off instead of dying.
       const backoff = Math.min(15000, 1000 * Math.pow(1.6, i)) + Math.floor(Math.random() * 500);
       await wait(backoff);
@@ -151,6 +155,8 @@ Deno.serve(async (req) => {
 });
 
 async function processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope }) {
+  // Use the server clock for duration so it can't go negative from client/server skew.
+  const processStart = new Date();
   try {
     // Editable payroll policy (singleton)
     const policyRows = await withRetry(() => base44.asServiceRole.entities.PayrollPolicy.filter({ key: 'default' }));
@@ -292,8 +298,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     const dates = eachDate(period_start, period_end);
     const STD = P.standard_work_hours || 8;
     const BREAK_H = (P.mandatory_break_minutes || 0) / 60;
-    const recordsToCreate = [];
-    const recordsToUpdate = [];
+    const recordsToSave = [];
     const computedAt = new Date().toISOString();
 
     // Running totals for the history record
@@ -526,9 +531,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       totalDeductions += money(chargeTotal);
       totalAbsentDays += daysAbsent;
 
-      const ex = existingByEmpId[employee.id];
-      if (ex) recordsToUpdate.push({ id: ex.id, data: summary });
-      else recordsToCreate.push(summary);
+      recordsToSave.push(summary);
 
       processed += 1;
       // Update progress every 25 employees so the UI can show a live bar without spamming writes.
@@ -540,20 +543,14 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     }
 
     try {
-      await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToCreate);
-      // Update existing summaries with a small delay to avoid rate limits, while reporting
-      // progress back so the UI bar keeps moving through the save phase instead of looking frozen.
-      let saved = 0;
-      for (const r of recordsToUpdate) {
-        await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.update(r.id, r.data));
-        saved += 1;
-        await wait(60);
-        if (saved % 25 === 0) {
-          await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
-            processed: Math.min(totalEmployees, recordsToCreate.length + saved),
-          }).catch(() => {});
-        }
+      // Replace strategy: delete this period's existing summaries in one bulk call, then
+      // bulkCreate fresh records. This avoids the 100+ per-record update calls that caused
+      // the prior 429 rate-limit storm and 80s+ runtimes.
+      if (existing.length > 0) {
+        await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.deleteMany({ period_start, period_end }));
+        await wait(300);
       }
+      await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToSave);
 
       const finishedAt = new Date();
       await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
@@ -564,14 +561,14 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         total_deductions: money(totalDeductions),
         total_absent_days: totalAbsentDays,
         finished_at: finishedAt.toISOString(),
-        duration_ms: finishedAt - runStartedAt,
+        duration_ms: finishedAt - processStart,
       }));
 
     } catch (writeError) {
       const finishedAt = new Date();
       await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
         status: 'failed', error_message: writeError.message,
-        finished_at: finishedAt.toISOString(), duration_ms: finishedAt - runStartedAt,
+        finished_at: finishedAt.toISOString(), duration_ms: finishedAt - processStart,
       }).catch(() => {});
       throw writeError;
     }
@@ -579,7 +576,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     const finishedAt = new Date();
     await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
       status: 'failed', error_message: error.message,
-      finished_at: finishedAt.toISOString(), duration_ms: finishedAt - runStartedAt,
+      finished_at: finishedAt.toISOString(), duration_ms: finishedAt - processStart,
     }).catch(() => {});
   }
 }
