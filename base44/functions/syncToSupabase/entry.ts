@@ -3,6 +3,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 // Every Base44 entity that should be mirrored into Supabase.
 // Supabase table name = lowercase of the entity name (create matching tables with an `id` text primary key + jsonb columns).
 const ENTITIES = [
+  'User',
   'AirtableEmployeeRecord',
   'Employee',
   'EmployeeAirtableMatch',
