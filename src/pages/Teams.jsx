@@ -24,11 +24,14 @@ export default function Teams() {
 
   useEffect(() => { loadData(); }, []);
 
+  const [airtableEmployees, setAirtableEmployees] = useState([]);
+
   const loadData = async () => {
-    const [hierarchyRes, teamData, employeeData] = await Promise.all([
+    const [hierarchyRes, teamData, employeeData, airtableRes] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Team.list('name'),
       base44.entities.Employee.list('first_name'),
+      base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
     ]);
     const hierarchy = hierarchyRes.data || {};
     setCompanies(hierarchy.companies || []);
@@ -37,6 +40,31 @@ export default function Teams() {
     setDepartmentRoles(hierarchy.departmentRoles || []);
     setTeams(teamData);
     setEmployees((employeeData || []).filter(isNotResigned));
+    setAirtableEmployees((airtableRes.data?.records || []).map(r => ({
+      id: r.id,
+      airtable_record_id: r.airtable_record_id || r.id,
+      backend_id: r.backend_id,
+      full_name: r.fields?.['Full Name'] || [r.fields?.['First Name'], r.fields?.['Last Name']].filter(Boolean).join(' '),
+      employee_code: r.fields?.['Employee Code ID'] || r.fields?.['Employee Code'] || '',
+      email: r.fields?.Email || r.fields?.['Business email'] || '',
+    })));
+  };
+
+  // Resolve a team's members: prefer member_record_ids (set from schedule proposals,
+  // matched against Airtable records), and also include any local Employees tagged to the team.
+  const getTeamMembers = (team) => {
+    const memberIds = new Set((team.member_record_ids || []).map(String));
+    const fromAirtable = airtableEmployees.filter(emp =>
+      memberIds.has(String(emp.id)) ||
+      memberIds.has(String(emp.airtable_record_id)) ||
+      memberIds.has(String(emp.backend_id))
+    );
+    const fromLocal = employees.filter(emp => emp.team_id === team.id);
+    const byKey = new Map();
+    [...fromAirtable, ...fromLocal].forEach(emp => {
+      byKey.set(String(emp.airtable_record_id || emp.id), emp);
+    });
+    return Array.from(byKey.values());
   };
 
   const createTeam = async (e) => {
@@ -120,13 +148,15 @@ export default function Teams() {
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTeams.map(team => (
+        {filteredTeams.map(team => {
+          const members = getTeamMembers(team);
+          return (
           <SetupCard
             key={team.id}
             title={team.name}
             subtitle={
               <EmployeeListModal
-                employees={employees.filter(employee => employee.team_id === team.id)}
+                employees={members}
                 title={`${team.name} Employees`}
                 open={employeeModal === team.id}
                 onOpen={() => setEmployeeModal(team.id)}
@@ -135,13 +165,14 @@ export default function Teams() {
                 categories={{ company: companies, branch: branches, department: departments, department_role: departmentRoles, team: teams }}
               />
             }
-            count={employees.filter(employee => employee.team_id === team.id).length}
+            count={members.length}
           >
             <Button variant="secondary" size="sm" className="w-full" onClick={() => { setEditingTeam(team); setEditName(team.name); }}>
               Edit Team
             </Button>
           </SetupCard>
-        ))}
+          );
+        })}
       </div>
 
       {editingTeam && (

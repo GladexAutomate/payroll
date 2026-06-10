@@ -233,6 +233,32 @@ export default function ScheduleProposal() {
       assignments: effectiveAssignments,
       summary,
     });
+
+    // Save the chosen employees as the team's members so they appear on the Teams page.
+    const memberIds = selectedEmployees.map(emp => String(emp.airtable_record_id || emp.id));
+    const existingTeam = teams.find(t => cell(t.name) === cell(form.team_name));
+    if (existingTeam) {
+      await base44.entities.Team.update(existingTeam.id, {
+        member_record_ids: memberIds,
+        ...selectedOrgIds,
+        department_name: form.department_name,
+        leader_name: form.leader_name,
+        leader_email: form.leader_email,
+      });
+    } else if (form.team_name) {
+      await base44.entities.Team.create({
+        name: form.team_name,
+        ...selectedOrgIds,
+        department_name: form.department_name,
+        leader_name: form.leader_name,
+        leader_email: form.leader_email,
+        member_record_ids: memberIds,
+        status: 'active',
+      });
+    }
+    const refreshedTeams = await base44.entities.Team.list('name', 1000);
+    setTeams(refreshedTeams || []);
+
     setSaving(false);
     setSelectedIds([]);
     setAssignments({});
