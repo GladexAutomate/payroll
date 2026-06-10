@@ -72,21 +72,26 @@ export default function Reconciliation() {
   const handleRun = async () => {
     setRunning(true);
     setActiveRun({ processed: 0, total: 0, progress: 0 });
-    const res = await base44.functions.invoke('reconcilePeriod', {
+    const params = {
       period_start: periodStart,
       period_end: periodEnd,
       period_label: `${periodStart} – ${periodEnd}`,
       branch_filter: branchFilter,
-    });
-    if (res.data?.run_id) {
-      // Background processing started — start polling this run for live progress.
-      setActiveRun({ id: res.data.run_id, processed: 0, total: 0, progress: 0, status: 'processing' });
-      loadRuns();
-    } else {
+    };
+    const res = await base44.functions.invoke('reconcilePeriod', params);
+    if (!res.data?.run_id) {
       setRunning(false);
       setActiveRun(null);
       toast({ title: 'Reconciliation failed', description: res.data?.error || 'Could not start the run.', variant: 'destructive' });
+      return;
     }
+    // Run record created — start polling for live progress, then kick off processing.
+    setActiveRun({ id: res.data.run_id, processed: 0, total: 0, progress: 0, status: 'processing' });
+    loadRuns();
+    // Fire the processing call; it runs server-side to completion. We don't await its
+    // result for the UI (the poller drives the bar), but we surface failures if it returns.
+    base44.functions.invoke('reconcilePeriod', { ...params, action: 'process', run_id: res.data.run_id, started_at: new Date().toISOString() })
+      .catch(() => {});
   };
 
   return (

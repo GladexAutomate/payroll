@@ -125,9 +125,16 @@ Deno.serve(async (req) => {
 
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
     const branchScope = cleanText(branch_filter);
-    const runStartedAt = new Date();
 
-    // Create a history record up front so the UI can poll progress.
+    // Second step: run the heavy computation synchronously (awaited so the isolate stays
+    // alive). The client fires this right after creating the run, then polls for progress.
+    if (action === 'process') {
+      await processReconciliation({ base44, run: { id: body.run_id }, runStartedAt: new Date(body.started_at || Date.now()), period_start, period_end, period_label, branchScope });
+      return Response.json({ success: true, run_id: body.run_id, done: true });
+    }
+
+    // First step: create the history record up front so the UI can poll progress.
+    const runStartedAt = new Date();
     const run = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.create({
       period_start, period_end,
       period_label: period_label || `${period_start} – ${period_end}`,
@@ -137,14 +144,6 @@ Deno.serve(async (req) => {
       started_at: runStartedAt.toISOString(),
     }));
 
-    // Process in the background so the request returns the run id immediately and the
-    // UI can poll progress live instead of waiting for the whole computation.
-    const work = processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope });
-    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
-      EdgeRuntime.waitUntil(work.catch(() => {}));
-    } else {
-      work.catch(() => {});
-    }
     return Response.json({ success: true, run_id: run.id, started: true });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
