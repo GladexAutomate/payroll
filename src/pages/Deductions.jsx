@@ -37,21 +37,25 @@ export default function Deductions() {
 
   const loadData = async () => {
     setLoading(true);
-    const [list, emps, comps] = await Promise.all([
+    const [list, emps, comps, branches] = await Promise.all([
       base44.entities.EmployeeDeduction.list('-created_date', 500),
       base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
       base44.entities.Company.list('-created_date', 500),
+      base44.entities.Branch.list('-created_date', 1000),
     ]);
     setItems(list);
     const activeEmps = emps.filter(isActiveAirtableEmployee).sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b)));
     setEmployees(activeEmps);
     setTierMap(await buildRequestorTierMap(emps));
     setCompanies([...new Set(comps.map(c => c.name).filter(Boolean))].sort());
+    // Map each branch (from the Branch entity) to its company name via company_id.
+    const companyNameById = comps.reduce((m, c) => ({ ...m, [c.id]: c.name }), {});
     const byCompany = {};
-    comps.forEach(c => {
-      if (!c.name || !c.branch) return;
-      byCompany[c.name] = byCompany[c.name] || new Set();
-      byCompany[c.name].add(c.branch);
+    branches.forEach(b => {
+      const companyName = companyNameById[b.company_id];
+      if (!companyName || !b.name) return;
+      byCompany[companyName] = byCompany[companyName] || new Set();
+      byCompany[companyName].add(b.name);
     });
     setBranchesByCompany(Object.fromEntries(Object.entries(byCompany).map(([k, v]) => [k, [...v].sort()])));
     setLoading(false);
