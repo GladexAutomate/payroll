@@ -114,8 +114,20 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { period_start, period_end, period_label } = body;
+    const { period_start, period_end, period_label, branch_filter } = body;
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
+    const branchScope = cleanText(branch_filter);
+    const runStartedAt = new Date();
+
+    // Create a history record up front so the UI can poll progress.
+    const run = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.create({
+      period_start, period_end,
+      period_label: period_label || `${period_start} – ${period_end}`,
+      branch_filter: branchScope || 'all',
+      status: 'processing', progress: 0, processed: 0, total: 0,
+      run_by: cleanText(user.email),
+      started_at: runStartedAt.toISOString(),
+    }));
 
     // Editable payroll policy (singleton)
     const policyRows = await withRetry(() => base44.asServiceRole.entities.PayrollPolicy.filter({ key: 'default' }));
@@ -152,7 +164,10 @@ Deno.serve(async (req) => {
 
     const activeUploadIds = new Set(hiddenUploads.filter(u => !['deleting', 'deleted'].includes(u.status)).map(u => u.id));
     const logs = allLogs.filter(l => !l.upload_id || activeUploadIds.has(l.upload_id));
-    const employees = allEmployees.filter(isActiveEmployee);
+    const branchOf = (e) => cleanText(getFields(e).Branch || getFields(e).BRANCH);
+    const employees = allEmployees
+      .filter(isActiveEmployee)
+      .filter(e => !branchScope || branchScope === 'all' || branchOf(e).toLowerCase() === branchScope.toLowerCase());
 
     // Holiday lookup by date -> 'regular' | 'special'
     const holidayByDate = {};
@@ -257,6 +272,12 @@ Deno.serve(async (req) => {
     const recordsToCreate = [];
     const recordsToUpdate = [];
     const computedAt = new Date().toISOString();
+
+    // Running totals for the history record
+    let totalGross = 0, totalAllowances = 0, totalDeductions = 0, totalAbsentDays = 0;
+    let processed = 0;
+    const totalEmployees = employees.length;
+    await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.update(run.id, { total: totalEmployees }));
 
     for (const employee of employees) {
       const monthlySalary = getMonthlySalary(employee);
@@ -477,18 +498,52 @@ Deno.serve(async (req) => {
         computed_at: computedAt,
       };
 
+      totalGross += gross;
+      totalAllowances += money(allowanceTotal);
+      totalDeductions += money(chargeTotal);
+      totalAbsentDays += daysAbsent;
+
       const ex = existingByEmpId[employee.id];
       if (ex) recordsToUpdate.push({ id: ex.id, data: summary });
       else recordsToCreate.push(summary);
+
+      processed += 1;
+      // Update progress every 25 employees so the UI can show a live bar without spamming writes.
+      if (processed % 25 === 0 || processed === totalEmployees) {
+        await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
+          processed, progress: totalEmployees ? Math.round((processed / totalEmployees) * 100) : 100,
+        }).catch(() => {});
+      }
     }
 
-    await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToCreate);
-    for (const r of recordsToUpdate) {
-      await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.update(r.id, r.data));
-      await wait(350);
-    }
+    try {
+      await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToCreate);
+      for (const r of recordsToUpdate) {
+        await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.update(r.id, r.data));
+        await wait(350);
+      }
 
-    return Response.json({ success: true, count: employees.length, period_start, period_end });
+      const finishedAt = new Date();
+      await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
+        status: 'completed', progress: 100, processed: employees.length,
+        employee_count: employees.length,
+        total_gross: money(totalGross),
+        total_allowances: money(totalAllowances),
+        total_deductions: money(totalDeductions),
+        total_absent_days: totalAbsentDays,
+        finished_at: finishedAt.toISOString(),
+        duration_ms: finishedAt - runStartedAt,
+      }));
+
+      return Response.json({ success: true, run_id: run.id, count: employees.length, period_start, period_end });
+    } catch (writeError) {
+      const finishedAt = new Date();
+      await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
+        status: 'failed', error_message: writeError.message,
+        finished_at: finishedAt.toISOString(), duration_ms: finishedAt - runStartedAt,
+      }).catch(() => {});
+      throw writeError;
+    }
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

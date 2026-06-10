@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
-import ReconcileBar from '@/components/schedule/ReconcileBar';
+import ReconcileBar from '@/components/schedule/ReconcileBar.jsx';
 import { getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
@@ -50,8 +50,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [showActual, setShowActual] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
-  const [lastReconciledAt, setLastReconciledAt] = useState(null);
   const [teams, setTeams] = useState([]);
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -94,22 +92,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
     setLeaves(leaveData || []);
     setAttendanceLogs(logsData || []);
     setApprovedProposals(proposalData || []);
-  };
-
-  const handleReconcile = async () => {
-    setReconciling(true);
-    const res = await base44.functions.invoke('reconcilePeriod', {
-      period_start: periodStart,
-      period_end: periodEnd,
-      period_label: `${periodStart} – ${periodEnd}`,
-    });
-    setReconciling(false);
-    if (res.data?.success) {
-      setLastReconciledAt(format(new Date(), 'MMM d, HH:mm'));
-      toast({ title: 'Approved for payroll', description: `Reconciled ${res.data.count} employees. Payroll will use these results.` });
-    } else {
-      toast({ title: 'Reconcile failed', description: res.data?.error || 'Unknown error', variant: 'destructive' });
-    }
   };
 
   const employees = useMemo(() => records.map(record => ({
@@ -437,9 +419,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
             <ReconcileBar
               showActual={showActual}
               onToggleActual={() => setShowActual(s => !s)}
-              onReconcile={handleReconcile}
-              reconciling={reconciling}
-              lastReconciledAt={lastReconciledAt}
             />
             <LeaveNotices notices={notices} />
           </>

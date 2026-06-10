@@ -1,0 +1,87 @@
+{
+  "name": "ReconciliationRun",
+  "type": "object",
+  "properties": {
+    "period_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_label": {
+      "type": "string"
+    },
+    "branch_filter": {
+      "type": "string",
+      "description": "Branch name this run was scoped to, or 'all' for every branch"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "processing",
+        "completed",
+        "failed"
+      ],
+      "default": "processing"
+    },
+    "progress": {
+      "type": "number",
+      "default": 0,
+      "description": "Completion percentage"
+    },
+    "processed": {
+      "type": "number",
+      "default": 0,
+      "description": "Employees processed so far"
+    },
+    "total": {
+      "type": "number",
+      "default": 0,
+      "description": "Total employees to process"
+    },
+    "employee_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Employees reconciled in this run"
+    },
+    "total_gross": {
+      "type": "number",
+      "default": 0
+    },
+    "total_allowances": {
+      "type": "number",
+      "default": 0
+    },
+    "total_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "total_absent_days": {
+      "type": "number",
+      "default": 0
+    },
+    "run_by": {
+      "type": "string",
+      "description": "Email of the user who triggered the run"
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "duration_ms": {
+      "type": "number",
+      "default": 0
+    },
+    "error_message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "period_start",
+    "period_end"
+  ]
+}
