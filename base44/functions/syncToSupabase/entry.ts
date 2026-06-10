@@ -1,7 +1,9 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
-// Every Base44 entity that should be mirrored into Supabase.
-// Supabase table name = lowercase of the entity name (create matching tables with an `id` text primary key + jsonb columns).
+// All Base44 entities mirrored into Supabase.
+// Supabase table name = lowercase of the entity name. Missing tables are created
+// automatically at sync time, so to add a NEW entity to the sync you only need to
+// add its name to this list — no manual SQL required.
 const ENTITIES = [
   'EmployeeAccount',
   'AirtableEmployeeRecord',
@@ -81,6 +83,25 @@ async function upsertBatch(baseUrl, key, table, rows) {
   }
 }
 
+// Ensure a Supabase table exists by calling a SQL-exec RPC. Requires a one-time
+// `exec_sql` function in Supabase (see notes). Safe to call repeatedly (IF NOT EXISTS).
+async function ensureTable(baseUrl, key, table) {
+  const sql = `create table if not exists public.${table} (id text primary key, data jsonb);`;
+  const res = await fetch(`${restBase(baseUrl)}/rpc/exec_sql`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: sql }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ensureTable ${table} failed (${res.status}): ${text}`);
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -102,9 +123,14 @@ Deno.serve(async (req) => {
     for (const entity of ENTITIES) {
       const sdkEntity = base44.asServiceRole.entities[entity];
       if (!sdkEntity) { summary[entity] = 'skipped (no entity)'; continue; }
+      const table = tableName(entity);
 
       let synced = 0;
       try {
+        // Create the matching Supabase table on the fly if it doesn't exist yet.
+        // Non-fatal: if the exec_sql helper isn't installed, existing tables still sync.
+        try { await ensureTable(SUPABASE_URL, SUPABASE_SECRET_KEY, table); } catch (_e) { /* table likely exists */ }
+
         // Page through all records to avoid loading huge datasets at once.
         let skip = 0;
         const pageSize = 200;
@@ -115,7 +141,7 @@ Deno.serve(async (req) => {
           const rows = page.map((r) => ({ id: r.id, data: r }));
           for (let i = 0; i < rows.length; i += 100) {
             const chunk = rows.slice(i, i + 100);
-            await upsertBatch(SUPABASE_URL, SUPABASE_SECRET_KEY, tableName(entity), chunk);
+            await upsertBatch(SUPABASE_URL, SUPABASE_SECRET_KEY, table, chunk);
           }
           synced += page.length;
           skip += page.length;
