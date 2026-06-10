@@ -78,6 +78,26 @@
     },
     "notes": {
       "type": "string"
+    },
+    "chain_status": {
+      "type": "string",
+      "enum": [
+        "awaiting_employee",
+        "awaiting_mid",
+        "awaiting_hr",
+        "fully_signed",
+        "rejected"
+      ],
+      "default": "awaiting_employee",
+      "description": "Signed approval chain progress; must be fully_signed before atd_status can become active"
+    },
+    "approval_chain": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": [],
+      "description": "Signed steps: { step, required_tier, signer_name, signer_role, signature_url, signed_at }"
     }
   },
   "required": [

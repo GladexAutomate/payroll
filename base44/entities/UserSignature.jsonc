@@ -1,0 +1,13 @@
+{
+  "name": "UserSignature",
+  "type": "object",
+  "properties": {
+    "signature_url": {
+      "type": "string",
+      "description": "Saved drawn signature image URL for this user"
+    }
+  },
+  "required": [
+    "signature_url"
+  ]
+}

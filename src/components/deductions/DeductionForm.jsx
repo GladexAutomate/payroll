@@ -48,7 +48,9 @@ export default function DeductionForm({ kind, employees, companies = [], branche
       cutoffs_paid: 0,
       start_date: form.start_date || undefined,
       recurring: isDeduction ? false : !!form.recurring,
-      atd_status: isDeduction ? 'draft' : 'active',
+      atd_status: 'draft',
+      chain_status: 'awaiting_employee',
+      approval_chain: [],
       notes: form.notes,
     });
     onSaved();
@@ -127,7 +129,7 @@ export default function DeductionForm({ kind, employees, companies = [], branche
               {form.recurring && (
                 <div><label className="text-xs font-medium text-muted-foreground">Start Date</label><Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} className="mt-1" /></div>
               )}
-              <p className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg p-2.5">Recurring allowances are added every cutoff. For a fixed duration, uncheck recurring and set the number of cutoffs and the start date.</p>
+              <p className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg p-2.5">Recurring allowances are added every cutoff. For a fixed duration, uncheck recurring and set the number of cutoffs and the start date. The 3-step signature chain (employee → manager → HR Admin) must be completed before it goes active.</p>
             </>
           )}
 

@@ -191,13 +191,20 @@ Deno.serve(async (req) => {
     const runBranchNorm = normalizeText(run.branch_name);
     const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
     const allEmployeeDeductions = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-updated_date', 5000));
+    // Allowances/charges only apply after the 3-step signature chain is fully signed
+    // (employee → manager → HR Admin) AND the ATD lifecycle is active/approved.
     const allowanceRecords = allEmployeeDeductions.filter(r => {
       if (r.kind !== 'allowance') return false;
+      if (r.chain_status && r.chain_status !== 'fully_signed') return false;
       if (['cancelled', 'completed'].includes(r.atd_status)) return false;
       return r.atd_status === 'active' || r.recurring;
     });
     // Active ATD charges (cash advance, uniform, etc.) that reduce net pay.
-    const deductionRecords = allEmployeeDeductions.filter(r => r.kind === 'deduction' && r.atd_status === 'active');
+    const deductionRecords = allEmployeeDeductions.filter(r => {
+      if (r.kind !== 'deduction' || r.atd_status !== 'active') return false;
+      if (r.chain_status && r.chain_status !== 'fully_signed') return false;
+      return true;
+    });
 
     // Shared targeting test: branch match, started by period end, and not already fully paid.
     const appliesToRun = (row) => {

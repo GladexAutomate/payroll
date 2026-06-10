@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Check, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { useEmployeeScope } from '@/lib/useEmployeeScope';
+import { useCurrentTier } from '@/hooks/useCurrentTier';
+import { buildRequestorTierMap } from '@/lib/requestorTier';
+import ApprovalChain from '@/components/approval/ApprovalChain';
 
 export default function Leaves() {
-  const { selfOnly, ownEmployeeId, isOwn, loading: scopeLoading } = useEmployeeScope();
+  const { selfOnly, ownEmployeeId, isOwn, ownIds, loading: scopeLoading } = useEmployeeScope();
+  const current = useCurrentTier();
   const [requests, setRequests] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [tierMap, setTierMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('pending');
   const [showForm, setShowForm] = useState(false);
@@ -24,6 +29,7 @@ export default function Leaves() {
     ]);
     setRequests(reqs);
     setEmployees(emps);
+    setTierMap(await buildRequestorTierMap(emps));
     setLoading(false);
   };
 
@@ -32,13 +38,12 @@ export default function Leaves() {
     .filter(r => isOwn(r.employee_id))
     .filter(r => filterStatus === 'all' || r.status === filterStatus);
 
-  const handleApprove = async (id) => {
-    await base44.entities.LeaveRequest.update(id, { status: 'approved', approved_date: new Date().toISOString() });
-    loadData();
-  };
-
-  const handleReject = async (id) => {
-    await base44.entities.LeaveRequest.update(id, { status: 'rejected' });
+  // Persist a chain update and keep the legacy status in sync.
+  const handleChainUpdate = async (req, patch) => {
+    const update = { approval_chain: patch.approval_chain ?? req.approval_chain, chain_status: patch.chain_status };
+    if (patch.fully_signed) { update.status = 'approved'; update.approved_date = new Date().toISOString(); }
+    if (patch.rejected) update.status = 'rejected';
+    await base44.entities.LeaveRequest.update(req.id, update);
     loadData();
   };
 
@@ -73,7 +78,7 @@ export default function Leaves() {
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Days</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Reason</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
-                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Approval Chain</th>
               </tr>
             </thead>
             <tbody>
@@ -92,16 +97,15 @@ export default function Leaves() {
                     <td className="py-3.5 px-4 text-right">{req.days_count}</td>
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>
-                    <td className="py-3.5 px-4">
-                      {!selfOnly && req.status === 'pending' && (
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => handleApprove(req.id)} className="p-1.5 rounded hover:bg-green-50 text-green-600 transition-colors" title="Approve">
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleReject(req.id)} className="p-1.5 rounded hover:bg-red-50 text-red-600 transition-colors" title="Reject">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                    <td className="py-3.5 px-4 min-w-[260px]">
+                      {!current.loading && (
+                        <ApprovalChain
+                          record={req}
+                          requestorTier={tierMap[req.employee_id] || 'employees'}
+                          current={current}
+                          isOwnRecord={ownIds?.has(String(req.employee_id))}
+                          onUpdate={(patch) => handleChainUpdate(req, patch)}
+                        />
                       )}
                     </td>
                   </tr>
@@ -129,7 +133,7 @@ function LeaveForm({ employees, selfOnly, ownEmployeeId, onClose, onSaved }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await base44.entities.LeaveRequest.create({ ...form, days_count: days });
+    await base44.entities.LeaveRequest.create({ ...form, days_count: days, chain_status: 'awaiting_employee', approval_chain: [] });
     onSaved();
   };
 

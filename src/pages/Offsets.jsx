@@ -1,19 +1,24 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Check, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
 import { useEmployeeScope } from '@/lib/useEmployeeScope';
+import { useCurrentTier } from '@/hooks/useCurrentTier';
+import { buildRequestorTierMap } from '@/lib/requestorTier';
+import ApprovalChain from '@/components/approval/ApprovalChain';
 import OTBankTable from '@/components/offset/OTBankTable';
 
 export default function Offsets() {
-  const { selfOnly, ownEmployeeId, isOwn } = useEmployeeScope();
+  const { selfOnly, ownEmployeeId, isOwn, ownIds } = useEmployeeScope();
+  const current = useCurrentTier();
   const [requests, setRequests] = useState([]);
   const [overtime, setOvertime] = useState([]);
   const [offsets, setOffsets] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [tierMap, setTierMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('pending');
   const [showForm, setShowForm] = useState(false);
@@ -34,6 +39,7 @@ export default function Offsets() {
     setRequests(offs);
     setOvertime(ot);
     setEmployees(activeEmps);
+    setTierMap(await buildRequestorTierMap(emps));
     setLoading(false);
   };
 
@@ -44,16 +50,11 @@ export default function Offsets() {
     .filter(r => isOwn(r.employee_id))
     .filter(r => filterStatus === 'all' || r.status === filterStatus);
 
-  const handleApprove = async (req) => {
-    await base44.entities.OffsetRequest.update(req.id, {
-      status: 'approved',
-      approved_date: new Date().toISOString(),
-    });
-    loadData();
-  };
-
-  const handleReject = async (id) => {
-    await base44.entities.OffsetRequest.update(id, { status: 'rejected' });
+  const handleChainUpdate = async (req, patch) => {
+    const update = { approval_chain: patch.approval_chain ?? req.approval_chain, chain_status: patch.chain_status };
+    if (patch.fully_signed) { update.status = 'approved'; update.approved_date = new Date().toISOString(); }
+    if (patch.rejected) update.status = 'rejected';
+    await base44.entities.OffsetRequest.update(req.id, update);
     loadData();
   };
 
@@ -88,7 +89,7 @@ export default function Offsets() {
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Offset Hours</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Reason</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</th>
-                <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Approval Chain</th>
               </tr>
             </thead>
             <tbody>
@@ -105,16 +106,15 @@ export default function Offsets() {
                     <td className="py-3.5 px-4 text-right font-medium">{req.offset_hours}h</td>
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>
-                    <td className="py-3.5 px-4">
-                      {!selfOnly && req.status === 'pending' && (
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => handleApprove(req)} className="p-1.5 rounded hover:bg-green-50 text-green-600">
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleReject(req.id)} className="p-1.5 rounded hover:bg-red-50 text-red-600">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                    <td className="py-3.5 px-4 min-w-[260px]">
+                      {!current.loading && (
+                        <ApprovalChain
+                          record={req}
+                          requestorTier={tierMap[req.employee_id] || 'employees'}
+                          current={current}
+                          isOwnRecord={ownIds?.has(String(req.employee_id))}
+                          onUpdate={(patch) => handleChainUpdate(req, patch)}
+                        />
                       )}
                     </td>
                   </tr>
@@ -139,7 +139,7 @@ function OffsetForm({ employees, selfOnly, ownEmployeeId, onClose, onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const emp = employees.find(x => x.id === form.employee_id);
-    await base44.entities.OffsetRequest.create({ ...form, employee_name: emp ? getAirtableEmployeeName(emp) : '' });
+    await base44.entities.OffsetRequest.create({ ...form, employee_name: emp ? getAirtableEmployeeName(emp) : '', chain_status: 'awaiting_employee', approval_chain: [] });
     onSaved();
   };
 

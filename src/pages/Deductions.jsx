@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Trash2, Send, Check, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
 import DeductionForm from '@/components/deductions/DeductionForm';
 import GovernmentSettings from '@/components/deductions/GovernmentSettings';
+import { useCurrentTier } from '@/hooks/useCurrentTier';
+import { useEmployeeScope } from '@/lib/useEmployeeScope';
+import { buildRequestorTierMap } from '@/lib/requestorTier';
+import ApprovalChain from '@/components/approval/ApprovalChain';
 
 const peso = (v) => `₱${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -18,10 +22,13 @@ const ATD_BADGE = {
 };
 
 export default function Deductions() {
+  const current = useCurrentTier();
+  const { ownIds } = useEmployeeScope();
   const [items, setItems] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [branchesByCompany, setBranchesByCompany] = useState({});
+  const [tierMap, setTierMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('deduction');
   const [showForm, setShowForm] = useState(false);
@@ -36,7 +43,9 @@ export default function Deductions() {
       base44.entities.Company.list('-created_date', 500),
     ]);
     setItems(list);
-    setEmployees(emps.filter(isActiveAirtableEmployee).sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b))));
+    const activeEmps = emps.filter(isActiveAirtableEmployee).sort((a, b) => getAirtableEmployeeName(a).localeCompare(getAirtableEmployeeName(b)));
+    setEmployees(activeEmps);
+    setTierMap(await buildRequestorTierMap(emps));
     setCompanies([...new Set(comps.map(c => c.name).filter(Boolean))].sort());
     const byCompany = {};
     comps.forEach(c => {
@@ -56,18 +65,17 @@ export default function Deductions() {
     loadData();
   };
 
-  const sendATD = async (item) => {
-    await base44.entities.EmployeeDeduction.update(item.id, { atd_status: 'sent', atd_sent_date: new Date().toISOString() });
-    loadData();
-  };
-
-  const approveATD = async (item) => {
-    await base44.entities.EmployeeDeduction.update(item.id, { atd_status: 'active', atd_approved_date: new Date().toISOString() });
+  // Chain update; once fully signed, auto-activate the ATD/allowance.
+  const handleChainUpdate = async (item, patch) => {
+    const update = { approval_chain: patch.approval_chain ?? item.approval_chain, chain_status: patch.chain_status };
+    if (patch.fully_signed) { update.atd_status = 'active'; update.atd_approved_date = new Date().toISOString(); }
+    if (patch.rejected) update.atd_status = 'cancelled';
+    await base44.entities.EmployeeDeduction.update(item.id, update);
     loadData();
   };
 
   const cancelATD = async (item) => {
-    await base44.entities.EmployeeDeduction.update(item.id, { atd_status: 'cancelled' });
+    await base44.entities.EmployeeDeduction.update(item.id, { atd_status: 'cancelled', chain_status: 'rejected' });
     loadData();
   };
 
@@ -110,6 +118,7 @@ export default function Deductions() {
                   <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Start</th>
                   <th className="text-center py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">ATD</th>
                 </>}
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Approval Chain</th>
                 <th className="text-right py-3 px-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
@@ -135,15 +144,20 @@ export default function Deductions() {
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${ATD_BADGE[item.atd_status] || ATD_BADGE.draft}`}>{item.atd_status || 'draft'}</span>
                       </td>
                     </>}
+                    <td className="py-3.5 px-4 min-w-[260px]">
+                      {!current.loading && (
+                        <ApprovalChain
+                          record={item}
+                          requestorTier={tierMap[item.employee_id] || 'employees'}
+                          current={current}
+                          isOwnRecord={ownIds?.has(String(item.employee_id))}
+                          onUpdate={(patch) => handleChainUpdate(item, patch)}
+                        />
+                      )}
+                    </td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center justify-end gap-1">
-                        {tab === 'deduction' && item.atd_status === 'draft' && (
-                          <button onClick={() => sendATD(item)} title="Send ATD to employee" className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Send className="w-3.5 h-3.5" /></button>
-                        )}
-                        {tab === 'deduction' && item.atd_status === 'sent' && (
-                          <button onClick={() => approveATD(item)} title="Mark approved & activate" className="p-1.5 rounded hover:bg-green-50 text-green-600"><Check className="w-3.5 h-3.5" /></button>
-                        )}
-                        {tab === 'deduction' && ['sent', 'active', 'approved'].includes(item.atd_status) && (
+                        {['active', 'approved'].includes(item.atd_status) && (
                           <button onClick={() => cancelATD(item)} title="Cancel" className="p-1.5 rounded hover:bg-red-50 text-red-600"><X className="w-3.5 h-3.5" /></button>
                         )}
                         <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
