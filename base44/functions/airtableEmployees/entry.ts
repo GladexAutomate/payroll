@@ -146,6 +146,50 @@ Deno.serve(async (req) => {
       return await base44.asServiceRole.entities[MIRROR_ENTITY].list('-updated_date', limit);
     };
 
+    const accountFromRecord = (record) => {
+      const fields = record.fields || {};
+      return {
+        airtable_record_id: record.airtable_record_id,
+        full_name: record.full_name || fields['Full Name'] || '',
+        email: fields['Business email'] || fields['Email'] || '',
+        employee_code: fields['Employee Code'] || fields['Employee Code ID'] || record.employee_code || '',
+        generated_password: generatedPassword(fields),
+        job_title: clean(fields['Job Title']),
+        status: isActive(record) ? 'active' : 'inactive',
+        synced_at: new Date().toISOString(),
+      };
+    };
+
+    // Keep the dedicated EmployeeAccount table in sync with the Airtable mirror so
+    // User Management reads stored rows instead of recomputing on every open.
+    const syncEmployeeAccounts = async () => {
+      const mirror = await listMirrorRecords(5000);
+      const existing = await base44.asServiceRole.entities.EmployeeAccount.list('-updated_date', 5000);
+      const existingByAirtableId = new Map(existing.map((a) => [a.airtable_record_id, a]));
+      const seen = new Set();
+      const toCreate = [];
+
+      for (const record of mirror) {
+        seen.add(record.airtable_record_id);
+        const account = accountFromRecord(record);
+        const current = existingByAirtableId.get(record.airtable_record_id);
+        if (!current) {
+          toCreate.push(account);
+        } else {
+          const changed = ['full_name', 'email', 'employee_code', 'generated_password', 'job_title', 'status']
+            .some((k) => String(current[k] || '') !== String(account[k] || ''));
+          if (changed) await base44.asServiceRole.entities.EmployeeAccount.update(current.id, account);
+        }
+      }
+
+      for (let i = 0; i < toCreate.length; i += 50) {
+        await base44.asServiceRole.entities.EmployeeAccount.bulkCreate(toCreate.slice(i, i + 50));
+      }
+      for (const account of existing) {
+        if (!seen.has(account.airtable_record_id)) await base44.asServiceRole.entities.EmployeeAccount.delete(account.id);
+      }
+    };
+
     const syncFromAirtable = async () => {
       const orgFields = await getOrgFields();
       const existingMirror = await listMirrorRecords(5000);
@@ -195,6 +239,8 @@ Deno.serve(async (req) => {
           removed += 1;
         }
       }
+
+      await syncEmployeeAccounts();
 
       return { synced: airtableIds.size, created, updated, pending_updates: Math.max(recordsToUpdate.length - updated, 0), removed };
     };
@@ -345,20 +391,9 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'employeeAccounts') {
-      await syncFromAirtable();
-      const allRecords = await listMirrorRecords(5000);
-      const accounts = allRecords.map(record => {
-        const fields = record.fields || {};
-        return {
-          airtable_record_id: record.airtable_record_id,
-          full_name: record.full_name || fields['Full Name'],
-          email: fields['Business email'] || fields['Email'],
-          employee_code: fields['Employee Code'] || fields['Employee Code ID'] || record.employee_code,
-          generated_password: generatedPassword(fields),
-          job_title: fields['Job Title'],
-          status: isActive(record) ? 'active' : 'inactive',
-        };
-      });
+      // Read stored accounts (no recompute). Pass refresh:true to re-sync from Airtable first.
+      if (body.refresh) await syncFromAirtable();
+      const accounts = await base44.asServiceRole.entities.EmployeeAccount.list('full_name', 5000);
       return Response.json({ accounts });
     }
 

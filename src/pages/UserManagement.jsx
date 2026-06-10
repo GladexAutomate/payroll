@@ -11,11 +11,11 @@ export default function UserManagement() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
-  const loadAccounts = async () => {
+  const loadAccounts = async (refresh = false) => {
     setLoading(true);
     setError('');
     try {
-      const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccounts' });
+      const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeAccounts', refresh });
       setAccounts(res.data.accounts || []);
     } catch (err) {
       setError(err?.response?.data?.error || err?.message || 'Unable to load user accounts.');
@@ -44,7 +44,7 @@ export default function UserManagement() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Employee accounts are based on active Airtable employee records.</p>
         </div>
-        <Button onClick={loadAccounts} variant="outline" disabled={loading}>
+        <Button onClick={() => loadAccounts(true)} variant="outline" disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>

@@ -1,0 +1,41 @@
+{
+  "name": "EmployeeAccount",
+  "type": "object",
+  "properties": {
+    "airtable_record_id": {
+      "type": "string",
+      "description": "Source Airtable employee record ID"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "employee_code": {
+      "type": "string"
+    },
+    "generated_password": {
+      "type": "string",
+      "description": "Derived login password (initials + date hired)"
+    },
+    "job_title": {
+      "type": "string",
+      "description": "Airtable Job Title, used as the internal role"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "inactive"
+    },
+    "synced_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "airtable_record_id"
+  ]
+}
