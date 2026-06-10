@@ -137,6 +137,22 @@ Deno.serve(async (req) => {
       started_at: runStartedAt.toISOString(),
     }));
 
+    // Process in the background so the request returns the run id immediately and the
+    // UI can poll progress live instead of waiting for the whole computation.
+    const work = processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope });
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+      EdgeRuntime.waitUntil(work.catch(() => {}));
+    } else {
+      work.catch(() => {});
+    }
+    return Response.json({ success: true, run_id: run.id, started: true });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+});
+
+async function processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope }) {
+  try {
     // Editable payroll policy (singleton)
     const policyRows = await withRetry(() => base44.asServiceRole.entities.PayrollPolicy.filter({ key: 'default' }));
     const P = { ...POLICY_DEFAULTS, ...(policyRows[0] || {}) };
@@ -543,7 +559,6 @@ Deno.serve(async (req) => {
         duration_ms: finishedAt - runStartedAt,
       }));
 
-      return Response.json({ success: true, run_id: run.id, count: employees.length, period_start, period_end });
     } catch (writeError) {
       const finishedAt = new Date();
       await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
@@ -553,6 +568,10 @@ Deno.serve(async (req) => {
       throw writeError;
     }
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    const finishedAt = new Date();
+    await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
+      status: 'failed', error_message: error.message,
+      finished_at: finishedAt.toISOString(), duration_ms: finishedAt - runStartedAt,
+    }).catch(() => {});
   }
-});
+}

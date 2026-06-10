@@ -47,13 +47,24 @@ export default function Reconciliation() {
     setRuns(res.data?.runs || []);
   };
 
-  // Poll the active run for progress while it processes.
+  // Poll the active run for progress while it processes in the background.
   useEffect(() => {
     if (!running || !activeRun?.id) return;
     const interval = setInterval(async () => {
       const res = await base44.functions.invoke('reconcilePeriod', { action: 'list_runs' }).catch(() => null);
       const fresh = res?.data?.runs?.find(r => r.id === activeRun.id);
-      if (fresh) setActiveRun(fresh);
+      if (!fresh) return;
+      setActiveRun(fresh);
+      if (fresh.status === 'completed' || fresh.status === 'failed') {
+        setRunning(false);
+        setActiveRun(null);
+        if (fresh.status === 'completed') {
+          toast({ title: 'Reconciliation complete', description: `${fresh.employee_count} employees computed and saved.` });
+        } else {
+          toast({ title: 'Reconciliation failed', description: fresh.error_message || 'Unknown error', variant: 'destructive' });
+        }
+        loadRuns();
+      }
     }, 2000);
     return () => clearInterval(interval);
   }, [running, activeRun?.id]);
@@ -67,14 +78,15 @@ export default function Reconciliation() {
       period_label: `${periodStart} – ${periodEnd}`,
       branch_filter: branchFilter,
     });
-    setRunning(false);
-    setActiveRun(null);
-    if (res.data?.success) {
-      toast({ title: 'Reconciliation complete', description: `${res.data.count} employees computed and saved.` });
+    if (res.data?.run_id) {
+      // Background processing started — start polling this run for live progress.
+      setActiveRun({ id: res.data.run_id, processed: 0, total: 0, progress: 0, status: 'processing' });
+      loadRuns();
     } else {
-      toast({ title: 'Reconciliation failed', description: res.data?.error || 'Unknown error', variant: 'destructive' });
+      setRunning(false);
+      setActiveRun(null);
+      toast({ title: 'Reconciliation failed', description: res.data?.error || 'Could not start the run.', variant: 'destructive' });
     }
-    loadRuns();
   };
 
   return (
