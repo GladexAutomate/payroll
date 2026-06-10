@@ -542,9 +542,18 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
 
     try {
       await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToCreate);
+      // Update existing summaries with a small delay to avoid rate limits, while reporting
+      // progress back so the UI bar keeps moving through the save phase instead of looking frozen.
+      let saved = 0;
       for (const r of recordsToUpdate) {
         await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.update(r.id, r.data));
-        await wait(350);
+        saved += 1;
+        await wait(60);
+        if (saved % 25 === 0) {
+          await base44.asServiceRole.entities.ReconciliationRun.update(run.id, {
+            processed: Math.min(totalEmployees, recordsToCreate.length + saved),
+          }).catch(() => {});
+        }
       }
 
       const finishedAt = new Date();
