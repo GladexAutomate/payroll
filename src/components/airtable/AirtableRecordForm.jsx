@@ -3,6 +3,10 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AirtableSelectField from './AirtableSelectField';
+import FileUploadField from './FileUploadField';
+
+// Re-hosted file columns — rendered with upload/view/download UI, saved as arrays.
+const FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
 
 /**
  * Generic Airtable record form.
@@ -21,6 +25,7 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
     const v = {};
     for (const c of editableCols) {
       const raw = initialFields[c];
+      if (FILE_FIELDS.has(c)) { v[c] = Array.isArray(raw) ? raw : []; continue; }
       if (raw == null) v[c] = '';
       else if (Array.isArray(raw)) {
         // Attachments: keep as JSON string so user can see and we send as-is on save
@@ -48,6 +53,14 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
       if (extraSkip.has(col)) continue;
       const orig = initialFields[col];
       const curr = values[col];
+
+      // Re-hosted file fields: save the current array as-is (added/removed files).
+      if (FILE_FIELDS.has(col)) {
+        if (Array.isArray(curr) && (curr.length > 0 || (Array.isArray(orig) && orig.length > 0))) {
+          payload[col] = curr;
+        }
+        continue;
+      }
 
       // Skip attachment fields if unchanged (don't try to re-upload)
       if (Array.isArray(orig) && orig[0]?.url && curr === orig) continue;
@@ -121,15 +134,21 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {editableCols.map(col => {
+                const isFileField = FILE_FIELDS.has(col);
                 const isAttachment = Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
                 const meta = fieldsMeta[col];
                 const isCompanyField = col.toLowerCase() === 'company';
                 const isSingleSelect = meta?.type === 'singleSelect';
                 const isMultiSelect = meta?.type === 'multipleSelects';
                 return (
-                  <div key={col} className={isAttachment ? 'md:col-span-2' : ''}>
+                  <div key={col} className={(isFileField || isAttachment) ? 'md:col-span-2' : ''}>
                     <label className="text-xs font-medium text-muted-foreground">{col}</label>
-                    {isAttachment ? (
+                    {isFileField ? (
+                      <FileUploadField
+                        value={values[col]}
+                        onChange={(v) => handleChange(col, v)}
+                      />
+                    ) : isAttachment ? (
                       <div className="mt-1 text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
                         Attachment(s): {initialFields[col].map(a => a.filename).join(', ')}
                         <p className="mt-1 text-[10px]">Attachments must be managed directly in Airtable.</p>

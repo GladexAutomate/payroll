@@ -100,6 +100,29 @@ Deno.serve(async (req) => {
       return Response.json({ signedUrl });
     }
 
+    // ── UPLOAD FILES: re-host files dragged/uploaded from the edit form ─────────
+    // Receives an array of { filename, type, dataUrl(base64) }, stores each in
+    // private storage, and returns [{ filename, file_uri, type }] to merge into
+    // the record's file field. Any authenticated user may upload.
+    if (action === 'uploadFiles') {
+      const incoming = Array.isArray(body.files) ? body.files : [];
+      if (incoming.length === 0) return Response.json({ error: 'No files provided' }, { status: 400 });
+
+      const stored = [];
+      for (const f of incoming) {
+        const base64 = String(f.dataUrl || '').split(',').pop();
+        if (!base64) continue;
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const name = f.filename || 'document';
+        const type = f.type || resolveType({ filename: name }, '');
+        const file = new File([bytes], name, { type });
+        const uploaded = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file });
+        const fileUri = uploaded?.file_uri || uploaded?.data?.file_uri;
+        if (fileUri) stored.push({ filename: name, file_uri: fileUri, type });
+      }
+      return Response.json({ files: stored });
+    }
+
     // Extraction (prepare / processBatch) writes data and is admin-only.
     if (user.role !== 'admin') return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
 
