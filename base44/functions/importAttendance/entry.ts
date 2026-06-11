@@ -5,8 +5,8 @@ const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct',
 
 // How many attendance records to process per polling request. Kept small so a
 // single batch never trips the per-app API rate limit, even when every record
-// is an update (the most expensive path on a re-upload).
-const BATCH_SIZE = 120;
+// is an update (the most expensive path — updates are one API call each).
+const BATCH_SIZE = 40;
 
 const isRateLimit = (err) => {
   const msg = String(err?.message || err);
@@ -231,19 +231,55 @@ async function processBatch(base44, uploadId, offset) {
 
   if (batch.length === 0) {
     const finalCount = upload.created_count || 0;
+    const finalUpdated = upload.updated_count || 0;
     await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
       status: 'success', progress: 100, processed_rows: total,
-      records_imported: finalCount, notes: `${finalCount} records imported`,
+      records_imported: finalCount + finalUpdated,
+      notes: `${finalCount} created, ${finalUpdated} updated`,
     });
     return { done: true, phase: 'create', processed: total, total };
   }
 
-  let created = 0;
-  const CREATE_BATCH = 100;
-  for (let i = 0; i < batch.length; i += CREATE_BATCH) {
-    const slice = batch.slice(i, i + CREATE_BATCH);
+  // Upsert: look up existing logs for this batch's employees+dates, then
+  // update the ones that already exist and create only the new ones. Manually
+  // edited logs are left untouched so HR corrections aren't overwritten.
+  const empIds = [...new Set(batch.map(r => r.employee_id))];
+  const dates = [...new Set(batch.map(r => r.date))];
+  let existing = [];
+  {
     let attempts = 0;
-    while (attempts < 6) {
+    while (attempts < 8) {
+      try {
+        existing = await base44.asServiceRole.entities.AttendanceLog.filter(
+          { employee_id: { $in: empIds }, date: { $in: dates } }, '', 5000
+        );
+        break;
+      } catch (err) {
+        attempts++;
+        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
+        throw err;
+      }
+    }
+  }
+  const existingMap = {};
+  for (const log of existing) existingMap[`${log.employee_id}|${log.date}`] = log;
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const rec of batch) {
+    const match = existingMap[`${rec.employee_id}|${rec.date}`];
+    if (match) {
+      if (!match.is_manually_edited) toUpdate.push({ id: match.id, rec });
+    } else {
+      toCreate.push(rec);
+    }
+  }
+
+  let created = 0;
+  for (let i = 0; i < toCreate.length; i += 100) {
+    const slice = toCreate.slice(i, i + 100);
+    let attempts = 0;
+    while (attempts < 8) {
       try { await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice); created += slice.length; break; }
       catch (err) {
         attempts++;
@@ -253,15 +289,36 @@ async function processBatch(base44, uploadId, offset) {
     }
   }
 
+  let updated = 0;
+  for (const { id, rec } of toUpdate) {
+    let attempts = 0;
+    while (attempts < 8) {
+      try { await base44.asServiceRole.entities.AttendanceLog.update(id, rec); updated += 1; break; }
+      catch (err) {
+        // Record vanished since we read it (concurrent delete) — create it fresh instead.
+        if (String(err?.message || err).toLowerCase().includes('not found')) {
+          try { await base44.asServiceRole.entities.AttendanceLog.create(rec); created += 1; } catch (_e) { /* skip */ }
+          break;
+        }
+        attempts++;
+        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
+        throw err;
+      }
+    }
+    await new Promise(r => setTimeout(r, 60)); // gentle pacing to avoid rate limits
+  }
+
   const newProcessed = Math.min(offset + batch.length, total);
   const newCreated = (upload.created_count || 0) + created;
+  const newUpdated = (upload.updated_count || 0) + updated;
   const done = newProcessed >= total;
 
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-    processed_rows: newProcessed, created_count: newCreated,
+    processed_rows: newProcessed, created_count: newCreated, updated_count: newUpdated,
     progress: Math.round((newProcessed / total) * 100),
     ...(done ? {
-      status: 'success', records_imported: newCreated, notes: `${newCreated} records imported`,
+      status: 'success', records_imported: newCreated + newUpdated,
+      notes: `${newCreated} created, ${newUpdated} updated`,
     } : {}),
   });
 

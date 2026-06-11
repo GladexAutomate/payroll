@@ -150,7 +150,7 @@ export default function AttendanceUpload() {
         finishFromRecord(rec);
         return;
       }
-      offset = data.nextOffset ?? (offset + 120);
+      offset = data.nextOffset ?? (offset + 40);
     }
   };
 
