@@ -46,13 +46,12 @@ export default function PayrollRunDetail({ run, onClose }) {
     const daysWorked = Number(record.days_worked) || 0;
     return daysWorked > 0 ? daysWorked * 8 : Number(record.total_hours) || 0;
   };
-  const grossForRecord = (record) => {
-    const basic = Number(record.basic_salary) || 0;
-    const hours = payrollHoursForRecord(record);
-    return basic > 0 ? (basic / 26 / 8) * hours : Number(record.gross_pay) || 0;
-  };
+  // Trust the reconciled (and possibly HR-edited) figures stored on the record.
+  const grossForRecord = (record) => Number(record.gross_pay) || 0;
   const deductionsForRecord = (record) => Number(record.total_deductions) || 0;
-  const netForRecord = (record) => grossForRecord(record) - deductionsForRecord(record);
+  const netForRecord = (record) => Number(record.net_pay) != null
+    ? Number(record.net_pay)
+    : grossForRecord(record) - deductionsForRecord(record);
   const heldCount = records.length - activeRecords.length;
   const totals = activeRecords.reduce((sum, record) => ({
     gross: sum.gross + grossForRecord(record),

@@ -38,7 +38,7 @@ export default function Payroll() {
     if (!silent) setLoading(false);
   };
 
-  const handleCompute = async (run, reconcile = false) => {
+  const handleCompute = async (run) => {
     setComputing(run.id);
     setRuns(prev => prev.map(item => item.id === run.id ? {
       ...item,
@@ -48,12 +48,12 @@ export default function Payroll() {
       compute_total: item.employee_count || 0
     } : item));
 
-    base44.functions.invoke('computePayroll', { payroll_run_id: run.id, reconcile })
+    base44.functions.invoke('computePayroll', { payroll_run_id: run.id })
       .then(() => loadRuns({ silent: true }))
       .catch(error => {
         setDialog({
-          title: 'Payroll computation failed',
-          description: error?.response?.data?.error || error?.message || 'Unable to compute payroll. Please retry.',
+          title: 'Payroll generation failed',
+          description: error?.response?.data?.error || error?.message || 'Unable to build payroll. Please retry.',
         });
         loadRuns({ silent: true });
       })
@@ -62,10 +62,10 @@ export default function Payroll() {
 
   const handleRecompute = (run) => {
     setDialog({
-      title: 'Recompute payroll?',
-      description: `Recompute ${run.period_label}? This regenerates payroll records from the saved attendance summaries.`,
-      confirmLabel: 'Recompute',
-      onConfirm: () => { setDialog(null); handleCompute(run, false); },
+      title: 'Rebuild payroll?',
+      description: `Rebuild ${run.period_label} from its reconciled result? This regenerates payroll records from the (possibly edited) reconciliation.`,
+      confirmLabel: 'Rebuild',
+      onConfirm: () => { setDialog(null); handleCompute(run); },
     });
   };
 
@@ -179,7 +179,7 @@ export default function Payroll() {
                           onClick={() => handleCompute(run)}
                           disabled={computing === run.id || run.status === 'computing'}
                           className="p-1.5 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
-                          title="Compute payroll"
+                          title="Build payroll from reconciled result"
                         >
                           <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
@@ -189,7 +189,7 @@ export default function Payroll() {
                           onClick={() => handleRecompute(run)}
                           disabled={computing === run.id}
                           className="p-1.5 rounded hover:bg-amber-50 text-amber-600 hover:text-amber-700 transition-colors disabled:opacity-50"
-                          title="Recompute payroll"
+                          title="Rebuild from reconciled result"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
@@ -248,98 +248,94 @@ export default function Payroll() {
 }
 
 function CreatePayrollModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({
-    period_label: '',
-    period_start: '',
-    period_end: '',
-    pay_date: '',
-    branch_id: '',
-    branch_name: ''
-  });
-  const [branches, setBranches] = useState([]);
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const [reconciledRuns, setReconciledRuns] = useState([]);
+  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [selectedRunId, setSelectedRunId] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
+  // Pull completed reconciliation runs — the payroll basis is chosen from this history.
   useEffect(() => {
-    base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000).then(data => {
-      const branchNames = [...new Set(data
-        .map(employee => employee.branch || employee.fields?.Branch)
-        .filter(Boolean)
-        .map(branch => String(branch).trim())
-      )].sort((a, b) => a.localeCompare(b));
-      setBranches(branchNames.map(name => ({ id: name, name })));
-    });
+    setLoadingRuns(true);
+    base44.functions.invoke('reconcilePeriod', { action: 'list_runs' })
+      .then(res => {
+        const runs = (res.data?.runs || []).filter(r => r.status === 'completed');
+        setReconciledRuns(runs);
+      })
+      .finally(() => setLoadingRuns(false));
   }, []);
+
+  const selected = reconciledRuns.find(r => r.id === selectedRunId);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await base44.entities.PayrollRun.create({ ...form, status: 'draft' });
+    if (!selected) return;
+    setSubmitting(true);
+    const branchName = selected.branch_filter && selected.branch_filter !== 'all' ? selected.branch_filter : '';
+    await base44.entities.PayrollRun.create({
+      period_label: selected.period_label || `${selected.period_start} – ${selected.period_end}`,
+      period_start: selected.period_start,
+      period_end: selected.period_end,
+      pay_date: payDate,
+      branch_id: branchName,
+      branch_name: branchName,
+      status: 'draft',
+    });
     onCreated();
   };
 
-  const handleBranchChange = (branchId) => {
-    const branch = branches.find(item => item.id === branchId);
-    setForm(prev => ({
-      ...prev,
-      branch_id: branch?.id || '',
-      branch_name: branch?.name || ''
-    }));
-  };
-
-  // Auto-fill period label. Parse YYYY-MM-DD as a local date (append T00:00:00) so the
-  // day is never shifted by timezone conversion.
-  const autoLabel = () => {
-    if (form.period_start && form.period_end) {
-      const s = format(new Date(`${form.period_start}T00:00:00`), 'MMM d');
-      const e = format(new Date(`${form.period_end}T00:00:00`), 'MMM d, yyyy');
-      set('period_label', `${s} – ${e}`);
-    }
-  };
+  const fmtPeso = (v) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold">Create Payroll Run</h3>
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="font-semibold">New Payroll Run</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Choose a reconciled result as the payroll basis.</p>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Branch*</label>
-            <select
-              value={form.branch_id}
-              onChange={e => handleBranchChange(e.target.value)}
-              required
-              className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="">Choose branch first...</option>
-              {branches.map(branch => (
-                <option key={branch.id} value={branch.id}>{branch.name}</option>
-              ))}
-            </select>
-            {!form.branch_id && <p className="mt-1 text-[11px] text-muted-foreground">Select a branch before completing payroll details.</p>}
+            <label className="text-xs font-medium text-muted-foreground">Reconciled result*</label>
+            {loadingRuns ? (
+              <div className="mt-2 h-9 bg-muted rounded animate-pulse" />
+            ) : reconciledRuns.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">No completed reconciliations yet. Run a reconciliation first, then come back here.</p>
+            ) : (
+              <select
+                value={selectedRunId}
+                onChange={e => setSelectedRunId(e.target.value)}
+                required
+                className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Choose a reconciled period...</option>
+                {reconciledRuns.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.period_label} · {r.branch_filter || 'all'} · {r.employee_count || 0} emp
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Period Start*</label>
-              <Input type="date" value={form.period_start} onChange={e => { set('period_start', e.target.value); }} onBlur={autoLabel} required disabled={!form.branch_id} className="mt-1" />
+          {selected && (
+            <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
+              <p className="font-medium">{selected.period_label}</p>
+              <p className="text-xs text-muted-foreground">{selected.period_start} → {selected.period_end} · {selected.branch_filter || 'all'} branch</p>
+              <div className="flex justify-between text-xs pt-1">
+                <span className="text-muted-foreground">{selected.employee_count || 0} employees</span>
+                <span className="font-medium">{fmtPeso(selected.total_gross)} gross</span>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Period End*</label>
-              <Input type="date" value={form.period_end} onChange={e => set('period_end', e.target.value)} onBlur={autoLabel} required disabled={!form.branch_id} className="mt-1" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Period Label*</label>
-            <Input value={form.period_label} onChange={e => set('period_label', e.target.value)} required disabled={!form.branch_id} className="mt-1" placeholder="e.g. May 1–15, 2026" />
-          </div>
+          )}
+
           <div>
             <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
-            <Input type="date" value={form.pay_date} onChange={e => set('pay_date', e.target.value)} disabled={!form.branch_id} className="mt-1" />
+            <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="mt-1" />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!form.branch_id}>Create Run</Button>
+            <Button type="submit" disabled={!selected || submitting}>Create Run</Button>
           </div>
         </form>
       </div>

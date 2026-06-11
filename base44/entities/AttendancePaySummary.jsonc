@@ -88,7 +88,46 @@
     },
     "other_deductions": {
       "type": "number",
+      "default": 0,
+      "description": "Active ATD charges (cash advance, uniform, etc.) for this cutoff"
+    },
+    "sss_employee": {
+      "type": "number",
       "default": 0
+    },
+    "sss_employer": {
+      "type": "number",
+      "default": 0
+    },
+    "philhealth_employee": {
+      "type": "number",
+      "default": 0
+    },
+    "philhealth_employer": {
+      "type": "number",
+      "default": 0
+    },
+    "pagibig_employee": {
+      "type": "number",
+      "default": 0
+    },
+    "pagibig_employer": {
+      "type": "number",
+      "default": 0
+    },
+    "withholding_tax": {
+      "type": "number",
+      "default": 0
+    },
+    "total_deductions": {
+      "type": "number",
+      "default": 0,
+      "description": "Sum of all employee deductions for this cutoff"
+    },
+    "net_pay": {
+      "type": "number",
+      "default": 0,
+      "description": "Gross + allowances - total deductions"
     },
     "thirteenth_month_accrual": {
       "type": "number",
@@ -121,6 +160,18 @@
     "leave_pay": {
       "type": "number",
       "default": 0
+    },
+    "manually_edited": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when HR manually adjusted this record on the reconciliation results"
+    },
+    "edited_by": {
+      "type": "string",
+      "description": "Email of the HR user who last edited this record"
+    },
+    "edited_at": {
+      "type": "string"
     },
     "computed_at": {
       "type": "string"

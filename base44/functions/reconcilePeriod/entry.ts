@@ -121,6 +121,61 @@ function nightDiffHours(timeIn, timeOut, startHm, endHm) {
   return overlapMs / 3600000;
 }
 
+function normalizeText(value) {
+  const raw = Array.isArray(value) ? value.join(' ') : value;
+  return cleanText(raw).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Statutory contribution helpers — kept identical to functions/computePayroll so reconcile
+// and payroll always produce the same numbers.
+function getSSSContribution(monthlySalary, policy) {
+  const maxEE = Number(policy?.sss_max_employee) || 900;
+  const maxER = Number(policy?.sss_max_employer) || 1900;
+  const table = [
+    [4249.99, 180, 380], [4749.99, 202.5, 427.5], [5249.99, 225, 475], [5749.99, 247.5, 522.5],
+    [6249.99, 270, 570], [6749.99, 292.5, 617.5], [7249.99, 315, 665], [7749.99, 337.5, 712.5],
+    [8249.99, 360, 760], [8749.99, 382.5, 807.5], [9249.99, 405, 855], [9749.99, 427.5, 902.5],
+    [10249.99, 450, 950], [10749.99, 472.5, 997.5], [11249.99, 495, 1045], [11749.99, 517.5, 1092.5],
+    [12249.99, 540, 1140], [12749.99, 562.5, 1187.5], [13249.99, 585, 1235], [13749.99, 607.5, 1282.5],
+    [14249.99, 630, 1330], [14749.99, 652.5, 1377.5], [15249.99, 675, 1425], [15749.99, 697.5, 1472.5],
+    [16249.99, 720, 1520], [16749.99, 742.5, 1567.5], [17249.99, 765, 1615], [17749.99, 787.5, 1662.5],
+    [18249.99, 810, 1710], [18749.99, 832.5, 1757.5], [19249.99, 855, 1805], [19749.99, 877.5, 1852.5],
+    [20249.99, 900, 1900],
+  ];
+  if (monthlySalary < 4250) return { employee: 180, employer: 380 };
+  for (const [cap, ee, er] of table) if (monthlySalary <= cap) return { employee: Math.min(ee, maxEE), employer: Math.min(er, maxER) };
+  return { employee: maxEE, employer: maxER };
+}
+
+function getPhilHealthContribution(monthlySalary, policy) {
+  const rate = Number(policy?.philhealth_rate) || 0.05;
+  const floor = Number(policy?.philhealth_salary_floor) || 10000;
+  const ceiling = Number(policy?.philhealth_salary_ceiling) || 100000;
+  const bracket = Math.min(Math.max(monthlySalary, floor), ceiling);
+  const total = bracket * rate;
+  return { employee: total / 2, employer: total / 2 };
+}
+
+function getPagIBIGContribution(monthlySalary, policy) {
+  const rate = Number(policy?.pagibig_rate) || 0.02;
+  const maxPerSide = Number(policy?.pagibig_max_per_side) || 100;
+  const minPerSide = Number(policy?.pagibig_min_per_side) || 0;
+  const clamp = (v) => Math.min(Math.max(v, minPerSide), maxPerSide);
+  if (monthlySalary <= 1500) return { employee: clamp(monthlySalary * 0.01), employer: clamp(monthlySalary * 0.02) };
+  return { employee: clamp(monthlySalary * rate), employer: clamp(monthlySalary * rate) };
+}
+
+// 2026 PH Monthly Withholding Tax Table
+function computeMonthlyWithholdingTax(monthlyTaxableIncome) {
+  const income = Number(monthlyTaxableIncome) || 0;
+  if (income <= 20833) return 0;
+  if (income <= 33332) return (income - 20833) * 0.15;
+  if (income <= 66666) return 1875 + (income - 33333) * 0.20;
+  if (income <= 166666) return 8541.80 + (income - 66667) * 0.25;
+  if (income <= 666666) return 33541.80 + (income - 166667) * 0.30;
+  return 183541.80 + (income - 666667) * 0.35;
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -200,6 +255,18 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     await wait(300);
     // Active allowances & ATD charges
     const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-created_date', 5000));
+    await wait(300);
+    // Per-employee government contribution toggles (SSS / PhilHealth / Pag-IBIG)
+    const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
+    const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
+
+    // Statutory contributions + withholding tax are charged ONLY on the 2nd cutoff
+    // (period starting on/after the 16th), identical to computePayroll.
+    const periodStartDay = period_start ? (Number(String(period_start).split('-')[2]) || 1) : 1;
+    const isSecondCutoff = periodStartDay >= 16;
+    const cutoffFactor = isSecondCutoff ? 1 : 0;
+    const branchScopeNorm = normalizeText(branchScope === 'all' ? '' : branchScope);
+    const periodEndTime = period_end ? new Date(period_end).getTime() : null;
 
     const activeUploadIds = new Set(hiddenUploads.filter(u => !['deleting', 'deleted'].includes(u.status)).map(u => u.id));
     const logs = allLogs.filter(l => !l.upload_id || activeUploadIds.has(l.upload_id));
@@ -260,23 +327,35 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       offsetByKey[key][o.offset_date] = (offsetByKey[key][o.offset_date] || 0) + (Number(o.offset_hours) || 0);
     });
 
-    // Allowances & active ATD charges per employee key
+    // Allowances & active ATD charges per employee — mirrors computePayroll's targeting rules:
+    // branch match, started by period end, not fully paid, and (for charges) cap at outstanding balance.
+    // Allowances/charges only apply once the 3-step signature chain is fully_signed.
+    const appliesToRun = (row) => {
+      const rowBranch = normalizeText(row.branch);
+      if (rowBranch && branchScopeNorm && rowBranch !== branchScopeNorm) return false;
+      if (row.start_date && periodEndTime != null && new Date(row.start_date).getTime() > periodEndTime) return false;
+      if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return false;
+      return true;
+    };
     const allowanceByKey = {};
     const chargeByKey = {};
     adjustments.forEach(a => {
       const key = cleanText(a.employee_id);
       if (!key) return;
-      if (a.kind === 'allowance' && (a.atd_status === 'active' || a.recurring)) {
-        // Recurring allowances apply every cutoff once started; respect start_date if set
-        const started = !a.start_date || a.start_date <= period_end;
-        if (started) allowanceByKey[key] = (allowanceByKey[key] || 0) + (Number(a.amount_per_cutoff) || 0);
-      } else if (a.kind === 'deduction' && a.atd_status === 'active') {
-        // Only deduct if started and not yet completed
-        const started = !a.start_date || a.start_date <= period_end;
-        const remaining = a.recurring ? Infinity : Math.max(0, (Number(a.total_cutoffs) || 0) - (Number(a.cutoffs_paid) || 0));
-        if (started && remaining > 0) {
-          chargeByKey[key] = (chargeByKey[key] || 0) + (Number(a.amount_per_cutoff) || 0);
+      const chainOk = !a.chain_status || a.chain_status === 'fully_signed';
+      const amount = Number(a.amount_per_cutoff) || 0;
+      if (amount <= 0 || !chainOk || !appliesToRun(a)) return;
+      if (a.kind === 'allowance') {
+        if (['cancelled', 'completed'].includes(a.atd_status)) return;
+        if (a.atd_status === 'active' || a.recurring) {
+          allowanceByKey[key] = (allowanceByKey[key] || 0) + amount;
         }
+      } else if (a.kind === 'deduction' && a.atd_status === 'active') {
+        // Don't deduct more than the outstanding balance on a fixed-total charge.
+        const total = Number(a.total_amount) || 0;
+        const paid = (Number(a.cutoffs_paid) || 0) * amount;
+        const applied = total > 0 ? Math.min(amount, Math.max(total - paid, 0)) : amount;
+        if (applied > 0) chargeByKey[key] = (chargeByKey[key] || 0) + applied;
       }
     });
 
@@ -502,6 +581,25 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       const thirteenth = P.thirteenth_month_enabled ? (earnedPay / 12) : 0;
       const gross = money(earnedPay + allowanceTotal);
 
+      // --- Statutory contributions + withholding tax (2nd cutoff only) ---
+      const gov = govByEmp[employee.id] || {};
+      const sss = (gov.sss_enabled !== false) ? getSSSContribution(monthlySalary, P) : { employee: 0, employer: 0 };
+      const ph = (gov.philhealth_enabled !== false) ? getPhilHealthContribution(monthlySalary, P) : { employee: 0, employer: 0 };
+      const pi = (gov.pagibig_enabled !== false) ? getPagIBIGContribution(monthlySalary, P) : { employee: 0, employer: 0 };
+      const sssEE = sss.employee * cutoffFactor;
+      const sssER = sss.employer * cutoffFactor;
+      const phEE = ph.employee * cutoffFactor;
+      const phER = ph.employer * cutoffFactor;
+      const piEE = pi.employee * cutoffFactor;
+      const piER = pi.employer * cutoffFactor;
+      const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
+      const withholdingTax = computeMonthlyWithholdingTax(monthlyTaxable) * cutoffFactor;
+
+      // Total employee deductions = statutory + tax + attendance penalties + ATD charges.
+      const totalEmpDeductions = sssEE + phEE + piEE + withholdingTax
+        + latesDeduction + undertimeDeduction + absentDeduction + chargeTotal;
+      const netPay = gross - totalEmpDeductions;
+
       const summary = {
         period_start,
         period_end,
@@ -525,6 +623,15 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         absent_deduction: money(absentDeduction),
         allowances: money(allowanceTotal),
         other_deductions: money(chargeTotal),
+        sss_employee: money(sssEE),
+        sss_employer: money(sssER),
+        philhealth_employee: money(phEE),
+        philhealth_employer: money(phER),
+        pagibig_employee: money(piEE),
+        pagibig_employer: money(piER),
+        withholding_tax: money(withholdingTax),
+        total_deductions: money(totalEmpDeductions),
+        net_pay: money(netPay),
         thirteenth_month_accrual: money(thirteenth),
         days_worked: daysWorked,
         days_absent: daysAbsent,
@@ -538,7 +645,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
 
       totalGross += gross;
       totalAllowances += money(allowanceTotal);
-      totalDeductions += money(chargeTotal);
+      totalDeductions += money(totalEmpDeductions);
       totalAbsentDays += daysAbsent;
 
       recordsToSave.push(summary);
