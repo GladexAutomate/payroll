@@ -20,10 +20,16 @@ const statusLabels = {
   rejected: 'Rejected',
 };
 
+const statusBadge = {
+  pending_hr_review: 'bg-yellow-100 text-yellow-700',
+  approved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+};
+
 export default function ScheduleRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('pending_hr_review');
   const [expandedId, setExpandedId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [shiftTemplates, setShiftTemplates] = useState([]);
@@ -42,6 +48,7 @@ export default function ScheduleRequests() {
   };
 
   const filtered = useMemo(() => filter === 'all' ? requests : requests.filter(req => req.status === filter), [requests, filter]);
+  const counts = useMemo(() => requests.reduce((m, r) => ({ ...m, all: (m.all || 0) + 1, [r.status]: (m[r.status] || 0) + 1 }), {}), [requests]);
 
   const updateStatus = async (request, status) => {
     setBusyId(request.id);
@@ -72,6 +79,7 @@ export default function ScheduleRequests() {
               className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${filter === item.key ? 'bg-blue-700 border-blue-700 text-white' : 'border-slate-300 text-slate-600 hover:text-slate-900'}`}
             >
               {item.label}
+              <span className={`ml-1.5 ${filter === item.key ? 'text-blue-100' : 'text-slate-400'}`}>{counts[item.key] || 0}</span>
             </button>
           ))}
         </div>
@@ -96,7 +104,7 @@ export default function ScheduleRequests() {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-base">{request.team_name}</h3>
-                  <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-bold">{statusLabels[request.status] || request.status}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusBadge[request.status] || 'bg-slate-100 text-slate-600'}`}>{statusLabels[request.status] || request.status}</span>
                 </div>
                 <p className="text-sm text-slate-600 mt-1">{request.company_name || 'Company'} {request.branch_name ? `/ ${request.branch_name}` : ''} {request.department_name ? `/ ${request.department_name}` : ''}</p>
                 <p className="text-sm text-slate-700 mt-1 flex items-center gap-1"><Calendar className="w-4 h-4" /> {request.period_start ? format(parseISO(request.period_start), 'MMM d') : '—'} - {request.period_end ? format(parseISO(request.period_end), 'd, yyyy') : '—'}</p>
