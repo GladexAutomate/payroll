@@ -56,16 +56,29 @@ async function loadAllAirtableRecords(apiKey) {
   return out;
 }
 
+// Best-effort MIME type so PDFs are stored + served correctly (viewable inline).
+function resolveType(file, blobType) {
+  const name = String(file.filename || '').toLowerCase();
+  if (file.type) return file.type;
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.doc')) return 'application/msword';
+  if (name.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return blobType || 'application/octet-stream';
+}
+
 // Download a file from Airtable's (temporary) URL and re-host it permanently in Base44.
 async function rehostFile(base44, apiKey, file) {
   const resp = await fetch(file.url, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!resp.ok) throw new Error(`download failed (${resp.status})`);
   const blob = await resp.blob();
-  const named = new File([blob], file.filename || 'document', { type: file.type || blob.type || 'application/octet-stream' });
+  const type = resolveType(file, blob.type);
+  const named = new File([blob], file.filename || 'document', { type });
   const uploaded = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: named });
   const fileUri = uploaded?.file_uri || uploaded?.data?.file_uri;
   if (!fileUri) throw new Error('upload returned no file_uri');
-  return { filename: file.filename || 'document', file_uri: fileUri, type: file.type || '' };
+  return { filename: file.filename || 'document', file_uri: fileUri, type };
 }
 
 Deno.serve(async (req) => {
