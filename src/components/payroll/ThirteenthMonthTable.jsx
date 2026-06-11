@@ -30,7 +30,17 @@ export default function ThirteenthMonthTable({ employees, totals, basis, onViewP
                   <p className="text-xs text-muted-foreground">{e.employee_code}</p>
                 </td>
                 <td className="py-3 px-4 text-right tabular-nums text-muted-foreground">{fmt(e.basic_salary)}</td>
-                <td className="py-3 px-4 text-right tabular-nums">{e.months_worked}</td>
+                <td className="py-3 px-4 text-right tabular-nums">
+                  <span>{e.months_worked}</span>
+                  {e.projected_months > 0 && (
+                    <span
+                      className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 text-amber-700 text-[10px] font-medium px-1.5 py-0.5 align-middle"
+                      title={`${e.projected_months} month(s) projected from plotted schedule (not yet reconciled)`}
+                    >
+                      +{e.projected_months} proj.
+                    </span>
+                  )}
+                </td>
                 <td className="py-3 px-4 text-right tabular-nums">{fmt(e.basic_earned)}</td>
                 <td className="py-3 px-4 text-right tabular-nums font-semibold text-primary">{fmt(e[payField])}</td>
                 <td className="py-3 px-4 text-right">

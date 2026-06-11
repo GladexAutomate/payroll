@@ -71,7 +71,8 @@ export default function ThirteenthMonth() {
         <Info className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
         <p>
           <span className="font-medium text-foreground">Accrued</span> shows what each employee has earned so far this year ÷ 12.{' '}
-          <span className="font-medium text-foreground">Prorated</span> projects the full-year amount based on the monthly basic salary and months active (for mid-year hires or resignations). Unpaid absences are excluded because no basic salary is earned for those days.
+          <span className="font-medium text-foreground">Prorated</span> projects the full-year amount based on the monthly basic salary and months active (for mid-year hires or resignations). Unpaid absences are excluded because no basic salary is earned for those days.{' '}
+          For the current year, months that aren't reconciled yet (e.g. December) are <span className="font-medium text-foreground">precomputed from the plotted schedule</span> and marked with a <span className="font-medium text-amber-700">proj.</span> tag.
         </p>
       </div>
 

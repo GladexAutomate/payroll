@@ -7,6 +7,17 @@ function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+// Schedule card keys that count as PAID days when projecting from plotted schedules.
+const COST_COUNTED_TYPES = new Set(['opener', 'closer', 'wfh', 'paid_vl', 'sick', 'maternity', 'paternity']);
+function isPaidScheduleDay(type) {
+  return COST_COUNTED_TYPES.has(type) || String(type || '').startsWith('shift:');
+}
+// Required paid working days in a month (mirrors getMonthlyWorkDays: days - floor(days/7)).
+function monthlyWorkDays(year, month0) {
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  return Math.max(1, daysInMonth - Math.floor(daysInMonth / 7));
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -49,7 +60,8 @@ Deno.serve(async (req) => {
           employee_name: s.employee_name || '',
           basic_salary: Number(s.basic_salary || 0),
           basic_earned: 0,
-          months: new Set(),
+          months: new Set(),       // months with actual reconciled data
+          projected_months: new Set(), // months filled in from plotted schedule
         });
       }
       const e = byEmployee.get(id);
@@ -60,8 +72,44 @@ Deno.serve(async (req) => {
       e.months.add(m);
     }
 
+    // For the current year, precompute months that have plotted schedules but no
+    // actual reconciled summary yet (e.g. December still in progress). We project
+    // pay from the plotted ApprovedSchedule: dailyRate × paid plotted days.
+    if (year === new Date().getFullYear()) {
+      const schedules = await base44.asServiceRole.entities.ApprovedSchedule.list('-date', 50000);
+      // Group plotted paid days by employee+month.
+      const plotted = new Map(); // empId -> Map(month0 -> paidDays)
+      for (const sc of schedules) {
+        if (!sc.date) continue;
+        const d = new Date(sc.date);
+        if (d.getFullYear() !== year) continue;
+        if (branchEmployeeIds && !branchEmployeeIds.has(sc.employee_id)) continue;
+        if (!isPaidScheduleDay(sc.schedule_type)) continue;
+        const month0 = d.getMonth();
+        if (!plotted.has(sc.employee_id)) plotted.set(sc.employee_id, new Map());
+        const mm = plotted.get(sc.employee_id);
+        mm.set(month0, (mm.get(month0) || 0) + 1);
+      }
+
+      for (const [empId, monthMap] of plotted) {
+        const e = byEmployee.get(empId);
+        if (!e) continue; // no salary/identity data; skip projection
+        if (!(Number(e.basic_salary) > 0)) continue;
+        for (const [month0, paidDays] of monthMap) {
+          if (e.months.has(month0)) continue; // actual data already exists for this month
+          const dailyRate = Number(e.basic_salary) / monthlyWorkDays(year, month0);
+          // Cap projected paid days at a full month's worth of working days.
+          const cappedDays = Math.min(paidDays, monthlyWorkDays(year, month0));
+          e.basic_earned += dailyRate * cappedDays;
+          e.projected_months.add(month0);
+        }
+      }
+    }
+
     const employees = [...byEmployee.values()].map((e) => {
-      const monthsWorked = e.months.size;
+      const allMonths = new Set([...e.months, ...e.projected_months]);
+      const monthsWorked = allMonths.size;
+      const projectedMonths = e.projected_months.size;
       const accrued = e.basic_earned / 12; // P.D. 851: total basic salary earned ÷ 12
       // Prorated full-year projection: project the monthly basic salary across the
       // months the employee was active this year (mid-year hire / resignation).
@@ -73,6 +121,7 @@ Deno.serve(async (req) => {
         basic_salary: money(e.basic_salary),
         basic_earned: money(e.basic_earned),
         months_worked: monthsWorked,
+        projected_months: projectedMonths,
         accrued: money(accrued),
         prorated: money(prorated),
       };
