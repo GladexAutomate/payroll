@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { X, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTour } from '@/context/TourContext';
-import { tourSteps } from '@/lib/tourSteps';
 
 const PADDING = 8;
 
@@ -112,7 +111,7 @@ function tooltipPosition(rect, placement) {
 }
 
 export default function CoachedTour() {
-  const { active, stepIndex, setStepIndex, endTour } = useTour();
+  const { active, steps: tourSteps, stepIndex, setStepIndex, endTour } = useTour();
   const navigate = useNavigate();
   const location = useLocation();
   const lastPathRef = useRef(null);
