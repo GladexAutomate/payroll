@@ -136,13 +136,15 @@ export default function AttendanceUpload() {
     // Upload the raw file ONCE — this single upload is reliable. All parsing
     // and importing happens server-side in the background, so dropped network
     // connections or closed tabs no longer break the import.
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const uploadRes = await base44.integrations.Core.UploadFile({ file });
+    const fileUrl = uploadRes?.file_url || uploadRes?.data?.file_url || uploadRes?.url;
+    if (!fileUrl) throw new Error('File upload failed — no file URL returned. Please try again.');
 
     // Kick off the background import. Returns immediately with an uploadId.
     const res = await base44.functions.invoke('importAttendance', {
       action: 'startImport',
       filename: file.name,
-      fileUrl: file_url,
+      fileUrl,
     });
     const uploadId = res.data?.uploadId;
     if (!uploadId) throw new Error(res.data?.error || 'Could not start import.');
