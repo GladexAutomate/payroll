@@ -11,18 +11,9 @@
 //   [data-tour="page-content"] - the main page content area
 // Pages may expose additional element-level anchors (e.g. emp-add) for richer steps.
 
-const sidebarStep = {
-  id: 'sidebar',
-  group: 'Navigation',
-  selector: '[data-tour="sidebar-nav"]',
-  title: 'Navigate the app',
-  body: 'Use this sidebar to move between modules — People, Organization, Time & Attendance, Scheduling, Payroll, Compliance, Insights, and Admin. Groups expand to reveal their pages.',
-  placement: 'right',
-};
-
-// Builds a page tour from a list of steps, always appending the sidebar nav step.
+// Builds a page tour from a list of steps.
 function tour(steps) {
-  return [...steps, sidebarStep];
+  return [...steps];
 }
 
 // A single "page intro" step spotlighting the whole content area.
