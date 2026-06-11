@@ -1,5 +1,6 @@
 import { Menu, Bell, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import TourLaunchButton from '@/components/tour/TourLaunchButton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,8 @@ export default function TopBar({ onMenuClick, title }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <TourLaunchButton />
+
         <button className="p-2 rounded-lg hover:bg-muted transition-colors relative">
           <Bell className="w-4.5 h-4.5 text-muted-foreground" />
         </button>

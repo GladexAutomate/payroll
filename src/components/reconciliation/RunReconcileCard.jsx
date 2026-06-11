@@ -15,7 +15,7 @@ export default function RunReconcileCard({
   const pct = activeRun?.total ? Math.round((activeRun.processed / activeRun.total) * 100) : (activeRun?.progress || 0);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+    <div data-tour="reconcile-run" className="bg-card border border-border rounded-xl p-5 space-y-4">
       <div>
         <h2 className="font-semibold">Run reconciliation</h2>
         <p className="text-xs text-muted-foreground">

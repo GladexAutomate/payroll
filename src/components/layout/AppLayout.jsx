@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import PagePermissionGate from '@/components/auth/PagePermissionGate';
+import CoachedTour from '@/components/tour/CoachedTour';
 
 const pageTitles = {
   '/': 'Dashboard',
@@ -39,12 +40,13 @@ export default function AppLayout() {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
         <TopBar onMenuClick={() => setSidebarOpen(true)} title={title} />
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main data-tour="page-content" className="flex-1 p-4 lg:p-6 overflow-auto">
           <PagePermissionGate>
             <Outlet />
           </PagePermissionGate>
         </main>
       </div>
+      <CoachedTour />
     </div>
   );
 }
