@@ -1,38 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
-import { format, parseISO } from 'date-fns';
-import { Calendar, CheckCircle, Eye, EyeOff, XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import ScheduleGrid from '@/components/schedule/ScheduleGrid';
-import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
-import { buildScheduleSummary } from '@/components/schedule/scheduleUtils';
-
-const filters = [
-  { key: 'all', label: 'All' },
-  { key: 'pending_hr_review', label: 'Pending HR Review' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'rejected', label: 'Rejected' },
-];
-
-const statusLabels = {
-  pending_hr_review: 'Pending HR Review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-};
-
-const statusBadge = {
-  pending_hr_review: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-};
+import { Checkbox } from '@/components/ui/checkbox';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
+import RequestToolbar from '@/components/schedule/RequestToolbar';
+import RequestCard from '@/components/schedule/RequestCard';
+import RejectReasonDialog from '@/components/schedule/RejectReasonDialog';
 
 export default function ScheduleRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending_hr_review');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('newest');
   const [expandedId, setExpandedId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [shiftTemplates, setShiftTemplates] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const [confirm, setConfirm] = useState(null);
+  const [rejectTarget, setRejectTarget] = useState(null); // { ids: [...] }
 
   useEffect(() => { loadRequests(); }, []);
 
@@ -44,100 +32,181 @@ export default function ScheduleRequests() {
     ]);
     setRequests(data);
     setShiftTemplates(shifts || []);
+    setSelected(new Set());
     setLoading(false);
   };
 
-  const filtered = useMemo(() => filter === 'all' ? requests : requests.filter(req => req.status === filter), [requests, filter]);
   const counts = useMemo(() => requests.reduce((m, r) => ({ ...m, all: (m.all || 0) + 1, [r.status]: (m[r.status] || 0) + 1 }), {}), [requests]);
 
-  const updateStatus = async (request, status) => {
-    setBusyId(request.id);
-    await base44.entities.AttendanceProposal.update(request.id, {
-      status,
-      reviewed_date: new Date().toISOString(),
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = filter === 'all' ? requests : requests.filter(r => r.status === filter);
+    if (q) {
+      list = list.filter(r =>
+        (r.team_name || '').toLowerCase().includes(q) ||
+        (r.leader_name || '').toLowerCase().includes(q) ||
+        (r.leader_email || '').toLowerCase().includes(q) ||
+        (r.department_name || '').toLowerCase().includes(q) ||
+        (r.branch_name || '').toLowerCase().includes(q) ||
+        (r.company_name || '').toLowerCase().includes(q)
+      );
+    }
+    const sorted = [...list];
+    if (sort === 'oldest') sorted.sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+    else if (sort === 'team') sorted.sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
+    else sorted.sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+    return sorted;
+  }, [requests, filter, search, sort]);
+
+  // Group by company / branch
+  const groups = useMemo(() => {
+    const map = {};
+    filtered.forEach(r => {
+      const key = `${r.company_name || 'Company'}${r.branch_name ? ' — ' + r.branch_name : ''}`;
+      (map[key] = map[key] || []).push(r);
     });
-    await base44.functions.invoke('scheduleWebhook', { proposalId: request.id, eventType: status });
-    if (status === 'approved') {
-      await base44.functions.invoke('plotApprovedSchedule', { proposalId: request.id });
+    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
+
+  const pendingInView = filtered.filter(r => r.status === 'pending_hr_review');
+  const allSelected = pendingInView.length > 0 && pendingInView.every(r => selected.has(r.id));
+
+  const toggleSelect = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(pendingInView.map(r => r.id)));
+  const toggleGroup = (key) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  const applyStatus = async (ids, status, reason = '') => {
+    for (const id of ids) {
+      const request = requests.find(r => r.id === id);
+      if (!request) continue;
+      setBusyId(id);
+      await base44.entities.AttendanceProposal.update(id, {
+        status,
+        reviewed_date: new Date().toISOString(),
+        ...(status === 'rejected' ? { notes: reason } : {}),
+      });
+      await base44.functions.invoke('scheduleWebhook', { proposalId: id, eventType: status });
+      if (status === 'approved') {
+        await base44.functions.invoke('plotApprovedSchedule', { proposalId: id });
+      }
     }
     setBusyId(null);
-    loadRequests();
+    await loadRequests();
   };
+
+  const askApprove = (request) => setConfirm({
+    title: 'Approve schedule?',
+    description: `Approve "${request.team_name}"? This plots the schedule onto the Approved Schedule for the period.`,
+    confirmLabel: 'Approve',
+    onConfirm: () => { setConfirm(null); applyStatus([request.id], 'approved'); },
+  });
+  const askBulkApprove = () => setConfirm({
+    title: `Approve ${selected.size} schedules?`,
+    description: 'This plots every selected schedule onto the Approved Schedule for its period.',
+    confirmLabel: 'Approve all',
+    onConfirm: () => { setConfirm(null); applyStatus([...selected], 'approved'); },
+  });
 
   return (
     <div className="min-h-[calc(100vh-8rem)] bg-background rounded-xl p-4 text-slate-900 space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Schedule Requests</h2>
           <p className="text-sm text-slate-500">Review and approve team schedule proposals</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {filters.map(item => (
-            <button
-              key={item.key}
-              onClick={() => setFilter(item.key)}
-              className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${filter === item.key ? 'bg-blue-700 border-blue-700 text-white' : 'border-slate-300 text-slate-600 hover:text-slate-900'}`}
-            >
-              {item.label}
-              <span className={`ml-1.5 ${filter === item.key ? 'text-blue-100' : 'text-slate-400'}`}>{counts[item.key] || 0}</span>
-            </button>
-          ))}
-        </div>
       </div>
+
+      <RequestToolbar
+        filter={filter} setFilter={setFilter} counts={counts}
+        search={search} setSearch={setSearch} sort={sort} setSort={setSort}
+      />
+
+      {/* Bulk action bar */}
+      {pendingInView.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+            <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
+            Select all pending ({pendingInView.length})
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-sm text-slate-500">{selected.size} selected</span>
+              <div className="flex gap-2 ml-auto">
+                <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={askBulkApprove}>
+                  <CheckCircle className="w-4 h-4 mr-1" /> Approve selected
+                </Button>
+                <Button size="sm" className="bg-red-500 hover:bg-red-600" onClick={() => setRejectTarget({ ids: [...selected] })}>
+                  <XCircle className="w-4 h-4 mr-1" /> Reject selected
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white rounded-xl p-8 text-center text-sm text-slate-500">Loading schedule requests...</div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-sm text-slate-500">No schedule requests found.</div>
-      ) : filtered.map(request => {
-        const expanded = expandedId === request.id;
-        const summary = buildScheduleSummary({
-          employees: request.employees || [],
-          assignments: request.assignments || {},
-          periodStart: request.period_start,
-          periodEnd: request.period_end,
-          shiftTemplates,
-        });
+      ) : groups.map(([groupKey, items]) => {
+        const collapsed = collapsedGroups.has(groupKey);
         return (
-          <div key={request.id} className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 p-5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-base">{request.team_name}</h3>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusBadge[request.status] || 'bg-slate-100 text-slate-600'}`}>{statusLabels[request.status] || request.status}</span>
-                </div>
-                <p className="text-sm text-slate-600 mt-1">{request.company_name || 'Company'} {request.branch_name ? `/ ${request.branch_name}` : ''} {request.department_name ? `/ ${request.department_name}` : ''}</p>
-                <p className="text-sm text-slate-700 mt-1 flex items-center gap-1"><Calendar className="w-4 h-4" /> {request.period_start ? format(parseISO(request.period_start), 'MMM d') : '—'} - {request.period_end ? format(parseISO(request.period_end), 'd, yyyy') : '—'}</p>
-                <p className="text-xs text-slate-500 mt-1">Leader: {request.leader_name || '—'} {request.leader_email ? `· ${request.leader_email}` : ''}</p>
-              </div>
-              <div className="flex lg:flex-col gap-2 min-w-[150px]">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setExpandedId(expanded ? null : request.id)}>
-                  {expanded ? <EyeOff className="w-4 h-4 mr-1" /> : <Eye className="w-4 h-4 mr-1" />} {expanded ? 'Hide' : 'View'}
-                </Button>
-                <Button type="button" size="sm" className="bg-green-500 hover:bg-green-600" disabled={busyId === request.id || request.status === 'approved'} onClick={() => updateStatus(request, 'approved')}>
-                  <CheckCircle className="w-4 h-4 mr-1" /> Approve Schedule
-                </Button>
-                <Button type="button" size="sm" className="bg-red-500 hover:bg-red-600" disabled={busyId === request.id || request.status === 'rejected'} onClick={() => updateStatus(request, 'rejected')}>
-                  <XCircle className="w-4 h-4 mr-1" /> Reject
-                </Button>
-              </div>
-            </div>
-
-            {expanded && (
-              <div className="border-t border-slate-200 p-5 space-y-5">
-                <ScheduleGrid
-                  employees={request.employees || []}
-                  assignments={request.assignments || {}}
-                  periodStart={request.period_start}
-                  periodEnd={request.period_end}
-                  shiftTemplates={shiftTemplates}
-                />
-                <ScheduleAnalytics summary={summary} />
+          <div key={groupKey} className="space-y-3">
+            <button onClick={() => toggleGroup(groupKey)} className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {groupKey}
+              <span className="text-xs font-normal text-slate-400">({items.length})</span>
+            </button>
+            {!collapsed && (
+              <div className="space-y-3">
+                {items.map(request => (
+                  <RequestCard
+                    key={request.id}
+                    request={request}
+                    shiftTemplates={shiftTemplates}
+                    expanded={expandedId === request.id}
+                    onToggle={() => setExpandedId(expandedId === request.id ? null : request.id)}
+                    selected={selected.has(request.id)}
+                    onSelect={toggleSelect}
+                    onApprove={askApprove}
+                    onReject={(r) => setRejectTarget({ ids: [r.id] })}
+                    busy={busyId === request.id}
+                  />
+                ))}
               </div>
             )}
           </div>
         );
       })}
+
+      <ConfirmDialog
+        open={!!confirm}
+        onOpenChange={(open) => { if (!open) setConfirm(null); }}
+        title={confirm?.title}
+        description={confirm?.description}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={confirm?.onConfirm}
+      />
+
+      {rejectTarget && (
+        <RejectReasonDialog
+          count={rejectTarget.ids.length}
+          onCancel={() => setRejectTarget(null)}
+          onConfirm={async (reason) => {
+            const ids = rejectTarget.ids;
+            setRejectTarget(null);
+            await applyStatus(ids, 'rejected', reason);
+          }}
+        />
+      )}
     </div>
   );
 }
