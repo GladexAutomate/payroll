@@ -13,6 +13,7 @@ import ScheduleLegend from '@/components/schedule/ScheduleLegend';
 import LeaveNotices from '@/components/schedule/LeaveNotices';
 import ReconcileBar from '@/components/schedule/ReconcileBar.jsx';
 import { getEmployeeName, getEmployeeSalary } from '@/components/schedule/scheduleUtils';
+import { useCurrentTier } from '@/hooks/useCurrentTier';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
 import { exportApprovedScheduleToExcel } from '@/components/schedule/exportApprovedSchedule';
@@ -52,6 +53,9 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [showActual, setShowActual] = useState(false);
   const [teams, setTeams] = useState([]);
   const { toast } = useToast();
+  const { tier } = useCurrentTier();
+  // Only HR, Managers, and Leaders/Supervisors can modify the approved schedule.
+  const canEdit = ['hr', 'managers', 'leaders'].includes(tier);
   const [searchParams] = useSearchParams();
   const params = useParams();
   const scope = params.scope || searchParams.get('scope') || '';
@@ -370,9 +374,11 @@ export default function ApprovedSchedule({ readOnly = false }) {
               </>
             ) : (
               <>
-                <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
-                  <Pencil className="w-4 h-4 mr-1.5" /> Edit
-                </Button>
+                {canEdit && (
+                  <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
+                    <Pencil className="w-4 h-4 mr-1.5" /> Edit
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={handleExport} disabled={loading}>
                   <Download className="w-4 h-4 mr-1.5" /> Export
                 </Button>
@@ -434,7 +440,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
             shiftTemplates={shiftTemplates}
             periodStart={periodStart}
             periodEnd={periodEnd}
-            editable={editMode}
+            editable={editMode && canEdit}
             onChange={handleCellChange}
             onFillTo={handleFillTo}
           />
