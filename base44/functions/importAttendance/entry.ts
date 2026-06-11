@@ -13,6 +13,13 @@ const isRateLimit = (err) => {
   return msg.includes('429') || msg.toLowerCase().includes('rate limit');
 };
 
+// Transient errors (rate limit OR a dropped/connection error) that are safe to retry.
+const isTransient = (err) => {
+  const msg = String(err?.message || err).toLowerCase();
+  return isRateLimit(err) || msg.includes('connection') || msg.includes('network')
+    || msg.includes('timeout') || msg.includes('fetch failed') || msg.includes('econnreset');
+};
+
 // Parse the whole Excel/CSV file into attendance records (server-side).
 async function parseFile(fileUrl, filename) {
   const resp = await fetch(fileUrl);
@@ -126,10 +133,14 @@ async function prepareImport(base44, uploadId) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
 
+  console.log('[prepare] parsing file...');
   const parsed = await parseFile(upload.file_url, upload.filename);
   const { rows, personCodeIdx, nameIdx, periodLabel } = parsed;
+  console.log('[prepare] parsed rows:', rows.length);
 
+  console.log('[prepare] loading employees...');
   const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
+  console.log('[prepare] employees loaded:', employees.length);
   const byBioId = {};
   const byName = {};
   for (const emp of employees) {
@@ -163,7 +174,9 @@ async function prepareImport(base44, uploadId) {
     } catch (_e) { /* skip duplicates */ }
   }
 
+  console.log('[prepare] auto-created employees:', createdEmployees.length);
   const records = buildRecords(parsed, byBioId, byName, uploadId);
+  console.log('[prepare] built records:', records.length);
 
   if (records.length === 0) {
     await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
@@ -182,31 +195,40 @@ async function prepareImport(base44, uploadId) {
   const empIds = [...new Set(records.map(r => r.employee_id))];
   const allDates = [...new Set(records.map(r => r.date))].sort();
   const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
+  console.log('[prepare] deleting old logs for', empIds.length, 'employees', minDate, '->', maxDate);
 
   // Chunk the $in small so each deleteMany query payload stays lightweight
-  // (large $in arrays cause connection errors).
-  for (let i = 0; i < empIds.length; i += 10) {
-    const empChunk = empIds.slice(i, i + 10);
+  // (large $in arrays cause connection errors). Retry transient connection
+  // errors with backoff, and pace each call so the DB isn't hammered.
+  for (let i = 0; i < empIds.length; i += 5) {
+    const empChunk = empIds.slice(i, i + 5);
     let attempts = 0;
-    while (attempts < 6) {
+    while (true) {
       try {
         await base44.asServiceRole.entities.AttendanceLog.deleteMany(
           { employee_id: { $in: empChunk }, date: { $gte: minDate, $lte: maxDate } }
         );
         break;
       } catch (err) {
-        if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 2000 * attempts)); continue; }
+        attempts++;
+        if (isTransient(err) && attempts < 8) {
+          await new Promise(r => setTimeout(r, 1500 * attempts));
+          continue;
+        }
         throw err;
       }
     }
+    await new Promise(r => setTimeout(r, 120));
   }
 
+  console.log('[prepare] old logs deleted, updating upload record');
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
     status: 'processing', total_rows: records.length, processed_rows: 0,
     created_count: 0, updated_count: 0, progress: 0,
     period_label: periodLabel, new_employees: createdEmployees,
     stale_log_ids: [],
   });
+  console.log('[prepare] done');
 
   return { done: false, total: records.length };
 }
@@ -251,7 +273,8 @@ async function processBatch(base44, uploadId, offset) {
     while (attempts < 6) {
       try { await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice); created += slice.length; break; }
       catch (err) {
-        if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 2500 * attempts)); continue; }
+        attempts++;
+        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 2000 * attempts)); continue; }
         throw err;
       }
     }
