@@ -1,8 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-const BASE_ID = 'appNRjLCu4uxT395V';
-const TABLE_ID = 'tblAOjFrCv9R6fFKq';
-const AIRTABLE_URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`;
 const MIRROR_ENTITY = 'AirtableEmployeeRecord';
 
 const slug = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -74,14 +71,6 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
-    const apiKey = Deno.env.get('AIRTABLE_API_KEY');
-    if (!apiKey) return Response.json({ error: 'AIRTABLE_API_KEY not set' }, { status: 500 });
-
-    const headers = {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    };
-
     const body = await req.json();
     const { action } = body;
 
@@ -94,37 +83,9 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const getTableSchema = async () => {
-      const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`, { headers });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'Schema fetch failed');
-      const table = (data.tables || []).find(t => t.id === TABLE_ID);
-      if (!table) throw new Error('Table not found in schema');
-      return table;
-    };
-
-    const pickField = (fields, candidates) => {
-      const names = fields.map(field => field.name);
-      return names.find(name => candidates.map(normalizeField).includes(normalizeField(name))) || null;
-    };
-
-    const getOrgFields = async () => {
-      const table = await getTableSchema();
-      const fields = table.fields || [];
-      return {
-        company: pickField(fields, ['Company', 'COMPANY']),
-        branch: pickField(fields, ['Branch', 'BRANCH']),
-        department: pickField(fields, ['Department', 'DEPARTMENT']),
-        role: pickField(fields, ['Department Role', 'DEPARTMENT ROLE']),
-        team: pickField(fields, ['Team', 'TEAM']),
-        fullName: pickField(fields, ['Full Name', 'FULL NAME']),
-        employeeCode: pickField(fields, ['Employee Code ID', 'Employee Code', 'EMPLOYEE CODE ID']),
-      };
-    };
-
     // Standalone org-field resolver: pick canonical column names from existing records' keys,
     // so we don't depend on Airtable's schema endpoint.
-    const getOrgFieldsStandalone = async () => {
+    const getOrgFields = async () => {
       const sample = await listMirrorRecords(200);
       const keys = new Set();
       for (const r of sample) for (const k of Object.keys(r.fields || {})) keys.add(k);
@@ -138,24 +99,6 @@ Deno.serve(async (req) => {
         team: pick(['Team', 'TEAM']),
         fullName: pick(['Full Name', 'FULL NAME']),
         employeeCode: pick(['Employee Code ID', 'Employee Code', 'EMPLOYEE CODE ID']),
-      };
-    };
-
-    const toMirrorRecord = (record, orgFields) => {
-      const fields = sanitizeForStorage(record.fields || {});
-      const searchText = Object.values(fields).map(valueText).join(' ').toLowerCase();
-      return {
-        airtable_record_id: record.id,
-        fields,
-        company: valueText(fields[orgFields.company]).trim(),
-        branch: valueText(fields[orgFields.branch]).trim(),
-        department: valueText(fields[orgFields.department]).trim(),
-        department_role: valueText(fields[orgFields.role]).trim(),
-        team: valueText(fields[orgFields.team]).trim(),
-        full_name: valueText(fields[orgFields.fullName]).trim(),
-        employee_code: valueText(fields[orgFields.employeeCode]).trim(),
-        search_text: searchText,
-        synced_at: new Date().toISOString(),
       };
     };
 
@@ -176,15 +119,6 @@ Deno.serve(async (req) => {
         search_text: searchText,
         synced_at: new Date().toISOString(),
       };
-    };
-
-    const upsertMirrorRecord = async (record, orgFields) => {
-      const data = toMirrorRecord(record, orgFields);
-      const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: record.id }, '-updated_date', 1);
-      if (existing.length) {
-        return await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, data);
-      }
-      return await base44.asServiceRole.entities[MIRROR_ENTITY].create(data);
     };
 
     const listMirrorRecords = async (limit = 1000) => {
@@ -235,59 +169,12 @@ Deno.serve(async (req) => {
       }
     };
 
+    // Standalone: the Base44 mirror is now the source of truth, so "sync" just
+    // refreshes the EmployeeAccount table from the mirror. No Airtable pull.
     const syncFromAirtable = async () => {
-      const orgFields = await getOrgFields();
-      const existingMirror = await listMirrorRecords(5000);
-      const existingByAirtableId = new Map(existingMirror.map(record => [record.airtable_record_id, record]));
-      const airtableIds = new Set();
-      const recordsToCreate = [];
-      const recordsToUpdate = [];
-      let offset = null;
-
-      do {
-        const params = new URLSearchParams({ pageSize: '100' });
-        if (offset) params.set('offset', offset);
-        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || 'Airtable sync failed');
-
-        for (const record of (data.records || [])) {
-          airtableIds.add(record.id);
-          const mirrorData = toMirrorRecord(record, orgFields);
-          const existing = existingByAirtableId.get(record.id);
-          if (!existing) {
-            recordsToCreate.push(mirrorData);
-          } else if (JSON.stringify(existing.fields || {}) !== JSON.stringify(mirrorData.fields || {})) {
-            recordsToUpdate.push({ id: existing.id, data: mirrorData });
-          }
-        }
-        offset = data.offset || null;
-      } while (offset);
-
-      let created = 0;
-      for (let i = 0; i < recordsToCreate.length; i += 50) {
-        const batch = recordsToCreate.slice(i, i + 50);
-        await base44.asServiceRole.entities[MIRROR_ENTITY].bulkCreate(batch);
-        created += batch.length;
-      }
-
-      let updated = 0;
-      for (const item of recordsToUpdate.slice(0, 50)) {
-        await base44.asServiceRole.entities[MIRROR_ENTITY].update(item.id, item.data);
-        updated += 1;
-      }
-
-      let removed = 0;
-      for (const mirror of existingMirror) {
-        if (!airtableIds.has(mirror.airtable_record_id)) {
-          await base44.asServiceRole.entities[MIRROR_ENTITY].delete(mirror.id);
-          removed += 1;
-        }
-      }
-
+      const mirror = await listMirrorRecords(5000);
       await syncEmployeeAccounts();
-
-      return { synced: airtableIds.size, created, updated, pending_updates: Math.max(recordsToUpdate.length - updated, 0), removed };
+      return { synced: mirror.length, created: 0, updated: 0, pending_updates: 0, removed: 0 };
     };
 
     const buildHierarchy = async () => {
@@ -364,20 +251,15 @@ Deno.serve(async (req) => {
       if (!employeeRecordId || !employeeNumber || !airtableRecordId) throw new Error('employeeRecordId, employeeNumber, and airtableRecordId are required');
 
       const orgFields = await getOrgFields();
-      const table = await getTableSchema();
-      const biometricsField = pickField(table.fields || [], ['Biometrics Number', 'BIOMETRICS NUMBER', 'Biometric Number', 'Biometrics No']);
-      if (!biometricsField) throw new Error('Biometrics Number column was not found in Airtable.');
+      const existingMirror = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: airtableRecordId }, '-updated_date', 1);
+      if (!existingMirror.length) throw new Error('Employee record not found.');
 
-      const res = await fetch(`${AIRTABLE_URL}/${airtableRecordId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ fields: { [biometricsField]: String(employeeNumber) }, typecast: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'Airtable biometrics update failed');
-      const mirrored = await upsertMirrorRecord(data, orgFields);
+      const mergedFields = { ...(existingMirror[0].fields || {}), 'Biometrics Number': String(employeeNumber) };
+      const mirrorData = buildStandaloneMirror(mergedFields, orgFields, airtableRecordId);
+      const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existingMirror[0].id, mirrorData);
 
-      const fields = data.fields || {};
+      const fields = mirrored.fields || {};
+      const data = { id: mirrored.airtable_record_id, fields: mirrored.fields };
       const matchData = {
         employee_record_id: employeeRecordId,
         employee_number: String(employeeNumber),
@@ -491,16 +373,16 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'schema') {
-      const table = await getTableSchema();
-      const COMPUTED_TYPES = new Set(['formula', 'rollup', 'lookup', 'count', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy', 'externalSyncSource', 'aiText', 'button']);
-      const computedFields = (table.fields || []).filter(f => COMPUTED_TYPES.has(f.type)).map(f => f.name);
+      // Derive a lightweight schema from existing mirror records (standalone, no Airtable).
+      const sample = await listMirrorRecords(500);
       const fieldsMeta = {};
-      for (const f of (table.fields || [])) {
-        fieldsMeta[f.name] = (f.type === 'singleSelect' || f.type === 'multipleSelects')
-          ? { type: f.type, choices: (f.options?.choices || []).map(c => ({ name: c.name, color: c.color || null })) }
-          : { type: f.type };
+      for (const record of sample) {
+        for (const [key, value] of Object.entries(record.fields || {})) {
+          if (fieldsMeta[key]) continue;
+          fieldsMeta[key] = { type: typeof value === 'number' ? 'number' : 'singleLineText' };
+        }
       }
-      return Response.json({ computedFields, fieldsMeta });
+      return Response.json({ computedFields: [], fieldsMeta });
     }
 
     if (action === 'syncFromAirtable') {
@@ -599,7 +481,7 @@ Deno.serve(async (req) => {
 
     if (action === 'create') {
       const { fields } = body;
-      const orgFields = await getOrgFieldsStandalone();
+      const orgFields = await getOrgFields();
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
       return Response.json({ record: { id: created.airtable_record_id, fields: created.fields, backend_id: created.id } });
@@ -608,7 +490,7 @@ Deno.serve(async (req) => {
     if (action === 'update') {
       const { recordId, fields } = body;
       if (!recordId) return Response.json({ error: 'recordId required' }, { status: 400 });
-      const orgFields = await getOrgFieldsStandalone();
+      const orgFields = await getOrgFields();
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...fields };
@@ -632,20 +514,17 @@ Deno.serve(async (req) => {
       const targetField = fieldMap[category];
       if (!targetField) return Response.json({ error: `Airtable column for ${category.replace('_', ' ')} was not found.` }, { status: 404 });
 
-      const fields = { [targetField]: String(target.name || '').trim() };
-      if (orgFields.company && target.company_name) fields[orgFields.company] = String(target.company_name).trim();
-      if (orgFields.branch && target.branch_name) fields[orgFields.branch] = String(target.branch_name).trim();
-      if (orgFields.department && target.department_name) fields[orgFields.department] = String(target.department_name).trim();
+      const updates = { [targetField]: String(target.name || '').trim() };
+      if (orgFields.company && target.company_name) updates[orgFields.company] = String(target.company_name).trim();
+      if (orgFields.branch && target.branch_name) updates[orgFields.branch] = String(target.branch_name).trim();
+      if (orgFields.department && target.department_name) updates[orgFields.department] = String(target.department_name).trim();
 
-      const res = await fetch(`${AIRTABLE_URL}/${recordId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ fields, typecast: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable update failed', details: data }, { status: res.status });
-      const mirrored = await upsertMirrorRecord(data, orgFields);
-      return Response.json({ record: { id: data.id, fields: data.fields, backend_id: mirrored.id } });
+      const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
+      if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
+      const mergedFields = { ...(existing[0].fields || {}), ...updates };
+      const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
+      const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
+      return Response.json({ record: { id: mirrored.airtable_record_id, fields: mirrored.fields, backend_id: mirrored.id } });
     }
 
     if (action === 'updateCompanyForBranch') {
@@ -655,59 +534,53 @@ Deno.serve(async (req) => {
       if (!cleanBranch || !cleanCompany) return Response.json({ error: 'branchName and companyName are required' }, { status: 400 });
 
       const orgFields = await getOrgFields();
-      if (!orgFields.company || !orgFields.branch) return Response.json({ error: 'Company or Branch column was not found in Airtable.' }, { status: 404 });
-      const recordsToUpdate = [];
-      let offset = null;
-      do {
-        const params = new URLSearchParams({ pageSize: '100' });
-        params.append('fields[]', orgFields.branch);
-        params.append('fields[]', orgFields.company);
-        params.set('filterByFormula', `{${orgFields.branch}} = "${cleanBranch.replace(/"/g, '\\"')}"`);
-        if (offset) params.set('offset', offset);
-        const res = await fetch(`${AIRTABLE_URL}?${params}`, { headers });
-        const data = await res.json();
-        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable error', details: data }, { status: res.status });
-        recordsToUpdate.push(...(data.records || []).filter(record => record.fields?.[orgFields.company] !== cleanCompany));
-        offset = data.offset || null;
-      } while (offset);
+      const allRecords = await listMirrorRecords(5000);
+      const matching = allRecords.filter(record =>
+        String(record.fields?.[orgFields.branch] || record.branch || '').trim() === cleanBranch &&
+        String(record.fields?.[orgFields.company] || record.company || '').trim() !== cleanCompany
+      );
 
-      for (let i = 0; i < recordsToUpdate.length; i += 10) {
-        const batch = recordsToUpdate.slice(i, i + 10).map(record => ({ id: record.id, fields: { [orgFields.company]: cleanCompany } }));
-        const res = await fetch(AIRTABLE_URL, { method: 'PATCH', headers, body: JSON.stringify({ records: batch, typecast: true }) });
-        const data = await res.json();
-        if (!res.ok) return Response.json({ error: data.error?.message || 'Airtable update failed', details: data }, { status: res.status });
-        for (const record of (data.records || [])) await upsertMirrorRecord(record, orgFields);
+      for (const record of matching) {
+        const mergedFields = { ...(record.fields || {}), [orgFields.company]: cleanCompany };
+        const mirrorData = buildStandaloneMirror(mergedFields, orgFields, record.airtable_record_id);
+        await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
       }
 
-      return Response.json({ updated: recordsToUpdate.length });
+      return Response.json({ updated: matching.length });
     }
 
     if (action === 'renameField') {
-      const { fieldId, fieldName, newName } = body;
-      if (!newName) return Response.json({ error: 'newName required' }, { status: 400 });
-      const table = await getTableSchema();
-      const resolvedId = fieldId || (table.fields || []).find(f => f.name === fieldName)?.id;
-      if (!resolvedId) return Response.json({ error: `Field "${fieldName}" not found` }, { status: 404 });
-      const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables/${TABLE_ID}/fields/${resolvedId}`, { method: 'PATCH', headers, body: JSON.stringify({ name: newName }) });
-      const data = await res.json();
-      if (!res.ok) return Response.json({ error: data.error?.message || 'Rename failed', details: data }, { status: res.status });
-      await syncFromAirtable();
-      return Response.json({ field: data });
+      const { fieldName, newName } = body;
+      const oldKey = String(fieldName || '').trim();
+      const cleanNew = String(newName || '').trim();
+      if (!oldKey || !cleanNew) return Response.json({ error: 'fieldName and newName required' }, { status: 400 });
+      const orgFields = await getOrgFields();
+      const allRecords = await listMirrorRecords(5000);
+      let renamed = 0;
+      for (const record of allRecords) {
+        const fields = record.fields || {};
+        if (!(oldKey in fields)) continue;
+        const newFields = {};
+        for (const [key, value] of Object.entries(fields)) {
+          newFields[key === oldKey ? cleanNew : key] = value;
+        }
+        const mirrorData = buildStandaloneMirror(newFields, orgFields, record.airtable_record_id);
+        await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
+        renamed += 1;
+      }
+      return Response.json({ field: { name: cleanNew }, renamed });
     }
 
     if (action === 'createField') {
-      const { name, type = 'singleLineText', options } = body;
+      const { name } = body;
       const cleanName = String(name || '').trim();
       if (!cleanName) return Response.json({ error: 'Column name is required' }, { status: 400 });
-      const table = await getTableSchema();
-      const existingField = (table.fields || []).find(f => f.name.toLowerCase() === cleanName.toLowerCase());
-      if (existingField) return Response.json({ error: `A column named "${existingField.name}" already exists in Airtable.` }, { status: 409 });
-      const payload = { name: cleanName, type };
-      if (options) payload.options = options;
-      const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables/${TABLE_ID}/fields`, { method: 'POST', headers, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) return Response.json({ error: data.error?.message || data.error?.type || 'Create field failed. Please check that your Airtable token has schema write permission.', details: data }, { status: res.status });
-      return Response.json({ field: data });
+      const sample = await listMirrorRecords(500);
+      const exists = sample.some(record => Object.keys(record.fields || {}).some(key => key.toLowerCase() === cleanName.toLowerCase()));
+      if (exists) return Response.json({ error: `A column named "${cleanName}" already exists.` }, { status: 409 });
+      // Columns are derived from record keys; the new column becomes visible once a
+      // record stores a value for it. Return success so the UI can add it to the grid.
+      return Response.json({ field: { name: cleanName } });
     }
 
     if (action === 'delete') {
