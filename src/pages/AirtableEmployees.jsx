@@ -12,6 +12,11 @@ import AirtableRecordForm from '@/components/airtable/AirtableRecordForm';
 import TableWithTopScrollbar from '@/components/airtable/TableWithTopScrollbar';
 import AddColumnDialog from '@/components/airtable/AddColumnDialog';
 import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
+import EmployeeFilesCell from '@/components/airtable/EmployeeFilesCell';
+import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
+
+// Mirror fields that hold re-hosted Airtable attachments (rendered with download UI)
+const FILE_COLUMNS = new Set(['Contract Files', 'ATD Files']);
 
 // Fields that are computed by Airtable — we hide them from the create/edit form
 const READ_ONLY_FIELDS = new Set([
@@ -262,6 +267,7 @@ export default function AirtableEmployees() {
           <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
+        <ExtractFilesButton onDone={handleRefresh} />
         <div className="ml-auto flex items-center gap-2">
           <Button variant="outline" onClick={() => setShowAddColumn(true)} disabled={loading}>
             <Columns3 className="w-4 h-4 mr-1.5" /> Add Column
@@ -359,7 +365,9 @@ export default function AirtableEmployees() {
                   </td>
                   {columns.map(col => (
                     <td key={col} className="py-1.5 px-3 border-r border-border/30 whitespace-nowrap">
-                      {renderCell(rec.fields?.[col])}
+                      {FILE_COLUMNS.has(col)
+                        ? <EmployeeFilesCell files={rec.fields?.[col]} />
+                        : renderCell(rec.fields?.[col])}
                     </td>
                   ))}
                 </tr>
