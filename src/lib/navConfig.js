@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, Building2, ClipboardList, Calendar, Upload,
   Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat,
-  Receipt, Link2, Scale, KeyRound, Network,
+  Receipt, Link2, Scale, KeyRound, Network, History,
 } from 'lucide-react';
 
 // Single source of truth for all navigable pages, grouped for the sidebar
@@ -51,6 +51,7 @@ export const navGroups = [
       { label: 'Schedule Proposal', icon: Send, path: '/schedule-proposal' },
       { label: 'Schedule Requests', icon: ClipboardCheck, path: '/schedule-requests' },
       { label: 'Approved Schedule', icon: CalendarCheck, path: '/approved-schedule' },
+      { label: 'Schedule Change History', icon: History, path: '/schedule-change-history' },
       { label: 'Schedule Links', icon: Link2, path: '/schedule-links' },
       { label: 'Leave Requests', icon: Calendar, path: '/leaves' },
       { label: 'Overtime', icon: ClipboardList, path: '/overtime' },

@@ -32,6 +32,7 @@ import ScheduleRequests from './pages/ScheduleRequests';
 import ApprovedSchedule from './pages/ApprovedSchedule';
 import Reconciliation from './pages/Reconciliation';
 import ScheduleLinks from './pages/ScheduleLinks';
+import ScheduleChangeHistory from './pages/ScheduleChangeHistory';
 import OrganizationSetup from './pages/OrganizationSetup';
 import Companies from './pages/Companies';
 import Branches from './pages/Branches';
@@ -104,6 +105,7 @@ const GatedRoutes = () => {
         <Route path="/approved-schedule" element={<ApprovedSchedule />} />
         <Route path="/reconciliation" element={<Reconciliation />} />
         <Route path="/schedule-links" element={<ScheduleLinks />} />
+        <Route path="/schedule-change-history" element={<ScheduleChangeHistory />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/offsets" element={<Offsets />} />

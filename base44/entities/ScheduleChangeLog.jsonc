@@ -1,0 +1,58 @@
+{
+  "name": "ScheduleChangeLog",
+  "type": "object",
+  "properties": {
+    "employee_id": {
+      "type": "string",
+      "description": "ApprovedSchedule employee_id this change applies to"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "The schedule date that was changed"
+    },
+    "old_value": {
+      "type": "string",
+      "description": "Previous schedule_type ('none' if there was no schedule)"
+    },
+    "new_value": {
+      "type": "string",
+      "description": "New schedule_type ('none' if the schedule was removed)"
+    },
+    "old_label": {
+      "type": "string",
+      "description": "Human-readable label of the previous schedule card"
+    },
+    "new_label": {
+      "type": "string",
+      "description": "Human-readable label of the new schedule card"
+    },
+    "changed_by": {
+      "type": "string",
+      "description": "Display name of the user who made the change"
+    },
+    "changed_by_role": {
+      "type": "string",
+      "description": "Role/tier of the user who made the change"
+    },
+    "period_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "employee_id",
+    "date",
+    "new_value"
+  ]
+}

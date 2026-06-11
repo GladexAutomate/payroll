@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X, Settings2 } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X, Settings2, Pencil } from 'lucide-react';
 import { SCHEDULE_TYPES, getScheduleDays, parseShiftValue } from './scheduleUtils';
 import ShiftCellOptions from './ShiftCellOptions';
 
@@ -22,7 +22,7 @@ const resolveConfig = (type, shiftCards = {}) => {
   return SCHEDULE_TYPES[type] || SCHEDULE_TYPES.none;
 };
 
-export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, onFill, onFillTo, shiftTemplates = [], leaveOverlay = {}, actualOverlay = null }) {
+export default function ScheduleGrid({ employees, assignments, periodStart, periodEnd, editable = false, onChange, onFill, onFillTo, onEditEmployee, shiftTemplates = [], leaveOverlay = {}, actualOverlay = null }) {
   const days = getScheduleDays(periodStart, periodEnd);
   const dayKeys = days.map(d => format(d, 'yyyy-MM-dd'));
   const [menuCell, setMenuCell] = useState(null); // { employeeId, date, type }
@@ -144,7 +144,19 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
             {employees.map(emp => (
               <tr key={emp.id} className="border-b border-border/60">
                 <td className="sticky left-0 z-10 bg-card py-2 px-3 font-semibold text-[11px] border-r border-border uppercase whitespace-nowrap">
-                  {emp.name}
+                  <div className="flex items-center gap-1.5">
+                    {onEditEmployee && (
+                      <button
+                        type="button"
+                        onClick={() => onEditEmployee(emp)}
+                        className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary normal-case"
+                        title="Edit this employee's schedule"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    <span>{emp.name}</span>
+                  </div>
                 </td>
                 {days.map(day => {
                   const date = format(day, 'yyyy-MM-dd');

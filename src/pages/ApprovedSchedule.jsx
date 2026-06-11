@@ -18,6 +18,7 @@ import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import { buildActualOverlay } from '@/components/schedule/buildActualOverlay';
 import { exportApprovedScheduleToExcel } from '@/components/schedule/exportApprovedSchedule';
 import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
+import EmployeeScheduleEditModal from '@/components/schedule/EmployeeScheduleEditModal';
 
 const getCurrentPayPeriod = () => {
   const today = new Date();
@@ -52,8 +53,9 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [saving, setSaving] = useState(false);
   const [showActual, setShowActual] = useState(false);
   const [teams, setTeams] = useState([]);
+  const [editEmployee, setEditEmployee] = useState(null);
   const { toast } = useToast();
-  const { tier } = useCurrentTier();
+  const { tier, signerName, signerRole } = useCurrentTier();
   // Only HR, Managers, and Leaders/Supervisors can modify the approved schedule.
   const canEdit = ['hr', 'managers', 'leaders'].includes(tier);
   const [searchParams] = useSearchParams();
@@ -339,6 +341,44 @@ export default function ApprovedSchedule({ readOnly = false }) {
     loadRange();
   };
 
+  // Per-employee save (Airtable-style modal). Writes ApprovedSchedule and logs each change.
+  const saveEmployeeEdits = async (emp, edits) => {
+    for (const edit of edits) {
+      const existing = plotted.find(r => r.employee_id === emp.id && r.date === edit.date);
+      if (edit.newValue === 'none') {
+        if (existing) await base44.entities.ApprovedSchedule.delete(existing.id);
+      } else if (existing) {
+        await base44.entities.ApprovedSchedule.update(existing.id, { schedule_type: edit.newValue });
+      } else {
+        await base44.entities.ApprovedSchedule.create({
+          employee_id: emp.id,
+          employee_name: emp.name || '',
+          department: emp.department || '',
+          date: edit.date,
+          schedule_type: edit.newValue,
+          source_proposal_id: 'manual',
+        });
+      }
+      await base44.entities.ScheduleChangeLog.create({
+        employee_id: emp.id,
+        employee_name: emp.name || '',
+        department: emp.department || '',
+        date: edit.date,
+        old_value: edit.oldValue,
+        new_value: edit.newValue,
+        old_label: edit.oldLabel,
+        new_label: edit.newLabel,
+        changed_by: signerName || 'Unknown',
+        changed_by_role: signerRole || tier,
+        period_start: periodStart,
+        period_end: periodEnd,
+      });
+    }
+    setEditEmployee(null);
+    toast({ title: 'Schedule updated', description: `${edits.length} day(s) changed for ${emp.name}. Logged to history.` });
+    loadRange();
+  };
+
   const handleExport = () => {
     exportApprovedScheduleToExcel({ employees: filteredEmployees, assignments, shiftTemplates, periodStart, periodEnd });
   };
@@ -443,9 +483,22 @@ export default function ApprovedSchedule({ readOnly = false }) {
             editable={editMode && canEdit}
             onChange={handleCellChange}
             onFillTo={handleFillTo}
+            onEditEmployee={(!readOnly && canEdit && !editMode) ? setEditEmployee : undefined}
           />
         )}
       </div>
+
+      {editEmployee && (
+        <EmployeeScheduleEditModal
+          employee={editEmployee}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          baseAssignments={baseAssignments}
+          shiftTemplates={shiftTemplates}
+          onClose={() => setEditEmployee(null)}
+          onSave={saveEmployeeEdits}
+        />
+      )}
     </div>
   );
 }
