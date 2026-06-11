@@ -71,14 +71,19 @@ Deno.serve(async (req) => {
         return Response.json({ saved: created, created, updated: 0 });
       }
 
-      // Slow path (re-upload): check for duplicates by employee+date.
-      // Fetch existing logs for the chunk's date range in ONE paginated query
-      // instead of one query per date — this avoids hammering the rate limiter.
+      // Re-upload duplicate check: only look at the employees and date range
+      // present in THIS chunk, not every log in the period. This keeps each
+      // chunk fast and avoids request timeouts on large existing datasets.
       const dates = [...new Set(records.map(r => r.date))].sort();
       const minDate = dates[0];
       const maxDate = dates[dates.length - 1];
+      const employeeIds = [...new Set(records.map(r => r.employee_id))];
       const existingMap = {};
-      {
+
+      // Query existing logs scoped to this chunk's employees + date range.
+      const EMP_BATCH = 25; // keep $in lists small
+      for (let e = 0; e < employeeIds.length; e += EMP_BATCH) {
+        const empSlice = employeeIds.slice(e, e + EMP_BATCH);
         const PAGE = 500;
         let skip = 0;
         while (true) {
@@ -87,7 +92,7 @@ Deno.serve(async (req) => {
           while (attempts < 5) {
             try {
               logs = await base44.asServiceRole.entities.AttendanceLog.filter(
-                { date: { $gte: minDate, $lte: maxDate } },
+                { employee_id: { $in: empSlice }, date: { $gte: minDate, $lte: maxDate } },
                 'date',
                 PAGE,
                 skip
@@ -107,7 +112,7 @@ Deno.serve(async (req) => {
           for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
           if (logs.length < PAGE) break;
           skip += PAGE;
-          await new Promise(r => setTimeout(r, 200));
+          await new Promise(r => setTimeout(r, 150));
         }
       }
 
