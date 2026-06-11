@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { addDays, format } from 'date-fns';
-import { CalendarCheck, RefreshCw, Download, Pencil, Save, X, Filter } from 'lucide-react';
+import { format } from 'date-fns';
+import { CalendarCheck, RefreshCw, Download, Filter } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
@@ -48,9 +48,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [editMode, setEditMode] = useState(false);
-  const [draft, setDraft] = useState({});
-  const [saving, setSaving] = useState(false);
   const [showActual, setShowActual] = useState(false);
   const [teams, setTeams] = useState([]);
   const [editEmployee, setEditEmployee] = useState(null);
@@ -252,15 +249,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
     return map;
   }, [plotted, approvedLeaveOverlay]);
 
-  // Merge draft edits on top of base assignments for display/export
-  const assignments = useMemo(() => {
-    const map = JSON.parse(JSON.stringify(baseAssignments));
-    Object.entries(draft).forEach(([empId, dayMap]) => {
-      map[empId] = map[empId] || {};
-      Object.entries(dayMap).forEach(([date, type]) => { map[empId][date] = type; });
-    });
-    return map;
-  }, [baseAssignments, draft]);
+  const assignments = baseAssignments;
 
   const actualOverlay = useMemo(() => {
     if (!showActual) return null;
@@ -268,78 +257,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
       employees: filteredEmployees, logs: attendanceLogs, localEmployees, airtableMatches, assignments, periodStart, periodEnd,
     });
   }, [showActual, filteredEmployees, attendanceLogs, localEmployees, airtableMatches, assignments, periodStart, periodEnd]);
-
-  const handleCellChange = (empId, date, type) => {
-    setDraft(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [date]: type } }));
-  };
-
-  const dayKeys = useMemo(() => {
-    const out = [];
-    let d = new Date(periodStart);
-    const end = new Date(periodEnd);
-    while (d <= end) { out.push(format(d, 'yyyy-MM-dd')); d = addDays(d, 1); }
-    return out;
-  }, [periodStart, periodEnd]);
-
-  const handleFillTo = (empId, date, type, axis, target) => {
-    setDraft(prev => {
-      const next = { ...prev };
-      if (axis === 'horizontal') {
-        const from = dayKeys.indexOf(date);
-        const to = dayKeys.indexOf(target.date);
-        if (from === -1 || to === -1) return prev;
-        const [a, b] = from <= to ? [from, to] : [to, from];
-        const row = { ...(next[empId] || {}) };
-        for (let i = a; i <= b; i++) row[dayKeys[i]] = type;
-        next[empId] = row;
-      } else {
-        const from = filteredEmployees.findIndex(e => e.id === empId);
-        const to = filteredEmployees.findIndex(e => e.id === target.employeeId);
-        if (from === -1 || to === -1) return prev;
-        const [a, b] = from <= to ? [from, to] : [to, from];
-        for (let i = a; i <= b; i++) {
-          const emp = filteredEmployees[i];
-          next[emp.id] = { ...(next[emp.id] || {}), [date]: type };
-        }
-      }
-      return next;
-    });
-  };
-
-  const cancelEdit = () => { setDraft({}); setEditMode(false); };
-
-  const saveEdits = async () => {
-    setSaving(true);
-    const edits = [];
-    Object.entries(draft).forEach(([empId, dayMap]) => {
-      Object.entries(dayMap).forEach(([date, type]) => edits.push({ empId, date, type }));
-    });
-
-    for (const edit of edits) {
-      const existing = plotted.find(r => r.employee_id === edit.empId && r.date === edit.date);
-      const emp = filteredEmployees.find(e => e.id === edit.empId);
-      if (edit.type === 'none') {
-        if (existing) await base44.entities.ApprovedSchedule.delete(existing.id);
-      } else if (existing) {
-        await base44.entities.ApprovedSchedule.update(existing.id, { schedule_type: edit.type });
-      } else {
-        await base44.entities.ApprovedSchedule.create({
-          employee_id: edit.empId,
-          employee_name: emp?.name || '',
-          department: emp?.department || '',
-          date: edit.date,
-          schedule_type: edit.type,
-          source_proposal_id: 'manual',
-        });
-      }
-    }
-
-    setSaving(false);
-    setDraft({});
-    setEditMode(false);
-    toast({ title: 'Schedule saved', description: `${edits.length} cell(s) updated.` });
-    loadRange();
-  };
 
   // Per-employee save (Airtable-style modal). Writes ApprovedSchedule and logs each change.
   const saveEmployeeEdits = async (emp, edits) => {
@@ -393,7 +310,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
             <CalendarCheck className="w-5 h-5 text-primary" />
             <div>
               <h2 className="font-semibold">Approved Schedule</h2>
-              <p className="text-xs text-muted-foreground">{editMode ? 'Edit mode — click any cell to cycle its schedule card, then Save.' : 'Blank schedule for all active employees — auto-plotted when a proposal is approved.'}</p>
+              <p className="text-xs text-muted-foreground">Blank schedule for all active employees — auto-plotted when a proposal is approved. Click the pencil on any employee to edit.</p>
               {scope && scopeValue && (
                 <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-primary bg-primary/10 rounded-full px-2.5 py-0.5">
                   <Filter className="w-3 h-3" /> {scope.replace('_', ' ')}: {scopeParts.filter(Boolean).join(' / ')}
@@ -403,30 +320,12 @@ export default function ApprovedSchedule({ readOnly = false }) {
           </div>
           {!readOnly && (
           <div className="flex items-center gap-2">
-            {editMode ? (
-              <>
-                <Button size="sm" onClick={saveEdits} disabled={saving}>
-                  <Save className={`w-4 h-4 mr-1.5 ${saving ? 'animate-pulse' : ''}`} /> {saving ? 'Saving...' : 'Save'}
-                </Button>
-                <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving}>
-                  <X className="w-4 h-4 mr-1.5" /> Cancel
-                </Button>
-              </>
-            ) : (
-              <>
-                {canEdit && (
-                  <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
-                    <Pencil className="w-4 h-4 mr-1.5" /> Edit
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={handleExport} disabled={loading}>
-                  <Download className="w-4 h-4 mr-1.5" /> Export
-                </Button>
-                <Button variant="outline" size="sm" onClick={loadBase} disabled={loading}>
-                  <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-                </Button>
-              </>
-            )}
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={loading}>
+              <Download className="w-4 h-4 mr-1.5" /> Export
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadBase} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </Button>
           </div>
           )}
         </div>
@@ -480,10 +379,7 @@ export default function ApprovedSchedule({ readOnly = false }) {
             shiftTemplates={shiftTemplates}
             periodStart={periodStart}
             periodEnd={periodEnd}
-            editable={editMode && canEdit}
-            onChange={handleCellChange}
-            onFillTo={handleFillTo}
-            onEditEmployee={(!readOnly && canEdit && !editMode) ? setEditEmployee : undefined}
+            onEditEmployee={(!readOnly && canEdit) ? setEditEmployee : undefined}
           />
         )}
       </div>
