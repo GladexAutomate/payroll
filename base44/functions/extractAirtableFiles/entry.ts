@@ -12,7 +12,7 @@ const ATTACHMENT_MAP = [
 
 // How many Airtable records to process per polling request. Each record can have
 // several files to download + re-host, so we keep the batch small to stay fast.
-const BATCH_SIZE = 15;
+const BATCH_SIZE = 8;
 
 const clean = (value) => String(value || '').trim();
 
@@ -141,14 +141,25 @@ Deno.serve(async (req) => {
       let processed = 0;
       let filesStored = 0;
       let skipped = 0;
+      let alreadyDone = 0;
 
       for (const rec of batch) {
         const mirror = mirrorByCode[rec.employeeCode];
         if (!mirror) { skipped += 1; continue; }
 
-        const newFields = { ...(mirror.fields || {}) };
+        const existing = mirror.fields || {};
+        const newFields = { ...existing };
+        let changed = false;
+
         for (const { mirrorField } of ATTACHMENT_MAP) {
           const files = rec.attachments[mirrorField] || [];
+          if (files.length === 0) continue;
+
+          // Skip if this field is already fully re-hosted (same file count, all on Base44).
+          const stored = Array.isArray(existing[mirrorField]) ? existing[mirrorField] : [];
+          const allRehosted = stored.length === files.length && stored.every((s) => s.file_uri);
+          if (allRehosted) continue;
+
           const rehosted = [];
           for (const f of files) {
             try {
@@ -156,17 +167,22 @@ Deno.serve(async (req) => {
               filesStored += 1;
             } catch (_e) { /* skip a single bad file, keep going */ }
           }
-          if (rehosted.length) newFields[mirrorField] = rehosted;
+          if (rehosted.length) { newFields[mirrorField] = rehosted; changed = true; }
         }
-        await base44.asServiceRole.entities[MIRROR_ENTITY].update(mirror.id, { fields: newFields });
-        processed += 1;
+
+        if (changed) {
+          await base44.asServiceRole.entities[MIRROR_ENTITY].update(mirror.id, { fields: newFields });
+          processed += 1;
+        } else {
+          alreadyDone += 1; // nothing new to do — already extracted on a prior run
+        }
       }
 
       const newProcessed = Math.min(offset + batch.length, total);
       const done = newProcessed >= total;
       return Response.json({
         done, nextOffset: newProcessed, processed: newProcessed, total,
-        batchStored: filesStored, batchSkipped: skipped,
+        batchStored: filesStored, batchSkipped: skipped, alreadyDone,
       });
     }
 
