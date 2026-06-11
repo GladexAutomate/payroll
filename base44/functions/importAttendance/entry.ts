@@ -187,52 +187,77 @@ async function prepareImport(base44, uploadId) {
     return { done: true, total: 0 };
   }
 
-  // Delete any existing logs for the date range covered by this file in a
-  // single bulk call, so the import becomes a clean create-only operation.
-  // A re-upload fully replaces the whole period. We delete by DATE RANGE
-  // ONLY — adding an `employee_id: {$in: [...]}` clause causes the server
-  // to drop the connection ("connection error"), whereas a plain date-range
-  // deleteMany is fast and reliable.
+  // We do NOT delete old logs here — deleting thousands of records inline would
+  // exceed the function's wall-clock limit. Instead we record the period range
+  // and let the batched poll phase (processBatch) clear old logs a page at a
+  // time before creating new ones, so every request stays short and reliable.
   const allDates = [...new Set(records.map(r => r.date))].sort();
   const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
-  console.log('[prepare] deleting old logs', minDate, '->', maxDate);
 
-  let attempts = 0;
-  while (true) {
-    try {
-      await base44.asServiceRole.entities.AttendanceLog.deleteMany(
-        { date: { $gte: minDate, $lte: maxDate } }
-      );
-      break;
-    } catch (err) {
-      attempts++;
-      if (isTransient(err) && attempts < 8) {
-        await new Promise(r => setTimeout(r, 1500 * attempts));
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  console.log('[prepare] old logs deleted, updating upload record');
+  console.log('[prepare] updating upload record, period', minDate, '->', maxDate);
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
     status: 'processing', total_rows: records.length, processed_rows: 0,
     created_count: 0, updated_count: 0, progress: 0,
     period_label: periodLabel, new_employees: createdEmployees,
-    stale_log_ids: [],
+    period_start: minDate, period_end: maxDate, delete_done: false,
   });
   console.log('[prepare] done');
 
   return { done: false, total: records.length };
 }
 
-// Process ONE create-only batch per request, driven by the frontend poll.
-// Old logs for the period are already cleared during prepareImport via a
-// bulk deleteMany, so each batch only ever does a fast bulkCreate and stays
-// well under the API rate limit.
+// Delete one page of old logs for the upload's period. Returns whether the
+// delete phase is complete. Kept small so each request finishes well under
+// the function time limit.
+async function deleteOldLogsPage(base44, upload) {
+  const minDate = upload.period_start;
+  const maxDate = upload.period_end;
+  if (!minDate || !maxDate) return { deleteDone: true, deletedThisPage: 0 };
+
+  const existing = await base44.asServiceRole.entities.AttendanceLog.filter(
+    { date: { $gte: minDate, $lte: maxDate } }, '', 200
+  );
+  if (existing.length === 0) {
+    await base44.asServiceRole.entities.AttendanceUpload.update(upload.id, { delete_done: true });
+    return { deleteDone: true, deletedThisPage: 0 };
+  }
+
+  let deleted = 0;
+  for (let i = 0; i < existing.length; i += 50) {
+    const idChunk = existing.slice(i, i + 50).map(l => l.id);
+    let attempts = 0;
+    while (true) {
+      try {
+        await base44.asServiceRole.entities.AttendanceLog.deleteMany({ id: { $in: idChunk } });
+        break;
+      } catch (err) {
+        attempts++;
+        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
+        throw err;
+      }
+    }
+    deleted += idChunk.length;
+  }
+  console.log('[delete] cleared page of', deleted, 'old logs');
+  return { deleteDone: false, deletedThisPage: deleted };
+}
+
+// Process ONE batch per request, driven by the frontend poll. First drains
+// old logs for the period a page at a time (delete phase), then switches to
+// creating new logs a slice at a time (create phase). Splitting the work this
+// way keeps every request short, so nothing trips the function time limit.
 async function processBatch(base44, uploadId, offset) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
+
+  // ── DELETE PHASE: clear old logs for the period before creating new ones ──
+  if (!upload.delete_done) {
+    const { deleteDone } = await deleteOldLogsPage(base44, upload);
+    if (!deleteDone) {
+      return { done: false, phase: 'delete', total: upload.total_rows || 0 };
+    }
+    // delete just finished — fall through to start creating on this same call
+  }
 
   const parsed = await parseFile(upload.file_url, upload.filename);
 

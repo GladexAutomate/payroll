@@ -12,6 +12,21 @@
       "type": "string",
       "description": "e.g. May 2026"
     },
+    "period_start": {
+      "type": "string",
+      "format": "date",
+      "description": "First date covered by this import (used by the delete phase)"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date",
+      "description": "Last date covered by this import (used by the delete phase)"
+    },
+    "delete_done": {
+      "type": "boolean",
+      "default": false,
+      "description": "True once all old logs for the period have been cleared during the import delete phase"
+    },
     "records_imported": {
       "type": "number"
     },
