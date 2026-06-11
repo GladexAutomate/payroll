@@ -18,6 +18,11 @@ import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
 // Mirror fields that hold re-hosted Airtable attachments (rendered with download UI)
 const FILE_COLUMNS = new Set(['Contract Files', 'ATD Files']);
 
+// Raw Airtable attachment columns whose URLs expire after a few minutes.
+// We hide them so users only ever click the permanent re-hosted copies
+// (Contract Files / ATD Files) instead of the expiring Airtable links.
+const HIDDEN_COLUMNS = new Set(['CONTRACT', 'ATD DOCUMENTS', 'ATTACHMENTS']);
+
 // Fields that are computed by Airtable — we hide them from the create/edit form
 const READ_ONLY_FIELDS = new Set([
   'RECORD ID',
@@ -182,7 +187,7 @@ export default function AirtableEmployees() {
     for (const r of records) {
       for (const k of Object.keys(r.fields || {})) cols.add(k);
     }
-    const arr = Array.from(cols);
+    const arr = Array.from(cols).filter(c => !HIDDEN_COLUMNS.has(c));
     const priority = ['Employee Code ID', 'Company', 'COMPANY', 'Full Name', 'First Name', 'Last Name', 'Branch', 'BRANCH', 'Department', 'DEPARTMENT', 'Department Role', 'DEPARTMENT ROLE', 'Job Title', 'Status'];
     arr.sort((a, b) => {
       const ia = priority.findIndex(item => item.toLowerCase() === a.toLowerCase());
