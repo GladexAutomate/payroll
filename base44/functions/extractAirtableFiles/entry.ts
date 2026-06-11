@@ -12,7 +12,7 @@ const ATTACHMENT_MAP = [
 
 // How many Airtable records to process per polling request. Each record can have
 // several files to download + re-host, so we keep the batch small to stay fast.
-const BATCH_SIZE = 8;
+const BATCH_SIZE = 3;
 
 const clean = (value) => String(value || '').trim();
 

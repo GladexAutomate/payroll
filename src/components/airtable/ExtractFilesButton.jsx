@@ -24,13 +24,30 @@ export default function ExtractFilesButton({ onDone }) {
       let offset = 0;
       let stored = 0;
       while (true) {
-        const res = await base44.functions.invoke('extractAirtableFiles', { action: 'processBatch', offset });
-        const data = res.data || {};
-        if (data.error) throw new Error(data.error);
+        let data;
+        let attempts = 0;
+        // Retry a batch on transient errors (502 timeout / network) before giving up.
+        while (true) {
+          try {
+            const res = await base44.functions.invoke('extractAirtableFiles', { action: 'processBatch', offset });
+            data = res.data || {};
+            if (data.error) throw new Error(data.error);
+            break;
+          } catch (err) {
+            const status = err?.response?.status;
+            const transient = status === 502 || status === 503 || status === 504 || !status;
+            attempts += 1;
+            if (transient && attempts < 4) {
+              await new Promise((r) => setTimeout(r, 1500 * attempts));
+              continue; // re-run the SAME offset; already-done records skip instantly
+            }
+            throw err;
+          }
+        }
         stored += data.batchStored || 0;
         setProgress({ current: data.processed || 0, total: data.total || total });
         if (data.done) { setResult({ stored, employees: data.total || total }); break; }
-        offset = data.nextOffset ?? (offset + 15);
+        offset = data.nextOffset ?? (offset + 3);
       }
       onDone?.();
     } catch (err) {
