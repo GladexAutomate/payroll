@@ -58,20 +58,57 @@ function useTargetRect(selector, active, stepIndex, pathname) {
   return { rect, found };
 }
 
+const TIP_W = 360;
+const TIP_H = 240; // approx; used for clamping
+const MARGIN = 12;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+// Returns absolute top/left for the tooltip's TOP-LEFT corner, clamped to the viewport
+// so it's never rendered off-screen regardless of where the target sits.
 function tooltipPosition(rect, placement) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = Math.min(TIP_W, vw - MARGIN * 2);
+
   if (!rect) {
-    return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+    return { top: vh / 2 - TIP_H / 2, left: vw / 2 - w / 2 };
   }
+
   const gap = 16;
+  let top;
+  let left;
+
   switch (placement) {
     case 'right':
-      return { top: rect.top + rect.height / 2, left: rect.left + rect.width + gap, transform: 'translateY(-50%)' };
+      left = rect.left + rect.width + gap;
+      top = rect.top + rect.height / 2 - TIP_H / 2;
+      break;
     case 'bottom':
-      return { top: rect.top + rect.height + gap, left: rect.left + rect.width / 2, transform: 'translateX(-50%)' };
+      top = rect.top + rect.height + gap;
+      left = rect.left + rect.width / 2 - w / 2;
+      break;
     case 'top':
-    default:
-      return { top: rect.top - gap, left: rect.left + rect.width / 2, transform: 'translate(-50%, -100%)' };
+    default: {
+      // Prefer above; if not enough room, flip below the target.
+      const above = rect.top - gap - TIP_H;
+      top = above >= MARGIN ? above : rect.top + rect.height + gap;
+      left = rect.left + rect.width / 2 - w / 2;
+      break;
+    }
   }
+
+  // If "right" placement overflows, fall back to left of the target.
+  if (placement === 'right' && left + w > vw - MARGIN) {
+    left = rect.left - gap - w;
+  }
+
+  return {
+    top: clamp(top, MARGIN, vh - TIP_H - MARGIN),
+    left: clamp(left, MARGIN, vw - w - MARGIN),
+  };
 }
 
 export default function CoachedTour() {
@@ -140,8 +177,8 @@ export default function CoachedTour() {
 
       {/* Tooltip card */}
       <div
-        className="absolute w-[min(92vw,360px)] bg-white rounded-xl shadow-2xl border border-border p-5 pointer-events-auto transition-all duration-300"
-        style={tip}
+        className="absolute bg-white rounded-xl shadow-2xl border border-border p-5 pointer-events-auto transition-all duration-300"
+        style={{ ...tip, width: 'min(92vw, 360px)' }}
       >
         <button
           onClick={endTour}
