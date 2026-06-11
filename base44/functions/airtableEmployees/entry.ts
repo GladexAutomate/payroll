@@ -330,7 +330,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'employeeAccessStatus') {
-      await syncFromAirtable();
       const currentUser = await base44.auth.me();
       if (currentUser.role === 'admin') return Response.json({ allowed: true, admin: true });
       if (!currentUser.employee_access_verified || !currentUser.employee_code) return Response.json({ allowed: false });
@@ -351,7 +350,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'validateEmployeeAccess') {
-      await syncFromAirtable();
       const { employeeCode, password } = body;
       const currentUser = await base44.auth.me();
       const allRecords = await listMirrorRecords(5000);
@@ -512,7 +510,7 @@ Deno.serve(async (req) => {
         team: orgFields.team,
       };
       const targetField = fieldMap[category];
-      if (!targetField) return Response.json({ error: `Airtable column for ${category.replace('_', ' ')} was not found.` }, { status: 404 });
+      if (!targetField) return Response.json({ error: `Column for ${category.replace('_', ' ')} was not found.` }, { status: 404 });
 
       const updates = { [targetField]: String(target.name || '').trim() };
       if (orgFields.company && target.company_name) updates[orgFields.company] = String(target.company_name).trim();
