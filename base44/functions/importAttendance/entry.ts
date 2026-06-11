@@ -183,9 +183,10 @@ async function prepareImport(base44, uploadId) {
   const allDates = [...new Set(records.map(r => r.date))].sort();
   const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
 
-  // empIds can be large, so chunk the $in to keep each delete query small.
-  for (let i = 0; i < empIds.length; i += 100) {
-    const empChunk = empIds.slice(i, i + 100);
+  // Chunk the $in small so each deleteMany query payload stays lightweight
+  // (large $in arrays cause connection errors).
+  for (let i = 0; i < empIds.length; i += 10) {
+    const empChunk = empIds.slice(i, i + 10);
     let attempts = 0;
     while (attempts < 6) {
       try {
