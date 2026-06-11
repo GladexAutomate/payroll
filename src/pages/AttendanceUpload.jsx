@@ -86,6 +86,21 @@ export default function AttendanceUpload() {
 
     startUpload(file.name, '');
 
+    try {
+      await runImport(file);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      const friendly = (msg === 'timeout' || msg.toLowerCase().includes('network'))
+        ? 'Network connection interrupted during import. Your progress was saved up to the last completed batch — please re-upload the same file to finish the remaining records (already-imported days will be updated, not duplicated).'
+        : msg;
+      finishUpload({ error: friendly });
+      loadUploads();
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const runImport = async (file) => {
+
 
     // Parse file locally with xlsx
     const arrayBuffer = await file.arrayBuffer();
