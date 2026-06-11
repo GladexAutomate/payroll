@@ -89,6 +89,20 @@ export default function EmployeeScheduleEditModal({ employee, periodStart, perio
         </div>
 
         <div className="p-5 overflow-y-auto">
+          <div className="mb-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Available cards</p>
+            <div className="flex flex-wrap gap-1.5">
+              {options.filter(o => o.value !== 'none').map(o => (
+                <span
+                  key={o.value}
+                  className={`rounded px-2 py-1 text-[11px] font-semibold border ${o.color ? 'text-white' : o.className}`}
+                  style={o.color ? { backgroundColor: o.color, borderColor: o.color } : undefined}
+                >
+                  {o.label}
+                </span>
+              ))}
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground mb-3">Click a day to cycle through schedule cards (shift → OFF → leave → No Sched).</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {days.map(day => {
