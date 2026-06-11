@@ -71,48 +71,45 @@ Deno.serve(async (req) => {
         return Response.json({ saved: created, created, updated: 0 });
       }
 
-      // Re-upload duplicate check: only look at the employees and date range
-      // present in THIS chunk, not every log in the period. This keeps each
-      // chunk fast and avoids request timeouts on large existing datasets.
+      // Re-upload duplicate check. To keep every chunk fast and avoid request
+      // timeouts, we do a SINGLE bounded query per employee-id batch scoped to
+      // this chunk's exact date range. We hard-cap pagination so a chunk can
+      // never run unbounded — anything beyond the cap is treated as new.
       const dates = [...new Set(records.map(r => r.date))].sort();
       const minDate = dates[0];
       const maxDate = dates[dates.length - 1];
       const employeeIds = [...new Set(records.map(r => r.employee_id))];
       const existingMap = {};
 
-      // Query existing logs scoped to this chunk's employees + date range.
-      const EMP_BATCH = 25; // keep $in lists small
+      const EMP_BATCH = 50;
+      const MAX_PAGES = 4; // hard cap: at most 4 * 500 = 2000 existing rows scanned per batch
       for (let e = 0; e < employeeIds.length; e += EMP_BATCH) {
         const empSlice = employeeIds.slice(e, e + EMP_BATCH);
         const PAGE = 500;
         let skip = 0;
-        while (true) {
-          let attempts = 0;
+        let page = 0;
+        while (page < MAX_PAGES) {
           let logs = null;
-          while (attempts < 5) {
-            try {
-              logs = await base44.asServiceRole.entities.AttendanceLog.filter(
-                { employee_id: { $in: empSlice }, date: { $gte: minDate, $lte: maxDate } },
-                'date',
-                PAGE,
-                skip
-              );
-              break;
-            } catch (err) {
-              const msg = String(err?.message || err);
-              if (msg.includes('429') || msg.includes('Rate limit')) {
-                attempts++;
-                await new Promise(r => setTimeout(r, 1500 * attempts));
-                continue;
-              }
-              throw err;
+          try {
+            logs = await base44.asServiceRole.entities.AttendanceLog.filter(
+              { employee_id: { $in: empSlice }, date: { $gte: minDate, $lte: maxDate } },
+              'date',
+              PAGE,
+              skip
+            );
+          } catch (err) {
+            const msg = String(err?.message || err);
+            if (msg.includes('429') || msg.includes('Rate limit')) {
+              await new Promise(r => setTimeout(r, 1500));
+              continue; // retry same page
             }
+            throw err;
           }
           if (!logs || logs.length === 0) break;
           for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
           if (logs.length < PAGE) break;
           skip += PAGE;
-          await new Promise(r => setTimeout(r, 150));
+          page++;
         }
       }
 

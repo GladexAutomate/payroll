@@ -303,8 +303,9 @@ export default function AttendanceUpload() {
     });
     const uploadId = createRes.data?.uploadId;
 
-    // Step 3: Queue records in chunks of 300 (fewer round-trips)
-    const CHUNK_SIZE = 300;
+    // Step 3: Queue records in smaller chunks so each backend call stays well
+    // under the request timeout. Smaller chunks = faster, more reliable batches.
+    const CHUNK_SIZE = 150;
     const chunks = [];
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
       chunks.push(records.slice(i, i + CHUNK_SIZE));
@@ -312,17 +313,24 @@ export default function AttendanceUpload() {
 
     updateProgress({ current: 0, total: chunks.length, saved: 0 });
 
+    // Race each backend call against a timeout so a slow/hung batch never
+    // freezes the whole upload — it gets retried instead.
+    const invokeWithTimeout = (payload, ms) => Promise.race([
+      base44.functions.invoke('importAttendance', payload),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+    ]);
+
     let totalSaved = 0, totalCreated = 0, totalUpdated = 0;
     for (let i = 0; i < chunks.length; i++) {
       let attempts = 0;
-      while (attempts < 5) {
+      while (attempts < 6) {
         try {
-          const res = await base44.functions.invoke('importAttendance', {
+          const res = await invokeWithTimeout({
             action: 'importChunk',
             records: chunks[i],
             uploadId,
             skipDuplicateCheck,
-          });
+          }, 45000);
           totalSaved += res.data?.saved || 0;
           totalCreated += res.data?.created || 0;
           totalUpdated += res.data?.updated || 0;
@@ -330,13 +338,13 @@ export default function AttendanceUpload() {
           break;
         } catch (err) {
           attempts++;
-          if (attempts >= 5) throw err;
-          // Exponential backoff for rate limit recovery
-          await new Promise(r => setTimeout(r, 3000 * attempts));
+          if (attempts >= 6) throw err;
+          // Backoff before retrying this same chunk (rate limit / timeout recovery)
+          await new Promise(r => setTimeout(r, 2500 * attempts));
         }
       }
       // Small breather between chunks
-      if (i + 1 < chunks.length) await new Promise(r => setTimeout(r, 500));
+      if (i + 1 < chunks.length) await new Promise(r => setTimeout(r, 300));
     }
 
     // Step 3: Finalize — update upload record with totals
