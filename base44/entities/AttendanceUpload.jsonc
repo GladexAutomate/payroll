@@ -50,6 +50,14 @@
       "type": "number",
       "default": 0
     },
+    "stale_log_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "IDs of existing AttendanceLog records to delete before creating new ones (drained during the import delete phase)"
+    },
     "new_employees": {
       "type": "array",
       "items": {

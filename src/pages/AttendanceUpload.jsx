@@ -132,6 +132,12 @@ export default function AttendanceUpload() {
         return;
       }
 
+      if (data.phase === 'delete') {
+        // Still clearing old records — keep the bar moving without advancing offset.
+        updateProgress({ current: 0, total: data.total || 0, saved: 0, percent: 0, deleting: true });
+        continue;
+      }
+
       updateProgress({
         current: data.processed || 0,
         total: data.total || 0,
@@ -144,7 +150,7 @@ export default function AttendanceUpload() {
         finishFromRecord(rec);
         return;
       }
-      offset = data.nextOffset ?? (offset + 300);
+      offset = data.nextOffset ?? (offset + 120);
     }
   };
 
@@ -236,7 +242,16 @@ export default function AttendanceUpload() {
           {uploading ? (
             <div className="flex flex-col items-center gap-4 w-full max-w-sm">
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
-              {uploadProgress.total > 0 ? (
+              {uploadProgress.deleting ? (
+                <div className="w-full text-center">
+                  <p className="text-sm font-medium">Clearing previous records for this period…</p>
+                  <p className="text-xs text-muted-foreground mt-1">Preparing a clean import. This finishes shortly.</p>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden mt-3">
+                    <div className="h-full bg-primary/60 rounded-full animate-pulse w-1/3" />
+                  </div>
+                  <UploadTimer startedAt={uploadState?.startedAt} />
+                </div>
+              ) : uploadProgress.total > 0 ? (
                 <>
                   <div className="w-full">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1.5">

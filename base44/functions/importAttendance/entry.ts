@@ -169,24 +169,85 @@ async function prepareImport(base44, uploadId) {
     return { done: true, total: 0 };
   }
 
+  // Delete any existing logs for the employees + date range covered by this
+  // file, so the import becomes a clean create-only operation (no slow,
+  // rate-limited per-record updates). A re-upload fully replaces the period.
+  const empIds = [...new Set(records.map(r => r.employee_id))];
+  const allDates = [...new Set(records.map(r => r.date))].sort();
+  const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
+
+  const idsToDelete = [];
+  for (let i = 0; i < empIds.length; i += 50) {
+    const empChunk = empIds.slice(i, i + 50);
+    let skip = 0;
+    while (true) {
+      let logs;
+      try {
+        logs = await base44.asServiceRole.entities.AttendanceLog.filter(
+          { employee_id: { $in: empChunk }, date: { $gte: minDate, $lte: maxDate } }, 'date', 500, skip
+        );
+      } catch (err) {
+        const msg = String(err?.message || err);
+        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        throw err;
+      }
+      if (!logs || logs.length === 0) break;
+      for (const log of logs) idsToDelete.push(log.id);
+      if (logs.length < 500) break;
+      skip += 500;
+    }
+  }
+
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
     status: 'processing', total_rows: records.length, processed_rows: 0,
     created_count: 0, updated_count: 0, progress: 0,
     period_label: periodLabel, new_employees: createdEmployees,
+    stale_log_ids: idsToDelete,
   });
 
   return { done: false, total: records.length };
 }
 
-// Process ONE batch of records starting at `offset`. Returns the next offset.
-// Each batch runs inside its own live request so it is never killed mid-flight.
+const DELETE_BATCH = 80;
+
+const isRateLimit = (err) => {
+  const msg = String(err?.message || err);
+  return msg.includes('429') || msg.toLowerCase().includes('rate limit');
+};
+
+// Process ONE batch per request, driven by the frontend poll. The import has
+// two phases:
+//   1. "delete" — drain stale_log_ids (old logs for this period) in chunks.
+//   2. "create" — bulkCreate new logs, offset by offset.
+// Each request only ever does fast bulk operations, so it stays well under
+// the API rate limit and finishes quickly.
 async function processBatch(base44, uploadId, offset) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
 
+  // ── Phase 1: delete stale logs ───────────────────────────────────────────
+  const staleIds = upload.stale_log_ids || [];
+  if (staleIds.length > 0) {
+    const chunk = staleIds.slice(0, DELETE_BATCH);
+    for (const id of chunk) {
+      let attempts = 0;
+      while (attempts < 6) {
+        try { await base44.asServiceRole.entities.AttendanceLog.delete(id); break; }
+        catch (err) {
+          if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
+          break; // already gone — skip
+        }
+      }
+      await new Promise(r => setTimeout(r, 40));
+    }
+    const remaining = staleIds.slice(chunk.length);
+    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, { stale_log_ids: remaining });
+    return { done: false, phase: 'delete', processed: 0, total: upload.total_rows || 0 };
+  }
+
+  // ── Phase 2: create new logs ─────────────────────────────────────────────
   const parsed = await parseFile(upload.file_url, upload.filename);
 
-  // Rebuild the same employee maps so we can resolve records identically.
   const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
   const byBioId = {};
   const byName = {};
@@ -201,101 +262,41 @@ async function processBatch(base44, uploadId, offset) {
   const batch = allRecords.slice(offset, offset + BATCH_SIZE);
 
   if (batch.length === 0) {
-    // Nothing left — finalize.
+    const finalCount = upload.created_count || 0;
     await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
       status: 'success', progress: 100, processed_rows: total,
-      records_imported: (upload.created_count || 0) + (upload.updated_count || 0),
-      notes: `${upload.created_count || 0} created, ${upload.updated_count || 0} updated`,
+      records_imported: finalCount, notes: `${finalCount} records imported`,
     });
-    return { done: true, processed: total, total };
+    return { done: true, phase: 'create', processed: total, total };
   }
 
-  // Find existing logs for just this batch's employees + dates (duplicate handling).
-  const dates = [...new Set(batch.map(r => r.date))].sort();
-  const minDate = dates[0], maxDate = dates[dates.length - 1];
-  const empIds = [...new Set(batch.map(r => r.employee_id))];
-  const existingMap = {};
-  let skip = 0;
-  while (true) {
-    let logs = null;
-    try {
-      logs = await base44.asServiceRole.entities.AttendanceLog.filter(
-        { employee_id: { $in: empIds }, date: { $gte: minDate, $lte: maxDate } }, 'date', 500, skip
-      );
-    } catch (err) {
-      const msg = String(err?.message || err);
-      if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { await new Promise(r => setTimeout(r, 2000)); continue; }
-      throw err;
-    }
-    if (!logs || logs.length === 0) break;
-    for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
-    if (logs.length < 500) break;
-    skip += 500;
-  }
-
-  const toCreate = [];
-  const toUpdate = [];
-  for (const rec of batch) {
-    const existing = existingMap[`${rec.employee_id}|${rec.date}`];
-    if (existing) {
-      toUpdate.push({ id: existing.id, data: {
-        time_in: rec.time_in || existing.time_in, time_out: rec.time_out || existing.time_out,
-        raw_punches: rec.raw_punches || existing.raw_punches, total_hours: rec.total_hours || existing.total_hours,
-        status: 'present', biometric_id: rec.biometric_id, employee_name: rec.employee_name, upload_id: uploadId,
-      }});
-    } else {
-      toCreate.push(rec);
-    }
-  }
-
-  let created = 0, updated = 0;
-
-  // Bulk create
+  let created = 0;
   const CREATE_BATCH = 100;
-  for (let i = 0; i < toCreate.length; i += CREATE_BATCH) {
-    const slice = toCreate.slice(i, i + CREATE_BATCH);
+  for (let i = 0; i < batch.length; i += CREATE_BATCH) {
+    const slice = batch.slice(i, i + CREATE_BATCH);
     let attempts = 0;
-    while (attempts < 5) {
+    while (attempts < 6) {
       try { await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice); created += slice.length; break; }
       catch (err) {
-        const msg = String(err?.message || err);
-        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { attempts++; await new Promise(r => setTimeout(r, 2500 * attempts)); continue; }
+        if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 2500 * attempts)); continue; }
         throw err;
       }
     }
   }
 
-  // Update existing — paced to stay under the rate limit.
-  for (const u of toUpdate) {
-    let attempts = 0;
-    while (attempts < 8) {
-      try { await base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data); updated++; break; }
-      catch (err) {
-        if (String(err?.message || err).includes('429') || String(err?.message || err).toLowerCase().includes('rate limit')) {
-          attempts++; await new Promise(r => setTimeout(r, 2000 * attempts)); continue;
-        }
-        break;
-      }
-    }
-    // Small breather between updates so we don't burst the API.
-    await new Promise(r => setTimeout(r, 60));
-  }
-
   const newProcessed = Math.min(offset + batch.length, total);
   const newCreated = (upload.created_count || 0) + created;
-  const newUpdated = (upload.updated_count || 0) + updated;
   const done = newProcessed >= total;
 
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-    processed_rows: newProcessed, created_count: newCreated, updated_count: newUpdated,
+    processed_rows: newProcessed, created_count: newCreated,
     progress: Math.round((newProcessed / total) * 100),
     ...(done ? {
-      status: 'success', records_imported: newCreated + newUpdated,
-      notes: `${newCreated} created, ${newUpdated} updated`,
+      status: 'success', records_imported: newCreated, notes: `${newCreated} records imported`,
     } : {}),
   });
 
-  return { done, nextOffset: newProcessed, processed: newProcessed, total };
+  return { done, phase: 'create', nextOffset: newProcessed, processed: newProcessed, total };
 }
 
 Deno.serve(async (req) => {
