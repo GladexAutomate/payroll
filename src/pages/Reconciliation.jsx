@@ -22,7 +22,7 @@ export default function Reconciliation() {
   const period = useMemo(() => getCurrentPayPeriod(), []);
   const [periodStart, setPeriodStart] = useState(period.start);
   const [periodEnd, setPeriodEnd] = useState(period.end);
-  const [branchFilter, setBranchFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('');
   const [branchOptions, setBranchOptions] = useState([]);
   const [runs, setRuns] = useState([]);
   const [running, setRunning] = useState(false);
@@ -70,6 +70,10 @@ export default function Reconciliation() {
   }, [running, activeRun?.id]);
 
   const handleRun = async () => {
+    if (!branchFilter) {
+      toast({ title: 'Branch required', description: 'Please pick a branch before reconciling.', variant: 'destructive' });
+      return;
+    }
     setRunning(true);
     setActiveRun({ processed: 0, total: 0, progress: 0 });
     const params = {

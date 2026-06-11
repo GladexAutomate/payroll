@@ -33,11 +33,10 @@ export default function RunReconcileCard({
           <Input type="date" value={periodEnd} onChange={e => onPeriodChange(periodStart, e.target.value)} className="mt-1" />
         </div>
         <div>
-          <Label className="text-xs">Branch</Label>
+          <Label className="text-xs">Branch*</Label>
           <Select value={branchFilter} onValueChange={onBranchChange}>
-            <SelectTrigger className="mt-1"><SelectValue placeholder="All branches" /></SelectTrigger>
+            <SelectTrigger className="mt-1"><SelectValue placeholder="Select a branch…" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All branches</SelectItem>
               {branchOptions.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -58,10 +57,10 @@ export default function RunReconcileCard({
 
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-          <Filter className="w-3 h-3" /> {branchFilter === 'all' ? 'All branches' : branchFilter}
+          <Filter className="w-3 h-3" /> {branchFilter ? branchFilter : 'No branch selected'}
         </span>
         <div className="ml-auto">
-          <Button onClick={onRun} disabled={running}>
+          <Button onClick={onRun} disabled={running || !branchFilter}>
             {running ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
             {running ? 'Reconciling…' : 'Run & Save'}
           </Button>
