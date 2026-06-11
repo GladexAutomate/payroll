@@ -187,38 +187,31 @@ async function prepareImport(base44, uploadId) {
     return { done: true, total: 0 };
   }
 
-  // Delete any existing logs for the employees + date range covered by this
-  // file in a single bulk call, so the import becomes a clean create-only
-  // operation. A re-upload fully replaces the period. deleteMany(filter)
-  // removes all matching records server-side in one request — no slow,
-  // rate-limited per-record loop.
-  const empIds = [...new Set(records.map(r => r.employee_id))];
+  // Delete any existing logs for the date range covered by this file in a
+  // single bulk call, so the import becomes a clean create-only operation.
+  // A re-upload fully replaces the whole period. We delete by DATE RANGE
+  // ONLY — adding an `employee_id: {$in: [...]}` clause causes the server
+  // to drop the connection ("connection error"), whereas a plain date-range
+  // deleteMany is fast and reliable.
   const allDates = [...new Set(records.map(r => r.date))].sort();
   const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
-  console.log('[prepare] deleting old logs for', empIds.length, 'employees', minDate, '->', maxDate);
+  console.log('[prepare] deleting old logs', minDate, '->', maxDate);
 
-  // Chunk the $in small so each deleteMany query payload stays lightweight
-  // (large $in arrays cause connection errors). Retry transient connection
-  // errors with backoff, and pace each call so the DB isn't hammered.
-  for (let i = 0; i < empIds.length; i += 5) {
-    const empChunk = empIds.slice(i, i + 5);
-    let attempts = 0;
-    while (true) {
-      try {
-        await base44.asServiceRole.entities.AttendanceLog.deleteMany(
-          { employee_id: { $in: empChunk }, date: { $gte: minDate, $lte: maxDate } }
-        );
-        break;
-      } catch (err) {
-        attempts++;
-        if (isTransient(err) && attempts < 8) {
-          await new Promise(r => setTimeout(r, 1500 * attempts));
-          continue;
-        }
-        throw err;
+  let attempts = 0;
+  while (true) {
+    try {
+      await base44.asServiceRole.entities.AttendanceLog.deleteMany(
+        { date: { $gte: minDate, $lte: maxDate } }
+      );
+      break;
+    } catch (err) {
+      attempts++;
+      if (isTransient(err) && attempts < 8) {
+        await new Promise(r => setTimeout(r, 1500 * attempts));
+        continue;
       }
+      throw err;
     }
-    await new Promise(r => setTimeout(r, 120));
   }
 
   console.log('[prepare] old logs deleted, updating upload record');
