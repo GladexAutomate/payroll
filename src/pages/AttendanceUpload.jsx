@@ -11,6 +11,7 @@ import {
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 import NewEmployeesList from '@/components/attendance/NewEmployeesList';
+import UploadTimer from '@/components/attendance/UploadTimer';
 
 const APP_TIME_ZONE = 'Asia/Manila';
 const phDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -428,11 +429,13 @@ export default function AttendanceUpload() {
                       {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% complete
                     </p>
                   </div>
+                  <UploadTimer startedAt={uploadState?.startedAt} />
                 </>
               ) : (
                 <>
                   <p className="text-sm font-medium">Processing file — extracting punch records...</p>
                   <p className="text-xs text-muted-foreground">Preparing import queue...</p>
+                  <UploadTimer startedAt={uploadState?.startedAt} />
                 </>
               )}
             </div>

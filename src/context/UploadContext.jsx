@@ -7,7 +7,7 @@ export function UploadProvider({ children }) {
   // uploadState shape: { uploading, progress: { current, total, saved }, result, filename, period }
 
   const startUpload = (filename, period) => {
-    setUploadState({ uploading: true, progress: { current: 0, total: 0, saved: 0 }, result: null, filename, period });
+    setUploadState({ uploading: true, progress: { current: 0, total: 0, saved: 0 }, result: null, filename, period, startedAt: Date.now() });
   };
 
   const updateProgress = (progress) => {
