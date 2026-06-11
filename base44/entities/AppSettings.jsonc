@@ -5,6 +5,10 @@
     "key": {
       "type": "string"
     },
+    "value": {
+      "type": "object",
+      "description": "Generic settings payload keyed by 'key' (e.g. airtable column type markers)"
+    },
     "approved_schedule_webhook": {
       "type": "string"
     },

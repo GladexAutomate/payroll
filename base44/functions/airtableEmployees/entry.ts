@@ -374,11 +374,25 @@ Deno.serve(async (req) => {
       // Derive a lightweight schema from existing mirror records (standalone, no Airtable).
       const sample = await listMirrorRecords(500);
       const fieldsMeta = {};
+      // Column type markers persisted on a settings record so empty file columns
+      // are remembered even before any record stores a value for them.
+      const markerRows = await base44.asServiceRole.entities.AppSettings.filter({ key: 'airtable_column_types' }, '-updated_date', 1).catch(() => []);
+      const typeMarkers = markerRows?.[0]?.value || {};
+
       for (const record of sample) {
         for (const [key, value] of Object.entries(record.fields || {})) {
           if (fieldsMeta[key]) continue;
-          fieldsMeta[key] = { type: typeof value === 'number' ? 'number' : 'singleLineText' };
+          // Re-hosted file column: array of { file_uri } objects.
+          if (Array.isArray(value) && value.some((v) => v && typeof v === 'object' && v.file_uri)) {
+            fieldsMeta[key] = { type: 'fileAttachment' };
+          } else {
+            fieldsMeta[key] = { type: typeof value === 'number' ? 'number' : 'singleLineText' };
+          }
         }
+      }
+      // Apply persisted markers (covers columns with no stored value yet).
+      for (const [key, type] of Object.entries(typeMarkers)) {
+        if (!fieldsMeta[key]) fieldsMeta[key] = { type };
       }
       return Response.json({ computedFields: [], fieldsMeta });
     }
@@ -570,12 +584,21 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'createField') {
-      const { name } = body;
+      const { name, type } = body;
       const cleanName = String(name || '').trim();
       if (!cleanName) return Response.json({ error: 'Column name is required' }, { status: 400 });
       const sample = await listMirrorRecords(500);
       const exists = sample.some(record => Object.keys(record.fields || {}).some(key => key.toLowerCase() === cleanName.toLowerCase()));
       if (exists) return Response.json({ error: `A column named "${cleanName}" already exists.` }, { status: 409 });
+
+      // Persist a type marker so the column's type (esp. file attachments) is
+      // remembered even before any record stores a value for it.
+      if (type) {
+        const rows = await base44.asServiceRole.entities.AppSettings.filter({ key: 'airtable_column_types' }, '-updated_date', 1).catch(() => []);
+        const markers = { ...(rows?.[0]?.value || {}), [cleanName]: type };
+        if (rows?.[0]) await base44.asServiceRole.entities.AppSettings.update(rows[0].id, { value: markers });
+        else await base44.asServiceRole.entities.AppSettings.create({ key: 'airtable_column_types', value: markers });
+      }
       // Columns are derived from record keys; the new column becomes visible once a
       // record stores a value for it. Return success so the UI can add it to the grid.
       return Response.json({ field: { name: cleanName } });

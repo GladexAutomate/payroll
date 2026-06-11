@@ -15,7 +15,8 @@ import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
 import EmployeeFilesCell from '@/components/airtable/EmployeeFilesCell';
 import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
 
-// Mirror fields that hold re-hosted Airtable attachments (rendered with download UI)
+// Mirror fields that hold re-hosted Airtable attachments (rendered with download UI).
+// Legacy known file columns; any column with a 'fileAttachment' schema type is also treated as one.
 const FILE_COLUMNS = new Set(['Contract Files', 'ATD Files']);
 
 // Raw Airtable attachment columns whose URLs expire after a few minutes.
@@ -200,6 +201,9 @@ export default function AirtableEmployees() {
     return arr;
   }, [records, fieldsMeta]);
 
+  const isFileColumn = (col) =>
+    FILE_COLUMNS.has(col) || fieldsMeta[col]?.type === 'fileAttachment';
+
   const valueText = (value) => {
     if (value == null) return '';
     if (Array.isArray(value)) return value.map(item => item?.filename || item?.name || item?.url || String(item)).join(', ');
@@ -370,7 +374,7 @@ export default function AirtableEmployees() {
                   </td>
                   {columns.map(col => (
                     <td key={col} className="py-1.5 px-3 border-r border-border/30 whitespace-nowrap">
-                      {FILE_COLUMNS.has(col)
+                      {isFileColumn(col)
                         ? <EmployeeFilesCell files={rec.fields?.[col]} />
                         : renderCell(rec.fields?.[col])}
                     </td>

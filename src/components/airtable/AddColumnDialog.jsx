@@ -21,6 +21,7 @@ const FIELD_TYPES = [
   { value: 'singleSelect', label: 'Single select' },
   { value: 'multipleSelects', label: 'Multi-select' },
   { value: 'rating', label: 'Rating' },
+  { value: 'fileAttachment', label: 'File attachments' },
 ];
 
 export default function AddColumnDialog({ onCancel, onCreate }) {

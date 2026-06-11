@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import AirtableSelectField from './AirtableSelectField';
 import FileUploadField from './FileUploadField';
 
-// Re-hosted file columns — rendered with upload/view/download UI, saved as arrays.
-const FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
+// Legacy known re-hosted file columns. Any column whose schema type is
+// 'fileAttachment' is also rendered with the upload/view/download UI.
+const KNOWN_FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
 
 /**
  * Generic Airtable record form.
@@ -15,6 +16,13 @@ const FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
 export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], onCancel, onSave }) {
   const isEditing = !!record?.id;
   const initialFields = record?.fields || {};
+
+  // A column is a file column if it's a known one, has the fileAttachment schema type,
+  // or already stores re-hosted file objects ({ file_uri }).
+  const isFileField = (col) =>
+    KNOWN_FILE_FIELDS.has(col) ||
+    fieldsMeta[col]?.type === 'fileAttachment' ||
+    (Array.isArray(initialFields[col]) && initialFields[col].some((v) => v && typeof v === 'object' && v.file_uri));
 
   // Build editable column list
   const editableCols = useMemo(() => {
@@ -25,7 +33,7 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
     const v = {};
     for (const c of editableCols) {
       const raw = initialFields[c];
-      if (FILE_FIELDS.has(c)) { v[c] = Array.isArray(raw) ? raw : []; continue; }
+      if (isFileField(c)) { v[c] = Array.isArray(raw) ? raw : []; continue; }
       if (raw == null) v[c] = '';
       else if (Array.isArray(raw)) {
         // Attachments: keep as JSON string so user can see and we send as-is on save
@@ -55,7 +63,7 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
       const curr = values[col];
 
       // Re-hosted file fields: save the current array as-is (added/removed files).
-      if (FILE_FIELDS.has(col)) {
+      if (isFileField(col)) {
         if (Array.isArray(curr) && (curr.length > 0 || (Array.isArray(orig) && orig.length > 0))) {
           payload[col] = curr;
         }
@@ -134,16 +142,16 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {editableCols.map(col => {
-                const isFileField = FILE_FIELDS.has(col);
-                const isAttachment = Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
+                const fileField = isFileField(col);
+                const isAttachment = !fileField && Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
                 const meta = fieldsMeta[col];
                 const isCompanyField = col.toLowerCase() === 'company';
                 const isSingleSelect = meta?.type === 'singleSelect';
                 const isMultiSelect = meta?.type === 'multipleSelects';
                 return (
-                  <div key={col} className={(isFileField || isAttachment) ? 'md:col-span-2' : ''}>
+                  <div key={col} className={(fileField || isAttachment) ? 'md:col-span-2' : ''}>
                     <label className="text-xs font-medium text-muted-foreground">{col}</label>
-                    {isFileField ? (
+                    {fileField ? (
                       <FileUploadField
                         value={values[col]}
                         onChange={(v) => handleChange(col, v)}
