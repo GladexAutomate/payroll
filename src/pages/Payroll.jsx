@@ -197,7 +197,7 @@ export default function Payroll() {
                           <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
-                      {(run.status === 'processing' || run.status === 'approved' || run.status === 'released') && (
+                      {run.status === 'processing' && (
                         <button
                           onClick={() => handleRecompute(run)}
                           disabled={computing === run.id}
