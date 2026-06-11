@@ -99,48 +99,62 @@ export default function AttendanceUpload() {
     }
   };
 
-  // Poll the upload record until the background import finishes.
-  const pollUpload = (uploadId) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const rec = await base44.entities.AttendanceUpload.get(uploadId);
-      if (!rec) return;
-
-      updateProgress({
-        current: rec.processed_rows || 0,
-        total: rec.total_rows || 0,
-        saved: (rec.created_count || 0) + (rec.updated_count || 0),
-        percent: rec.progress || 0,
+  const finishFromRecord = (rec) => {
+    if (rec.status === 'failed') {
+      finishUpload({ error: rec.error_message || 'Import failed.' });
+    } else {
+      finishUpload({
+        saved: rec.records_imported || 0,
+        skipped: 0,
+        period: rec.period_label,
+        createdEmployees: rec.new_employees || [],
       });
+    }
+    loadUploads();
+    if (fileRef.current) fileRef.current.value = '';
+  };
 
-      if (rec.status === 'success' || rec.status === 'failed' || rec.status === 'partial') {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        if (rec.status === 'failed') {
-          finishUpload({ error: rec.error_message || 'Import failed.' });
-        } else {
-          finishUpload({
-            saved: rec.records_imported || 0,
-            skipped: 0,
-            period: rec.period_label,
-            createdEmployees: rec.new_employees || [],
-          });
-        }
+  // Drive the import forward one batch at a time. Each processBatch call runs
+  // inside its own live request, so nothing gets killed mid-flight. We chain
+  // batches until the import reports done.
+  const driveImport = async (uploadId) => {
+    let offset = 0;
+    while (true) {
+      const res = await base44.functions.invoke('importAttendance', {
+        action: 'processBatch', uploadId, offset,
+      });
+      const data = res.data || {};
+
+      if (data.error) {
+        finishUpload({ error: data.error });
         loadUploads();
         if (fileRef.current) fileRef.current.value = '';
+        return;
       }
-    }, 2000);
+
+      updateProgress({
+        current: data.processed || 0,
+        total: data.total || 0,
+        saved: data.processed || 0,
+        percent: data.total ? Math.round((data.processed / data.total) * 100) : 0,
+      });
+
+      if (data.done) {
+        const rec = await base44.entities.AttendanceUpload.get(uploadId);
+        finishFromRecord(rec);
+        return;
+      }
+      offset = data.nextOffset ?? (offset + 300);
+    }
   };
 
   const runImport = async (file) => {
-    // Upload the raw file ONCE — this single upload is reliable. All parsing
-    // and importing happens server-side in the background, so dropped network
-    // connections or closed tabs no longer break the import.
+    // Upload the raw file ONCE — this single upload is reliable.
     const uploadRes = await base44.integrations.Core.UploadFile({ file });
     const fileUrl = uploadRes?.file_url || uploadRes?.data?.file_url || uploadRes?.url;
     if (!fileUrl) throw new Error('File upload failed — no file URL returned. Please try again.');
 
-    // Kick off the background import. Returns immediately with an uploadId.
+    // Create the upload record + parse the file + auto-create employees.
     const res = await base44.functions.invoke('importAttendance', {
       action: 'startImport',
       filename: file.name,
@@ -148,12 +162,19 @@ export default function AttendanceUpload() {
     });
     const uploadId = res.data?.uploadId;
     if (!uploadId) throw new Error(res.data?.error || 'Could not start import.');
+    if (res.data?.error) throw new Error(res.data.error);
 
-    updateProgress({ current: 0, total: 0, saved: 0, percent: 0 });
+    updateProgress({ current: 0, total: res.data?.total || 0, saved: 0, percent: 0 });
     loadUploads();
 
-    // Poll the upload record for live progress until it finishes.
-    pollUpload(uploadId);
+    if (res.data?.done) {
+      const rec = await base44.entities.AttendanceUpload.get(uploadId);
+      finishFromRecord(rec);
+      return;
+    }
+
+    // Process the import batch-by-batch until complete.
+    await driveImport(uploadId);
   };
 
   const [templateMonth, setTemplateMonth] = useState(() => {

@@ -3,8 +3,13 @@ import * as XLSX from 'npm:xlsx@0.18.5';
 
 const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
+// How many attendance records to process per polling request. Kept small so a
+// single batch never trips the per-app API rate limit, even when every record
+// is an update (the most expensive path on a re-upload).
+const BATCH_SIZE = 120;
+
 // Parse the whole Excel/CSV file into attendance records (server-side).
-async function parseFile(base44, fileUrl, filename) {
+async function parseFile(fileUrl, filename) {
   const resp = await fetch(fileUrl);
   if (!resp.ok) throw new Error(`Could not download file (${resp.status})`);
   const arrayBuffer = await resp.arrayBuffer();
@@ -64,67 +69,12 @@ async function parseFile(base44, fileUrl, filename) {
     periodLabel = `${['January','February','March','April','May','June','July','August','September','October','November','December'][monthNameIdx]} ${year}`;
   }
 
-  return { rows, headerRow, personCodeIdx, nameIdx, dateCols, year, periodLabel };
+  return { rows, personCodeIdx, nameIdx, dateCols, year, periodLabel };
 }
 
-// Run the full import in the background for a given upload record.
-async function runBackgroundImport(base44, uploadId) {
-  const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
-  if (!upload || !upload.file_url) {
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      status: 'failed', error_message: 'Missing file. Please re-upload.', notes: 'Missing file',
-    });
-    return;
-  }
-
-  let parsed;
-  try {
-    parsed = await parseFile(base44, upload.file_url, upload.filename);
-  } catch (err) {
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      status: 'failed', error_message: String(err?.message || err), notes: 'Parse error',
-    });
-    return;
-  }
-
-  const { rows, personCodeIdx, nameIdx, dateCols, year, periodLabel } = parsed;
-
-  // Map existing active employees
-  const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
-  const byBioId = {};
-  const byName = {};
-  for (const emp of employees) {
-    if (emp.biometric_id) byBioId[String(emp.biometric_id).trim()] = emp;
-    if (emp.employee_id) byBioId[String(emp.employee_id).trim()] = emp;
-    byName[`${emp.first_name} ${emp.last_name}`.toLowerCase().trim()] = emp;
-  }
-
-  // Auto-create missing employees
-  const newEmployeesMap = {};
-  for (let r = 1; r < rows.length; r++) {
-    const code = String(rows[r][personCodeIdx] ?? '').trim();
-    const rawName = String(rows[r][nameIdx] ?? '').trim();
-    if (!code || !rawName) continue;
-    if (!byBioId[code] && !byName[rawName.toLowerCase()] && !newEmployeesMap[code]) {
-      newEmployeesMap[code] = { code, name: rawName };
-    }
-  }
-  const createdEmployees = [];
-  for (const ne of Object.values(newEmployeesMap)) {
-    const parts = ne.name.split(/\s+/);
-    const last_name = parts.length > 1 ? parts[parts.length - 1] : '';
-    const first_name = parts.length > 1 ? parts.slice(0, -1).join(' ') : ne.name;
-    try {
-      const created = await base44.asServiceRole.entities.Employee.create({
-        employee_id: ne.code, biometric_id: ne.code, first_name, last_name, status: 'active',
-      });
-      createdEmployees.push({ id: created.id, employee_id: ne.code, name: ne.name });
-      byBioId[ne.code] = created;
-      byName[ne.name.toLowerCase()] = created;
-    } catch (_e) { /* skip duplicates */ }
-  }
-
-  // Build all records
+// Turn parsed rows into a flat list of attendance records (no DB calls).
+function buildRecords(parsed, byBioId, byName, uploadId) {
+  const { rows, personCodeIdx, nameIdx, dateCols, year } = parsed;
   const records = [];
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
@@ -162,49 +112,130 @@ async function runBackgroundImport(base44, uploadId) {
       });
     }
   }
+  return records;
+}
+
+// Prepare the import: parse file, auto-create employees, set total_rows.
+// Runs in a single request and finishes fast (no per-record DB writes).
+async function prepareImport(base44, uploadId) {
+  const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
+  if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
+
+  const parsed = await parseFile(upload.file_url, upload.filename);
+  const { rows, personCodeIdx, nameIdx, periodLabel } = parsed;
+
+  const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
+  const byBioId = {};
+  const byName = {};
+  for (const emp of employees) {
+    if (emp.biometric_id) byBioId[String(emp.biometric_id).trim()] = emp;
+    if (emp.employee_id) byBioId[String(emp.employee_id).trim()] = emp;
+    byName[`${emp.first_name} ${emp.last_name}`.toLowerCase().trim()] = emp;
+  }
+
+  // Auto-create missing employees
+  const newEmployeesMap = {};
+  for (let r = 1; r < rows.length; r++) {
+    const code = String(rows[r][personCodeIdx] ?? '').trim();
+    const rawName = String(rows[r][nameIdx] ?? '').trim();
+    if (!code || !rawName) continue;
+    if (!byBioId[code] && !byName[rawName.toLowerCase()] && !newEmployeesMap[code]) {
+      newEmployeesMap[code] = { code, name: rawName };
+    }
+  }
+  const createdEmployees = [];
+  for (const ne of Object.values(newEmployeesMap)) {
+    const parts = ne.name.split(/\s+/);
+    const last_name = parts.length > 1 ? parts[parts.length - 1] : '';
+    const first_name = parts.length > 1 ? parts.slice(0, -1).join(' ') : ne.name;
+    try {
+      const created = await base44.asServiceRole.entities.Employee.create({
+        employee_id: ne.code, biometric_id: ne.code, first_name, last_name, status: 'active',
+      });
+      createdEmployees.push({ id: created.id, employee_id: ne.code, name: ne.name });
+      byBioId[ne.code] = created;
+      byName[ne.name.toLowerCase()] = created;
+    } catch (_e) { /* skip duplicates */ }
+  }
+
+  const records = buildRecords(parsed, byBioId, byName, uploadId);
 
   if (records.length === 0) {
     await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      status: 'success', progress: 100, records_imported: 0, total_rows: 0,
+      status: 'success', progress: 100, records_imported: 0, total_rows: 0, processed_rows: 0,
       new_employees: createdEmployees, period_label: periodLabel,
       notes: 'No time data found in date cells',
     });
-    return;
+    return { done: true, total: 0 };
   }
 
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-    total_rows: records.length, period_label: periodLabel, new_employees: createdEmployees,
+    status: 'processing', total_rows: records.length, processed_rows: 0,
+    created_count: 0, updated_count: 0, progress: 0,
+    period_label: periodLabel, new_employees: createdEmployees,
   });
 
-  // Build existing-record map for duplicate handling (scoped to this file's range)
-  const dates = [...new Set(records.map(r => r.date))].sort();
+  return { done: false, total: records.length };
+}
+
+// Process ONE batch of records starting at `offset`. Returns the next offset.
+// Each batch runs inside its own live request so it is never killed mid-flight.
+async function processBatch(base44, uploadId, offset) {
+  const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
+  if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
+
+  const parsed = await parseFile(upload.file_url, upload.filename);
+
+  // Rebuild the same employee maps so we can resolve records identically.
+  const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
+  const byBioId = {};
+  const byName = {};
+  for (const emp of employees) {
+    if (emp.biometric_id) byBioId[String(emp.biometric_id).trim()] = emp;
+    if (emp.employee_id) byBioId[String(emp.employee_id).trim()] = emp;
+    byName[`${emp.first_name} ${emp.last_name}`.toLowerCase().trim()] = emp;
+  }
+
+  const allRecords = buildRecords(parsed, byBioId, byName, uploadId);
+  const total = allRecords.length;
+  const batch = allRecords.slice(offset, offset + BATCH_SIZE);
+
+  if (batch.length === 0) {
+    // Nothing left — finalize.
+    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
+      status: 'success', progress: 100, processed_rows: total,
+      records_imported: (upload.created_count || 0) + (upload.updated_count || 0),
+      notes: `${upload.created_count || 0} created, ${upload.updated_count || 0} updated`,
+    });
+    return { done: true, processed: total, total };
+  }
+
+  // Find existing logs for just this batch's employees + dates (duplicate handling).
+  const dates = [...new Set(batch.map(r => r.date))].sort();
   const minDate = dates[0], maxDate = dates[dates.length - 1];
-  const empIds = [...new Set(records.map(r => r.employee_id))];
+  const empIds = [...new Set(batch.map(r => r.employee_id))];
   const existingMap = {};
-  const EMP_BATCH = 50;
-  for (let e = 0; e < empIds.length; e += EMP_BATCH) {
-    const empSlice = empIds.slice(e, e + EMP_BATCH);
-    let skip = 0;
-    while (true) {
-      let logs = null;
-      try {
-        logs = await base44.asServiceRole.entities.AttendanceLog.filter(
-          { employee_id: { $in: empSlice }, date: { $gte: minDate, $lte: maxDate } }, 'date', 500, skip
-        );
-      } catch (err) {
-        if (String(err?.message || err).includes('429')) { await new Promise(r => setTimeout(r, 1500)); continue; }
-        throw err;
-      }
-      if (!logs || logs.length === 0) break;
-      for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
-      if (logs.length < 500) break;
-      skip += 500;
+  let skip = 0;
+  while (true) {
+    let logs = null;
+    try {
+      logs = await base44.asServiceRole.entities.AttendanceLog.filter(
+        { employee_id: { $in: empIds }, date: { $gte: minDate, $lte: maxDate } }, 'date', 500, skip
+      );
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { await new Promise(r => setTimeout(r, 2000)); continue; }
+      throw err;
     }
+    if (!logs || logs.length === 0) break;
+    for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
+    if (logs.length < 500) break;
+    skip += 500;
   }
 
   const toCreate = [];
   const toUpdate = [];
-  for (const rec of records) {
+  for (const rec of batch) {
     const existing = existingMap[`${rec.employee_id}|${rec.date}`];
     if (existing) {
       toUpdate.push({ id: existing.id, data: {
@@ -217,10 +248,9 @@ async function runBackgroundImport(base44, uploadId) {
     }
   }
 
-  let created = 0, updated = 0, processed = 0;
-  const total = records.length;
+  let created = 0, updated = 0;
 
-  // Bulk create new records
+  // Bulk create
   const CREATE_BATCH = 100;
   for (let i = 0; i < toCreate.length; i += CREATE_BATCH) {
     const slice = toCreate.slice(i, i + CREATE_BATCH);
@@ -228,41 +258,44 @@ async function runBackgroundImport(base44, uploadId) {
     while (attempts < 5) {
       try { await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice); created += slice.length; break; }
       catch (err) {
-        if (String(err?.message || err).includes('429')) { attempts++; await new Promise(r => setTimeout(r, 2000 * attempts)); continue; }
+        const msg = String(err?.message || err);
+        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { attempts++; await new Promise(r => setTimeout(r, 2500 * attempts)); continue; }
         throw err;
       }
     }
-    processed += slice.length;
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      processed_rows: processed, created_count: created, updated_count: updated,
-      progress: Math.round((processed / total) * 100),
-    });
   }
 
-  // Update existing records
+  // Update existing — paced to stay under the rate limit.
   for (const u of toUpdate) {
     let attempts = 0;
-    while (attempts < 5) {
+    while (attempts < 8) {
       try { await base44.asServiceRole.entities.AttendanceLog.update(u.id, u.data); updated++; break; }
       catch (err) {
-        if (String(err?.message || err).includes('429')) { attempts++; await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
+        if (String(err?.message || err).includes('429') || String(err?.message || err).toLowerCase().includes('rate limit')) {
+          attempts++; await new Promise(r => setTimeout(r, 2000 * attempts)); continue;
+        }
         break;
       }
     }
-    processed++;
-    if (processed % 25 === 0 || processed === total) {
-      await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-        processed_rows: processed, created_count: created, updated_count: updated,
-        progress: Math.round((processed / total) * 100),
-      });
-    }
+    // Small breather between updates so we don't burst the API.
+    await new Promise(r => setTimeout(r, 60));
   }
 
+  const newProcessed = Math.min(offset + batch.length, total);
+  const newCreated = (upload.created_count || 0) + created;
+  const newUpdated = (upload.updated_count || 0) + updated;
+  const done = newProcessed >= total;
+
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-    status: 'success', progress: 100, records_imported: created + updated,
-    processed_rows: total, created_count: created, updated_count: updated,
-    notes: `${created} created, ${updated} updated`,
+    processed_rows: newProcessed, created_count: newCreated, updated_count: newUpdated,
+    progress: Math.round((newProcessed / total) * 100),
+    ...(done ? {
+      status: 'success', records_imported: newCreated + newUpdated,
+      notes: `${newCreated} created, ${newUpdated} updated`,
+    } : {}),
   });
+
+  return { done, nextOffset: newProcessed, processed: newProcessed, total };
 }
 
 Deno.serve(async (req) => {
@@ -283,10 +316,7 @@ Deno.serve(async (req) => {
       return Response.json({ queued: true });
     }
 
-    // ── START IMPORT: create record + kick off background import ────────────
-    // Frontend uploads the file once, passes its URL here. We create the
-    // upload record, start the heavy import WITHOUT awaiting it, and return
-    // the uploadId immediately so the frontend can poll for progress.
+    // ── START IMPORT: create record + prepare (parse, auto-create employees) ─
     if (body.action === 'startImport') {
       const { filename, fileUrl } = body;
       if (!fileUrl) return Response.json({ error: 'fileUrl required' }, { status: 400 });
@@ -296,16 +326,30 @@ Deno.serve(async (req) => {
         progress: 0, total_rows: 0, processed_rows: 0, uploaded_by: user.email || '',
       });
 
-      // Fire-and-forget: run the full import in the background.
-      runBackgroundImport(base44, uploadRecord.id).catch(async (err) => {
-        try {
-          await base44.asServiceRole.entities.AttendanceUpload.update(uploadRecord.id, {
-            status: 'failed', error_message: String(err?.message || err), notes: 'Import error',
-          });
-        } catch (_e) { /* ignore */ }
-      });
+      try {
+        const prep = await prepareImport(base44, uploadRecord.id);
+        return Response.json({ uploadId: uploadRecord.id, total: prep.total, done: prep.done });
+      } catch (err) {
+        await base44.asServiceRole.entities.AttendanceUpload.update(uploadRecord.id, {
+          status: 'failed', error_message: String(err?.message || err), notes: 'Parse error',
+        });
+        return Response.json({ uploadId: uploadRecord.id, error: String(err?.message || err) });
+      }
+    }
 
-      return Response.json({ uploadId: uploadRecord.id });
+    // ── PROCESS BATCH: import one slice of records, driven by frontend poll ──
+    if (body.action === 'processBatch') {
+      const { uploadId, offset } = body;
+      if (!uploadId) return Response.json({ error: 'uploadId required' }, { status: 400 });
+      try {
+        const result = await processBatch(base44, uploadId, offset || 0);
+        return Response.json(result);
+      } catch (err) {
+        await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
+          status: 'failed', error_message: String(err?.message || err), notes: 'Import error',
+        });
+        return Response.json({ error: String(err?.message || err) }, { status: 200 });
+      }
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 });
