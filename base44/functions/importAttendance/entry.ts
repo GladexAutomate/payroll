@@ -71,27 +71,44 @@ Deno.serve(async (req) => {
         return Response.json({ saved: created, created, updated: 0 });
       }
 
-      // Slow path (re-upload): check for duplicates by employee+date
-      const dates = [...new Set(records.map(r => r.date))];
+      // Slow path (re-upload): check for duplicates by employee+date.
+      // Fetch existing logs for the chunk's date range in ONE paginated query
+      // instead of one query per date — this avoids hammering the rate limiter.
+      const dates = [...new Set(records.map(r => r.date))].sort();
+      const minDate = dates[0];
+      const maxDate = dates[dates.length - 1];
       const existingMap = {};
-      for (const date of dates) {
-        let attempts = 0;
-        while (attempts < 5) {
-          try {
-            const logs = await base44.asServiceRole.entities.AttendanceLog.filter({ date }, '-date', 500);
-            for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
-            break;
-          } catch (err) {
-            const msg = String(err?.message || err);
-            if (msg.includes('429') || msg.includes('Rate limit')) {
-              attempts++;
-              await new Promise(r => setTimeout(r, 1500 * attempts));
-              continue;
+      {
+        const PAGE = 500;
+        let skip = 0;
+        while (true) {
+          let attempts = 0;
+          let logs = null;
+          while (attempts < 5) {
+            try {
+              logs = await base44.asServiceRole.entities.AttendanceLog.filter(
+                { date: { $gte: minDate, $lte: maxDate } },
+                'date',
+                PAGE,
+                skip
+              );
+              break;
+            } catch (err) {
+              const msg = String(err?.message || err);
+              if (msg.includes('429') || msg.includes('Rate limit')) {
+                attempts++;
+                await new Promise(r => setTimeout(r, 1500 * attempts));
+                continue;
+              }
+              throw err;
             }
-            throw err;
           }
+          if (!logs || logs.length === 0) break;
+          for (const log of logs) existingMap[`${log.employee_id}|${log.date}`] = log;
+          if (logs.length < PAGE) break;
+          skip += PAGE;
+          await new Promise(r => setTimeout(r, 200));
         }
-        await new Promise(r => setTimeout(r, 200));
       }
 
       const toCreate = [];
