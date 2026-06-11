@@ -320,7 +320,7 @@ export default function AttendanceUpload() {
 
     // Step 3: Queue records in smaller chunks so each backend call stays well
     // under the request timeout. Smaller chunks = faster, more reliable batches.
-    const CHUNK_SIZE = 150;
+    const CHUNK_SIZE = 50;
     const chunks = [];
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
       chunks.push(records.slice(i, i + CHUNK_SIZE));
