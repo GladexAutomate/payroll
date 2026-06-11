@@ -8,6 +8,11 @@ const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct',
 // is an update (the most expensive path on a re-upload).
 const BATCH_SIZE = 120;
 
+const isRateLimit = (err) => {
+  const msg = String(err?.message || err);
+  return msg.includes('429') || msg.toLowerCase().includes('rate limit');
+};
+
 // Parse the whole Excel/CSV file into attendance records (server-side).
 async function parseFile(fileUrl, filename) {
   const resp = await fetch(fileUrl);
@@ -170,31 +175,28 @@ async function prepareImport(base44, uploadId) {
   }
 
   // Delete any existing logs for the employees + date range covered by this
-  // file, so the import becomes a clean create-only operation (no slow,
-  // rate-limited per-record updates). A re-upload fully replaces the period.
+  // file in a single bulk call, so the import becomes a clean create-only
+  // operation. A re-upload fully replaces the period. deleteMany(filter)
+  // removes all matching records server-side in one request — no slow,
+  // rate-limited per-record loop.
   const empIds = [...new Set(records.map(r => r.employee_id))];
   const allDates = [...new Set(records.map(r => r.date))].sort();
   const minDate = allDates[0], maxDate = allDates[allDates.length - 1];
 
-  const idsToDelete = [];
-  for (let i = 0; i < empIds.length; i += 50) {
-    const empChunk = empIds.slice(i, i + 50);
-    let skip = 0;
-    while (true) {
-      let logs;
+  // empIds can be large, so chunk the $in to keep each delete query small.
+  for (let i = 0; i < empIds.length; i += 100) {
+    const empChunk = empIds.slice(i, i + 100);
+    let attempts = 0;
+    while (attempts < 6) {
       try {
-        logs = await base44.asServiceRole.entities.AttendanceLog.filter(
-          { employee_id: { $in: empChunk }, date: { $gte: minDate, $lte: maxDate } }, 'date', 500, skip
+        await base44.asServiceRole.entities.AttendanceLog.deleteMany(
+          { employee_id: { $in: empChunk }, date: { $gte: minDate, $lte: maxDate } }
         );
+        break;
       } catch (err) {
-        const msg = String(err?.message || err);
-        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 2000 * attempts)); continue; }
         throw err;
       }
-      if (!logs || logs.length === 0) break;
-      for (const log of logs) idsToDelete.push(log.id);
-      if (logs.length < 500) break;
-      skip += 500;
     }
   }
 
@@ -202,50 +204,20 @@ async function prepareImport(base44, uploadId) {
     status: 'processing', total_rows: records.length, processed_rows: 0,
     created_count: 0, updated_count: 0, progress: 0,
     period_label: periodLabel, new_employees: createdEmployees,
-    stale_log_ids: idsToDelete,
+    stale_log_ids: [],
   });
 
   return { done: false, total: records.length };
 }
 
-const DELETE_BATCH = 80;
-
-const isRateLimit = (err) => {
-  const msg = String(err?.message || err);
-  return msg.includes('429') || msg.toLowerCase().includes('rate limit');
-};
-
-// Process ONE batch per request, driven by the frontend poll. The import has
-// two phases:
-//   1. "delete" — drain stale_log_ids (old logs for this period) in chunks.
-//   2. "create" — bulkCreate new logs, offset by offset.
-// Each request only ever does fast bulk operations, so it stays well under
-// the API rate limit and finishes quickly.
+// Process ONE create-only batch per request, driven by the frontend poll.
+// Old logs for the period are already cleared during prepareImport via a
+// bulk deleteMany, so each batch only ever does a fast bulkCreate and stays
+// well under the API rate limit.
 async function processBatch(base44, uploadId, offset) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
 
-  // ── Phase 1: delete stale logs ───────────────────────────────────────────
-  const staleIds = upload.stale_log_ids || [];
-  if (staleIds.length > 0) {
-    const chunk = staleIds.slice(0, DELETE_BATCH);
-    for (const id of chunk) {
-      let attempts = 0;
-      while (attempts < 6) {
-        try { await base44.asServiceRole.entities.AttendanceLog.delete(id); break; }
-        catch (err) {
-          if (isRateLimit(err)) { attempts++; await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
-          break; // already gone — skip
-        }
-      }
-      await new Promise(r => setTimeout(r, 40));
-    }
-    const remaining = staleIds.slice(chunk.length);
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, { stale_log_ids: remaining });
-    return { done: false, phase: 'delete', processed: 0, total: upload.total_rows || 0 };
-  }
-
-  // ── Phase 2: create new logs ─────────────────────────────────────────────
   const parsed = await parseFile(upload.file_url, upload.filename);
 
   const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
