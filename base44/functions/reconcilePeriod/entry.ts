@@ -18,7 +18,7 @@ function buildEmployeeKeys(e) {
     .filter(Boolean).map(k => String(k).trim());
 }
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
-async function withRetry(op, attempts = 12) {
+async function withRetry(op, attempts = 5) {
   let last;
   for (let i = 0; i < attempts; i += 1) {
     try { return await op(); } catch (err) {
@@ -29,12 +29,22 @@ async function withRetry(op, attempts = 12) {
         || m.includes('timeout') || m.includes('network') || m.includes('fetch') || m.includes('socket')
         || m.includes('502') || m.includes('503') || m.includes('504');
       if (!retryable) throw err;
-      // Exponential backoff with jitter, capped at ~15s, so colliding runs back off instead of dying.
-      const backoff = Math.min(15000, 1000 * Math.pow(1.6, i)) + Math.floor(Math.random() * 500);
+      // Bounded backoff (max ~4s/attempt) so a persistently stuck call fails fast instead
+      // of looping past the function timeout and returning a 504.
+      const backoff = Math.min(4000, 500 * Math.pow(2, i)) + Math.floor(Math.random() * 300);
       await wait(backoff);
     }
   }
   throw last;
+}
+// Delete records one at a time with spacing. A single broad deleteMany over 100+ rows tends
+// to hang/connection-error, and parallel deletes burst the rate limiter; sequential spaced
+// deletes are slower but stay safely under the write-rate limit.
+async function deleteSequential(entity, records) {
+  for (const r of records) {
+    await withRetry(() => entity.delete(r.id));
+    await wait(120);
+  }
 }
 async function bulkCreateInChunks(entity, records, size = 25) {
   for (let i = 0; i < records.length; i += size) {
@@ -547,7 +557,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       // bulkCreate fresh records. This avoids the 100+ per-record update calls that caused
       // the prior 429 rate-limit storm and 80s+ runtimes.
       if (existing.length > 0) {
-        await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.deleteMany({ period_start, period_end }));
+        await deleteSequential(base44.asServiceRole.entities.AttendancePaySummary, existing);
         await wait(300);
       }
       await bulkCreateInChunks(base44.asServiceRole.entities.AttendancePaySummary, recordsToSave);
