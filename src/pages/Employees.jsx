@@ -157,7 +157,7 @@ export default function Employees() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div data-tour="emp-toolbar" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -180,17 +180,17 @@ export default function Employees() {
           </select>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={autoMatchEmployees} disabled={loading || syncingMatches} className="shrink-0">
+          <Button data-tour="emp-match" variant="outline" onClick={autoMatchEmployees} disabled={loading || syncingMatches} className="shrink-0">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${syncingMatches ? 'animate-spin' : ''}`} /> Match Airtable
           </Button>
-          <Button onClick={() => { setEditingEmployee(null); setShowForm(true); }} className="shrink-0">
+          <Button data-tour="emp-add" onClick={() => { setEditingEmployee(null); setShowForm(true); }} className="shrink-0">
             <Plus className="w-4 h-4 mr-1.5" /> Add Employee
           </Button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div data-tour="emp-table" className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
