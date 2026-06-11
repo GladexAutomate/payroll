@@ -1,6 +1,8 @@
+import { FileText } from 'lucide-react';
+
 const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
-export default function ThirteenthMonthTable({ employees, totals, basis }) {
+export default function ThirteenthMonthTable({ employees, totals, basis, onViewPayslip }) {
   // basis: 'accrued' (earned so far ÷ 12) or 'prorated' (full-year projection)
   const payField = basis === 'prorated' ? 'prorated' : 'accrued';
   const payTotal = basis === 'prorated' ? totals?.prorated : totals?.accrued;
@@ -17,6 +19,7 @@ export default function ThirteenthMonthTable({ employees, totals, basis }) {
               <th className="text-right py-3 px-4 font-medium">Months</th>
               <th className="text-right py-3 px-4 font-medium">Basic Salary Earned</th>
               <th className="text-right py-3 px-4 font-medium">{payLabel}</th>
+              <th className="py-3 px-4" />
             </tr>
           </thead>
           <tbody>
@@ -30,6 +33,15 @@ export default function ThirteenthMonthTable({ employees, totals, basis }) {
                 <td className="py-3 px-4 text-right tabular-nums">{e.months_worked}</td>
                 <td className="py-3 px-4 text-right tabular-nums">{fmt(e.basic_earned)}</td>
                 <td className="py-3 px-4 text-right tabular-nums font-semibold text-primary">{fmt(e[payField])}</td>
+                <td className="py-3 px-4 text-right">
+                  <button
+                    onClick={() => onViewPayslip?.(e)}
+                    className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="View payslip"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -41,6 +53,7 @@ export default function ThirteenthMonthTable({ employees, totals, basis }) {
                 <td className="py-3 px-4" />
                 <td className="py-3 px-4 text-right tabular-nums">{fmt(totals.basic_earned)}</td>
                 <td className="py-3 px-4 text-right tabular-nums text-primary">{fmt(payTotal)}</td>
+                <td className="py-3 px-4" />
               </tr>
             </tfoot>
           )}

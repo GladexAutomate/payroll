@@ -1,21 +1,58 @@
 import { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Gift, Calculator, Loader2, Info } from 'lucide-react';
+import { Gift, Calculator, Loader2, Info, Download } from 'lucide-react';
 import ReportFilters from '@/components/compliance/ReportFilters';
 import ThirteenthMonthTable from '@/components/payroll/ThirteenthMonthTable';
+import ThirteenthMonthPayslip from '@/components/payroll/ThirteenthMonthPayslip';
+import { exportToCsv } from '@/lib/exportCsv';
 
 export default function ThirteenthMonth() {
   const [filters, setFilters] = useState({ year: new Date().getFullYear(), month: null, branch: null });
   const [basis, setBasis] = useState('accrued'); // 'accrued' | 'prorated'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [brandings, setBrandings] = useState([]);
+  const [payslipFor, setPayslipFor] = useState(null);
 
   const run = async () => {
     setLoading(true);
-    const res = await base44.functions.invoke('thirteenthMonthReport', { year: filters.year, branch: filters.branch });
+    const [res, emps, brands] = await Promise.all([
+      base44.functions.invoke('thirteenthMonthReport', { year: filters.year, branch: filters.branch }),
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+      base44.entities.BranchBranding.list('-updated_date', 1000),
+    ]);
     setData(res.data);
+    setEmployees(emps || []);
+    setBrandings(brands || []);
     setLoading(false);
+  };
+
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const empFor = (rec) => employees.find(e => e.id === rec.employee_id || e.airtable_record_id === rec.employee_id);
+  const brandingForEmployee = (emp) => {
+    const f = emp?.fields || {};
+    const branch = norm(f.Branch || f.BRANCH || emp?.branch);
+    const company = norm(f.Company || f.COMPANY || emp?.company);
+    if (!branch) return null;
+    return brandings.find(b => norm(b.branch_name) === branch && (!company || norm(b.company_name) === company))
+      || brandings.find(b => norm(b.branch_name) === branch) || null;
+  };
+
+  const handleExport = () => {
+    if (!data?.employees?.length) return;
+    const num = (n) => Number(n || 0).toFixed(2);
+    const columns = [
+      { key: 'employee_code', label: 'Employee Code' },
+      { key: 'employee_name', label: 'Employee Name' },
+      { key: 'basic_salary', label: 'Monthly Basic', format: num },
+      { key: 'months_worked', label: 'Months Active' },
+      { key: 'basic_earned', label: 'Basic Salary Earned', format: num },
+      { key: 'accrued', label: 'Accrued 13th Month', format: num },
+      { key: 'prorated', label: 'Prorated 13th Month', format: num },
+    ];
+    exportToCsv(`13th_month_${filters.year}${filters.branch ? '_' + String(filters.branch).replace(/[^\w-]+/g, '_') : ''}`, columns, data.employees);
   };
 
   return (
@@ -55,10 +92,31 @@ export default function ThirteenthMonth() {
           {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Calculator className="w-4 h-4 mr-1.5" />}
           Compute
         </Button>
+        {data && data.employees?.length > 0 && (
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-1.5" /> Export
+          </Button>
+        )}
       </div>
 
       {data && data.employees && (
-        <ThirteenthMonthTable employees={data.employees} totals={data.totals} basis={basis} />
+        <ThirteenthMonthTable
+          employees={data.employees}
+          totals={data.totals}
+          basis={basis}
+          onViewPayslip={setPayslipFor}
+        />
+      )}
+
+      {payslipFor && (
+        <ThirteenthMonthPayslip
+          record={payslipFor}
+          employee={empFor(payslipFor)}
+          year={filters.year}
+          basis={basis}
+          branding={brandingForEmployee(empFor(payslipFor))}
+          onClose={() => setPayslipFor(null)}
+        />
       )}
     </div>
   );

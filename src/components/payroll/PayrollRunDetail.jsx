@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Printer, Search } from 'lucide-react';
+import { X, Printer, Search, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import PayslipDocument from '@/components/payroll/PayslipDocument';
+import { exportToCsv } from '@/lib/exportCsv';
 
 export default function PayrollRunDetail({ run, onClose }) {
   const [records, setRecords] = useState([]);
@@ -59,6 +60,36 @@ export default function PayrollRunDetail({ run, onClose }) {
     net: sum.net + netForRecord(record),
   }), { gross: 0, deductions: 0, net: 0 });
   const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
+  const num = (n) => Number(n || 0).toFixed(2);
+
+  const handleExport = () => {
+    const columns = [
+      { key: 'employee_code', label: 'Employee Code' },
+      { key: (r) => recordName(r), label: 'Employee Name' },
+      { key: 'is_held', label: 'On Hold', format: (v) => (v ? 'Yes' : 'No') },
+      { key: 'basic_salary', label: 'Basic Salary', format: num },
+      { key: 'hourly_rate', label: 'Hourly Rate', format: num },
+      { key: (r) => payrollHoursForRecord(r), label: 'Hours', format: num },
+      { key: 'days_worked', label: 'Days Worked', format: num },
+      { key: 'days_absent', label: 'Days Absent', format: num },
+      { key: 'regular_pay', label: 'Regular Pay', format: num },
+      { key: 'overtime_pay', label: 'Overtime Pay', format: num },
+      { key: 'holiday_pay', label: 'Holiday Pay', format: num },
+      { key: 'allowances', label: 'Allowances', format: num },
+      { key: 'gross_pay', label: 'Gross Pay', format: num },
+      { key: 'sss_employee', label: 'SSS', format: num },
+      { key: 'philhealth_employee', label: 'PhilHealth', format: num },
+      { key: 'pagibig_employee', label: 'Pag-IBIG', format: num },
+      { key: 'withholding_tax', label: 'Withholding Tax', format: num },
+      { key: 'late_deduction', label: 'Late & Undertime', format: num },
+      { key: 'absent_deduction', label: 'Absences', format: num },
+      { key: 'other_deductions', label: 'Other Deductions', format: num },
+      { key: 'total_deductions', label: 'Total Deductions', format: num },
+      { key: 'net_pay', label: 'Net Pay', format: num },
+    ];
+    const safe = String(run.period_label || 'payroll').replace(/[^\w-]+/g, '_');
+    exportToCsv(`payroll_${safe}`, columns, displayedRecords);
+  };
 
   const recordName = (rec) => {
     const emp = empMap[rec.employee_id];
@@ -99,6 +130,9 @@ export default function PayrollRunDetail({ run, onClose }) {
             <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={loading || records.length === 0}>
+              <Download className="w-3.5 h-3.5 mr-1.5" /> Export
+            </Button>
             <StatusBadge status={run.status} />
             <button onClick={onClose} className="p-1.5 rounded hover:bg-muted"><X className="w-4 h-4" /></button>
           </div>
