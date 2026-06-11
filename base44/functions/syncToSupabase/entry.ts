@@ -28,6 +28,7 @@ const ENTITIES = [
   'EmployeeGovernmentSetting',
   'PayrollRun',
   'PayrollRecord',
+  'ApprovedPayrollHistory',
   'PayrollPolicy',
   'RoleHierarchy',
   'RolePagePermission',

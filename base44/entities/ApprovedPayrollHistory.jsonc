@@ -1,0 +1,71 @@
+{
+  "name": "ApprovedPayrollHistory",
+  "type": "object",
+  "properties": {
+    "payroll_run_id": {
+      "type": "string",
+      "description": "Original PayrollRun id this snapshot was taken from"
+    },
+    "period_label": {
+      "type": "string"
+    },
+    "period_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "pay_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "branch_name": {
+      "type": "string"
+    },
+    "employee_count": {
+      "type": "number",
+      "default": 0
+    },
+    "total_gross": {
+      "type": "number",
+      "default": 0
+    },
+    "total_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "total_net": {
+      "type": "number",
+      "default": 0
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "Email of the user who approved this payroll"
+    },
+    "approved_date": {
+      "type": "string"
+    },
+    "run_snapshot": {
+      "type": "object",
+      "description": "Full copy of the PayrollRun record at approval time"
+    },
+    "records_snapshot": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": [],
+      "description": "Full copy of every PayrollRecord in the run at approval time"
+    }
+  },
+  "required": [
+    "payroll_run_id",
+    "period_start",
+    "period_end"
+  ]
+}

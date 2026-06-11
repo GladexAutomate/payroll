@@ -69,12 +69,25 @@ export default function Payroll() {
     });
   };
 
-  const handleApprove = async (run) => {
-    await base44.entities.PayrollRun.update(run.id, {
-      status: 'approved',
-      approved_date: new Date().toISOString()
+  const handleApprove = (run) => {
+    setDialog({
+      title: 'Approve payroll?',
+      description: `Approve ${run.period_label}? This locks the run and saves a permanent copy to Approved Payroll History. The delete option will be removed.`,
+      confirmLabel: 'Approve',
+      onConfirm: () => { setDialog(null); performApprove(run); },
     });
-    loadRuns();
+  };
+
+  const performApprove = (run) => {
+    setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'approved' } : item));
+    base44.functions.invoke('approvePayroll', { payroll_run_id: run.id })
+      .catch(error => {
+        setDialog({
+          title: 'Approval failed',
+          description: error?.response?.data?.error || error?.message || 'Unable to approve payroll. Please retry.',
+        });
+      })
+      .finally(() => loadRuns({ silent: true }));
   };
 
   const handleDelete = (run) => {
@@ -203,14 +216,16 @@ export default function Payroll() {
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDelete(run)}
-                        disabled={deleting === run.id}
-                        className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
-                        title="Delete payroll run"
-                      >
-                        <Trash2 className={`w-3.5 h-3.5 ${deleting === run.id ? 'animate-pulse' : ''}`} />
-                      </button>
+                      {run.status !== 'approved' && run.status !== 'released' && (
+                        <button
+                          onClick={() => handleDelete(run)}
+                          disabled={deleting === run.id}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
+                          title="Delete payroll run"
+                        >
+                          <Trash2 className={`w-3.5 h-3.5 ${deleting === run.id ? 'animate-pulse' : ''}`} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
