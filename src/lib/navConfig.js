@@ -64,7 +64,6 @@ export const navGroups = [
     items: [
       { label: 'Reconciliation', icon: ClipboardCheck, path: '/reconciliation' },
       { label: 'Payroll', icon: DollarSign, path: '/payroll' },
-      { label: '13th Month Pay', icon: Gift, path: '/thirteenth-month' },
       { label: 'Allowances & Charges', icon: Receipt, path: '/deductions' },
     ],
   },
@@ -73,6 +72,7 @@ export const navGroups = [
     icon: Scale,
     items: [
       { label: 'Tax Compliance', icon: ShieldCheck, path: '/tax-compliance' },
+      { label: '13th Month Pay', icon: Gift, path: '/thirteenth-month' },
     ],
   },
   {
