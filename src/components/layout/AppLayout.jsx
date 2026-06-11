@@ -24,6 +24,7 @@ const pageTitles = {
   '/leaves': 'Leave Requests',
   '/overtime': 'Overtime',
   '/payroll': 'Payroll',
+  '/thirteenth-month': '13th Month Pay',
   '/reports': 'Reports',
   '/settings': 'Settings',
   '/permissions': 'Page Permissions',

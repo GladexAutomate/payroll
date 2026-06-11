@@ -266,6 +266,17 @@ export const pageTours = {
       body: 'Open a run to view per-employee detail and generate payslip documents.' },
   ]),
 
+  '/thirteenth-month': tour([
+    intro('thirteenth-month', 'Payroll', '13th month pay',
+      'Compute every employee\'s 13th month pay per the Labor Code (P.D. 851): total basic salary earned in the year ÷ 12.'),
+    { id: 'tm-basis', group: 'Payroll', selector: '[data-tour="page-content"]', placement: 'top',
+      title: 'Accrued vs. prorated',
+      body: 'Choose "Accrued so far" to see what each employee has already earned ÷ 12, or "Prorated full-year" to project the full amount for mid-year hires and resignations. Pick a year and branch, then Compute.' },
+    { id: 'tm-table', group: 'Payroll', selector: '[data-tour="page-content"]', placement: 'top',
+      title: 'Per-employee breakdown',
+      body: 'The table shows each employee\'s monthly basic, months active, total basic salary earned, and their 13th month pay — with a grand total at the bottom. Unpaid absences are excluded automatically.' },
+  ]),
+
   '/deductions': tour([
     intro('deductions', 'Payroll', 'Allowances & charges',
       'Add recurring allowances (extra pay) or charges like cash advances and uniforms that are deducted over time.'),

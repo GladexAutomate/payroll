@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Clock, CalendarDays, DollarSign,
   FileText, Settings, Building2, ClipboardList, Calendar, Upload,
   Database, ClipboardCheck, Send, ShieldCheck, CalendarCheck, Repeat,
-  Receipt, Link2, Scale, KeyRound, Network, History,
+  Receipt, Link2, Scale, KeyRound, Network, History, Gift,
 } from 'lucide-react';
 
 // Single source of truth for all navigable pages, grouped for the sidebar
@@ -64,6 +64,7 @@ export const navGroups = [
     items: [
       { label: 'Reconciliation', icon: ClipboardCheck, path: '/reconciliation' },
       { label: 'Payroll', icon: DollarSign, path: '/payroll' },
+      { label: '13th Month Pay', icon: Gift, path: '/thirteenth-month' },
       { label: 'Allowances & Charges', icon: Receipt, path: '/deductions' },
     ],
   },

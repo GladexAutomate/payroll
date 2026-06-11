@@ -1,0 +1,105 @@
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
+
+function cleanText(value) {
+  return String(value || '').trim();
+}
+function money(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+Deno.serve(async (req) => {
+  try {
+    const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me();
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await req.json().catch(() => ({}));
+    const year = Number(body.year) || new Date().getFullYear();
+    const branchNorm = cleanText(body.branch).toLowerCase();
+
+    // All attendance pay summaries for the year.
+    const all = await base44.asServiceRole.entities.AttendancePaySummary.list('-period_start', 20000);
+
+    // Branch filter via AirtableEmployeeRecord (summaries carry no branch).
+    let branchEmployeeIds = null;
+    if (branchNorm) {
+      const emps = await base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000);
+      branchEmployeeIds = new Set(
+        emps
+          .filter((e) => cleanText(e.branch || e.fields?.Branch).toLowerCase() === branchNorm)
+          .map((e) => e.id)
+      );
+    }
+
+    const summaries = all.filter((s) => {
+      const start = s.period_start ? new Date(s.period_start) : null;
+      if (!start || start.getFullYear() !== year) return false;
+      if (branchEmployeeIds && !branchEmployeeIds.has(s.employee_id)) return false;
+      return true;
+    });
+
+    // Aggregate per employee.
+    const byEmployee = new Map();
+    for (const s of summaries) {
+      const id = s.employee_id;
+      if (!byEmployee.has(id)) {
+        byEmployee.set(id, {
+          employee_id: id,
+          employee_code: s.employee_code || '',
+          employee_name: s.employee_name || '',
+          basic_salary: Number(s.basic_salary || 0),
+          basic_earned: 0,
+          months: new Set(),
+        });
+      }
+      const e = byEmployee.get(id);
+      // "basic salary earned" = the gross actually earned from worked/paid time.
+      e.basic_earned += Number(s.gross || 0);
+      if (Number(s.basic_salary || 0) > 0) e.basic_salary = Number(s.basic_salary);
+      const m = new Date(s.period_start).getMonth(); // 0-11
+      e.months.add(m);
+    }
+
+    const employees = [...byEmployee.values()].map((e) => {
+      const monthsWorked = e.months.size;
+      const accrued = e.basic_earned / 12; // P.D. 851: total basic salary earned ÷ 12
+      // Prorated full-year projection: project the monthly basic salary across the
+      // months the employee was active this year (mid-year hire / resignation).
+      const prorated = (e.basic_salary * monthsWorked) / 12;
+      return {
+        employee_id: e.employee_id,
+        employee_code: e.employee_code,
+        employee_name: e.employee_name,
+        basic_salary: money(e.basic_salary),
+        basic_earned: money(e.basic_earned),
+        months_worked: monthsWorked,
+        accrued: money(accrued),
+        prorated: money(prorated),
+      };
+    }).sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+
+    const totals = employees.reduce(
+      (acc, e) => {
+        acc.basic_earned += e.basic_earned;
+        acc.accrued += e.accrued;
+        acc.prorated += e.prorated;
+        return acc;
+      },
+      { basic_earned: 0, accrued: 0, prorated: 0 }
+    );
+
+    return Response.json({
+      year,
+      branch: cleanText(body.branch),
+      employee_count: employees.length,
+      employees,
+      totals: {
+        basic_earned: money(totals.basic_earned),
+        accrued: money(totals.accrued),
+        prorated: money(totals.prorated),
+      },
+    });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+});
