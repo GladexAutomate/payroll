@@ -37,8 +37,12 @@ export default function AttendanceUpload() {
   const [previewUpload, setPreviewUpload] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef();
+  const pollRef = useRef(null);
 
   useEffect(() => { loadUploads(); }, []);
+
+  // Clear any running poll on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   // Prevent navigation during upload
   useEffect(() => {
@@ -89,291 +93,65 @@ export default function AttendanceUpload() {
     try {
       await runImport(file);
     } catch (err) {
-      const msg = String(err?.message || err);
-      const friendly = (msg === 'timeout' || msg.toLowerCase().includes('network'))
-        ? 'Network connection interrupted during import. Your progress was saved up to the last completed batch — please re-upload the same file to finish the remaining records (already-imported days will be updated, not duplicated).'
-        : msg;
-      finishUpload({ error: friendly });
+      finishUpload({ error: String(err?.message || err) });
       loadUploads();
       if (fileRef.current) fileRef.current.value = '';
     }
   };
 
-  const runImport = async (file) => {
+  // Poll the upload record until the background import finishes.
+  const pollUpload = (uploadId) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      const rec = await base44.entities.AttendanceUpload.get(uploadId);
+      if (!rec) return;
 
-
-    // Parse file locally with xlsx
-    const arrayBuffer = await file.arrayBuffer();
-    const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, raw: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
-
-    if (rows.length < 2) {
-      finishUpload({ error: 'File appears empty or has no data rows.' });
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-
-    // Header row: find Person Code col, Name col, and date columns
-    const rawHeaderRow = rows[0];
-    const headerRow = rawHeaderRow.map(h => String(h).trim());
-
-    // Person code: column explicitly named, or fall back to column 0
-    const personCodeIdx = headerRow.findIndex(h => /person.?code/i.test(h) || /^no\.?$/i.test(h)) !== -1
-      ? headerRow.findIndex(h => /person.?code/i.test(h) || /^no\.?$/i.test(h))
-      : 0;
-
-    // Name: column explicitly named "Name", or fall back to column 1
-    const nameIdx = headerRow.findIndex(h => /^name$/i.test(h)) !== -1
-      ? headerRow.findIndex(h => /^name$/i.test(h))
-      : 1;
-
-    const monthAbbr = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-
-    // Date columns: MM-DD, "D-Mon" (e.g. "1-May"), ISO date, or Excel serial
-    const dateCols = [];
-    rawHeaderRow.forEach((h, i) => {
-      if (i === personCodeIdx || i === nameIdx) return;
-      const str = String(h).trim();
-
-      // "D-Mon" or "DD-Mon" e.g. "1-May", "13-May"
-      const dMonMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})$/);
-      if (dMonMatch) {
-        const day = parseInt(dMonMatch[1]);
-        const monIdx = monthAbbr.indexOf(dMonMatch[2].toLowerCase());
-        if (monIdx >= 0) {
-          const label = `${String(monIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          dateCols.push({ idx: i, label });
-          return;
-        }
-      }
-
-      if (/^\d{1,2}-\d{2}$/.test(str)) {
-        dateCols.push({ idx: i, label: str });
-      } else if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-        const parts = str.split('-');
-        dateCols.push({ idx: i, label: `${parts[1]}-${parts[2]}` });
-      } else if (typeof h === 'number' && h > 1 && h < 100000) {
-        try {
-          const d = XLSX.SSF.parse_date_code(h);
-          if (d && d.m && d.d) {
-            dateCols.push({ idx: i, label: `${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}` });
-          }
-        } catch {}
-      }
-    });
-
-    console.log('Headers found:', headerRow.slice(0, 5));
-    console.log('Date columns found:', dateCols.length, dateCols.slice(0, 3));
-    console.log('personCodeIdx:', personCodeIdx, 'nameIdx:', nameIdx);
-    console.log('Row 1 sample:', rows[1]?.slice(0, 5));
-
-    if (dateCols.length === 0) {
-      finishUpload({ error: `No date columns found. Headers detected: "${headerRow.slice(0, 8).join('", "')}"` });
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-
-    // Infer year from filename or current year
-    const yearMatch = file.name.match(/(\d{4})/);
-    const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
-
-    // Try to detect month from filename — support "may 2026", "2026-05", "05-2026", etc.
-    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    let periodLabel = `${year}`;
-    const nameLC = file.name.toLowerCase();
-    const monthNameIdx = monthNames.findIndex(m => nameLC.includes(m));
-    if (monthNameIdx >= 0) {
-      periodLabel = format(new Date(year, monthNameIdx, 1), 'MMMM yyyy');
-    } else {
-      const numMonthMatch = file.name.match(/(\d{4})-(\d{2})/) || file.name.match(/(\d{2})-(\d{4})/);
-      if (numMonthMatch) {
-        const [, a, b] = numMonthMatch;
-        const [yr, mo] = parseInt(a) > 12 ? [parseInt(a), parseInt(b)] : [parseInt(b), parseInt(a)];
-        periodLabel = format(new Date(yr, mo - 1, 1), 'MMMM yyyy');
-      }
-    }
-
-    // Fetch employees once for ID mapping
-    const employees = await base44.entities.Employee.filter({ status: 'active' });
-
-    const byBioId = {};
-    const byName = {};
-    for (const emp of employees) {
-      if (emp.biometric_id) byBioId[emp.biometric_id.trim()] = emp;
-      if (emp.employee_id) byBioId[emp.employee_id.trim()] = emp;
-      const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase().trim();
-      byName[fullName] = emp;
-    }
-
-    let dataRowsFound = 0;
-    let emptyCellsSkipped = 0;
-    const newEmployeesMap = {}; // code -> { code, name } for auto-creation
-
-    // First pass: identify new employee codes that need to be auto-created
-    for (let r = 1; r < rows.length; r++) {
-      const row = rows[r];
-      const code = String(row[personCodeIdx] ?? '').trim();
-      const rawName = String(row[nameIdx] ?? '').trim();
-      if (!code || !rawName) continue;
-      const emp = byBioId[code] || byName[rawName.toLowerCase()];
-      if (!emp && !newEmployeesMap[code]) {
-        newEmployeesMap[code] = { code, name: rawName };
-      }
-    }
-
-    // Auto-create missing employees so their attendance can be imported
-    const newEmployees = Object.values(newEmployeesMap);
-    const createdEmployees = [];
-    for (const ne of newEmployees) {
-      const parts = ne.name.split(/\s+/);
-      const last_name = parts.length > 1 ? parts[parts.length - 1] : '';
-      const first_name = parts.length > 1 ? parts.slice(0, -1).join(' ') : ne.name;
-      const created = await base44.entities.Employee.create({
-        employee_id: ne.code,
-        biometric_id: ne.code,
-        first_name,
-        last_name,
-        status: 'active',
+      updateProgress({
+        current: rec.processed_rows || 0,
+        total: rec.total_rows || 0,
+        saved: (rec.created_count || 0) + (rec.updated_count || 0),
+        percent: rec.progress || 0,
       });
-      createdEmployees.push(created);
-      byBioId[ne.code] = created;
-      byName[ne.name.toLowerCase()] = created;
-    }
 
-    // Parse all records locally — no DB calls here
-    const records = [];
-    for (let r = 1; r < rows.length; r++) {
-      const row = rows[r];
-      const code = String(row[personCodeIdx] ?? '').trim();
-      const rawName = String(row[nameIdx] ?? '').trim();
-      // Skip rows with no person code (department headers like "ADMIN", "Admin", section labels)
-      if (!code) continue;
-      if (!rawName) continue;
-      dataRowsFound++;
-
-      const emp = byBioId[code] || byName[rawName.toLowerCase()];
-      if (!emp) continue; // shouldn't happen now — we auto-created above
-
-      const employeeId = emp.id;
-
-      for (const { idx, label } of dateCols) {
-        const rawCell = row[idx];
-        const cellVal = String(rawCell ?? '').trim();
-        if (!cellVal || cellVal === '0') { emptyCellsSkipped++; continue; }
-
-        // Parse time(s) from cell — may be a number (Excel fraction) or string with 1-N times
-        let allPunches = [];
-        if (typeof rawCell === 'number') {
-          const timeFrac = rawCell % 1;
-          const totalMins = Math.round(timeFrac * 24 * 60);
-          const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
-          const mm = String(totalMins % 60).padStart(2, '0');
-          allPunches = [`${hh}:${mm}`];
+      if (rec.status === 'success' || rec.status === 'failed' || rec.status === 'partial') {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        if (rec.status === 'failed') {
+          finishUpload({ error: rec.error_message || 'Import failed.' });
         } else {
-          allPunches = cellVal.match(/\d{1,2}:\d{2}/g) || [];
+          finishUpload({
+            saved: rec.records_imported || 0,
+            skipped: 0,
+            period: rec.period_label,
+            createdEmployees: rec.new_employees || [],
+          });
         }
-        if (allPunches.length === 0) continue;
-
-        const dateStr = `${year}-${label.padStart(5, '0')}`;
-        const buildISO = (t) => t ? `${dateStr}T${t}:00` : null;
-        const timeInISO = buildISO(allPunches[0]);
-        const timeOutISO = allPunches.length > 1 ? buildISO(allPunches[allPunches.length - 1]) : null;
-        const rawPunchesISO = allPunches.map(t => buildISO(t));
-        const totalHours = timeInISO && timeOutISO
-          ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100
-          : 0;
-
-        records.push({
-          employee_id: employeeId,
-          date: dateStr,
-          time_in: timeInISO,
-          time_out: timeOutISO,
-          raw_punches: rawPunchesISO,
-          total_hours: totalHours,
-          status: 'present',
-        });
+        loadUploads();
+        if (fileRef.current) fileRef.current.value = '';
       }
-    }
+    }, 2000);
+  };
 
-    if (records.length === 0) {
-      finishUpload({ saved: 0, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, createdEmployees });
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-
-    // Upload file for record-keeping
+  const runImport = async (file) => {
+    // Upload the raw file ONCE — this single upload is reliable. All parsing
+    // and importing happens server-side in the background, so dropped network
+    // connections or closed tabs no longer break the import.
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
-    // Always run the duplicate check — re-uploads of the same period must
-    // update existing records, not create new ones.
-    const skipDuplicateCheck = false;
-
-    // Step 2: Create the upload record to get an uploadId
-    const createRes = await base44.functions.invoke('importAttendance', {
-      action: 'createUpload',
+    // Kick off the background import. Returns immediately with an uploadId.
+    const res = await base44.functions.invoke('importAttendance', {
+      action: 'startImport',
       filename: file.name,
-      periodLabel,
       fileUrl: file_url,
     });
-    const uploadId = createRes.data?.uploadId;
+    const uploadId = res.data?.uploadId;
+    if (!uploadId) throw new Error(res.data?.error || 'Could not start import.');
 
-    // Step 3: Queue records in smaller chunks so each backend call stays well
-    // under the request timeout. Smaller chunks = faster, more reliable batches.
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
-      chunks.push(records.slice(i, i + CHUNK_SIZE));
-    }
-
-    updateProgress({ current: 0, total: chunks.length, saved: 0 });
-
-    // Race each backend call against a timeout so a slow/hung batch never
-    // freezes the whole upload — it gets retried instead.
-    const invokeWithTimeout = (payload, ms) => Promise.race([
-      base44.functions.invoke('importAttendance', payload),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-    ]);
-
-    let totalSaved = 0, totalCreated = 0, totalUpdated = 0;
-    for (let i = 0; i < chunks.length; i++) {
-      let attempts = 0;
-      while (attempts < 6) {
-        try {
-          const res = await invokeWithTimeout({
-            action: 'importChunk',
-            records: chunks[i],
-            uploadId,
-            skipDuplicateCheck,
-          }, 45000);
-          totalSaved += res.data?.saved || 0;
-          totalCreated += res.data?.created || 0;
-          totalUpdated += res.data?.updated || 0;
-          updateProgress({ current: i + 1, total: chunks.length, saved: totalSaved });
-          break;
-        } catch (err) {
-          attempts++;
-          if (attempts >= 6) throw err;
-          // Backoff before retrying this same chunk (rate limit / timeout recovery)
-          await new Promise(r => setTimeout(r, 2500 * attempts));
-        }
-      }
-      // Small breather between chunks
-      if (i + 1 < chunks.length) await new Promise(r => setTimeout(r, 300));
-    }
-
-    // Step 3: Finalize — update upload record with totals
-    await base44.functions.invoke('importAttendance', {
-      action: 'finalize',
-      uploadId,
-      totalSaved,
-      totalCreated,
-      totalUpdated,
-    });
-
-    finishUpload({ saved: totalSaved, skipped: 0, period: periodLabel, dataRowsFound, emptyCellsSkipped, dateCols: dateCols.length, createdEmployees });
+    updateProgress({ current: 0, total: 0, saved: 0, percent: 0 });
     loadUploads();
-    if (fileRef.current) fileRef.current.value = '';
+
+    // Poll the upload record for live progress until it finishes.
+    pollUpload(uploadId);
   };
 
   const [templateMonth, setTemplateMonth] = useState(() => {
@@ -439,25 +217,28 @@ export default function AttendanceUpload() {
                 <>
                   <div className="w-full">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                      <span>Importing batch {uploadProgress.current} of {uploadProgress.total}</span>
-                      <span>{uploadProgress.saved} records saved</span>
+                      <span>Importing {uploadProgress.current} of {uploadProgress.total} records</span>
+                      <span>{uploadProgress.saved} saved</span>
                     </div>
                     <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary rounded-full transition-all duration-500"
-                        style={{ width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%` }}
+                        style={{ width: `${uploadProgress.percent || 0}%` }}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground mt-1.5 text-center">
-                      {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% complete
+                      {uploadProgress.percent || 0}% complete
                     </p>
                   </div>
                   <UploadTimer startedAt={uploadState?.startedAt} />
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Import runs on the server — you can safely leave this page, it will keep going.
+                  </p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-medium">Processing file — extracting punch records...</p>
-                  <p className="text-xs text-muted-foreground">Preparing import queue...</p>
+                  <p className="text-sm font-medium">Uploading file & starting import...</p>
+                  <p className="text-xs text-muted-foreground">Reading punch records on the server...</p>
                   <UploadTimer startedAt={uploadState?.startedAt} />
                 </>
               )}
@@ -493,10 +274,7 @@ export default function AttendanceUpload() {
                 <div>
                   <p className="text-sm font-medium text-orange-800">⚠️ No records imported</p>
                   <p className="text-xs text-orange-700 mt-1">
-                    Found {uploadResult.dataRowsFound} employee row(s) and {uploadResult.dateCols} date column(s), but all date cells were empty.
-                  </p>
-                  <p className="text-xs text-orange-700 mt-1">
-                    Please fill in time data (e.g. <strong>08:00 / 17:00</strong>) in the date cells before uploading.
+                    No time data was found in the date cells. Please fill in time pairs (e.g. <strong>08:00 / 17:00</strong>) before uploading.
                   </p>
                 </div>
               ) : (

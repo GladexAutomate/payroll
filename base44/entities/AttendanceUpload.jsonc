@@ -27,6 +27,40 @@
       ],
       "default": "success"
     },
+    "progress": {
+      "type": "number",
+      "default": 0,
+      "description": "Import completion percentage (0-100)"
+    },
+    "total_rows": {
+      "type": "number",
+      "default": 0,
+      "description": "Total attendance records detected in the file"
+    },
+    "processed_rows": {
+      "type": "number",
+      "default": 0,
+      "description": "Records processed so far"
+    },
+    "created_count": {
+      "type": "number",
+      "default": 0
+    },
+    "updated_count": {
+      "type": "number",
+      "default": 0
+    },
+    "new_employees": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": [],
+      "description": "Employees auto-created during this import"
+    },
+    "error_message": {
+      "type": "string"
+    },
     "uploaded_by": {
       "type": "string"
     },
