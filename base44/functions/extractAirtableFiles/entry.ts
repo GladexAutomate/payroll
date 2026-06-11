@@ -1,8 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 const MIRROR_ENTITY = 'AirtableEmployeeRecord';
-const AIRTABLE_BASE_ID = 'appNRjLCu4ux139SV';
-const AIRTABLE_TABLE_ID = 'tblIAQIjrFcV9R6fI';
+const AIRTABLE_BASE_ID = 'appNRjLCu4uxT395V';
+const AIRTABLE_TABLE_ID = 'tblAOjFrCv9R6fFKq';
 
 // Airtable attachment columns we extract, and the mirror fields we store them on.
 const ATTACHMENT_MAP = [
