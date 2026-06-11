@@ -1,6 +1,8 @@
-import { Menu, Bell, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Menu, Bell, ChevronDown, BookOpen } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import TourLaunchButton from '@/components/tour/TourLaunchButton';
+import HelpCenterPanel from '@/components/help/HelpCenterPanel';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +13,7 @@ import {
 
 export default function TopBar({ onMenuClick, title }) {
   const { logout, user } = useAuth();
+  const [helpOpen, setHelpOpen] = useState(false);
 
   return (
     <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-white border-b border-border sticky top-0 z-10">
@@ -26,6 +29,16 @@ export default function TopBar({ onMenuClick, title }) {
 
       <div className="flex items-center gap-3">
         <TourLaunchButton />
+
+        <button
+          onClick={() => setHelpOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <BookOpen className="w-4 h-4" />
+          <span className="hidden sm:inline">Guide</span>
+        </button>
+
+        <HelpCenterPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
 
         <button className="p-2 rounded-lg hover:bg-muted transition-colors relative">
           <Bell className="w-4.5 h-4.5 text-muted-foreground" />
