@@ -93,8 +93,11 @@ export default function EmployeeAccessGate({ children }) {
           Use your employee code and generated password to continue.
         </p>
         {user?.email && (
-          <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-            Currently logged in as <span className="font-medium text-foreground">{user.email}</span>
+          <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
+            <span>Currently logged in as <span className="font-medium text-foreground">{user.email}</span></span>
+            <button type="button" onClick={() => logout(true)} className="shrink-0 font-medium text-primary hover:underline">
+              Switch account
+            </button>
           </div>
         )}
 
