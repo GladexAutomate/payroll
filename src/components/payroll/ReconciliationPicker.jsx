@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { fmtDate } from '@/lib/dateFormat';
+import { fmtDate, fmtDateRange } from '@/lib/dateFormat';
 
 const fmtPeso = (v) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
@@ -43,7 +43,7 @@ export default function ReconciliationPicker({ value, onChange, onSelected }) {
             <option value="">Choose a reconciled period...</option>
             {reconciledRuns.map(r => (
               <option key={r.id} value={r.id}>
-                {r.period_label} · {r.branch_filter || 'all'} · {r.employee_count || 0} emp
+                {fmtDateRange(r.period_start, r.period_end)} · {r.branch_filter || 'all'} · {r.employee_count || 0} emp
               </option>
             ))}
           </select>
@@ -52,7 +52,7 @@ export default function ReconciliationPicker({ value, onChange, onSelected }) {
 
       {selected && (
         <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
-          <p className="font-medium">{selected.period_label}</p>
+          <p className="font-medium">{fmtDateRange(selected.period_start, selected.period_end)}</p>
           <p className="text-xs text-muted-foreground">{fmtDate(selected.period_start)} → {fmtDate(selected.period_end)} · {selected.branch_filter || 'all'} branch</p>
           <div className="flex justify-between text-xs pt-1">
             <span className="text-muted-foreground">{selected.employee_count || 0} employees</span>
@@ -74,7 +74,7 @@ export function RebuildPayrollModal({ run, onClose, onConfirm }) {
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md">
         <div className="px-5 py-4 border-b border-border">
           <h3 className="font-semibold">Rebuild Payroll</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Choose which reconciled result to rebuild <span className="font-medium">{run.period_label}</span> from.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Choose which reconciled result to rebuild <span className="font-medium">{fmtDateRange(run.period_start, run.period_end)}</span> from.</p>
         </div>
         <div className="p-5 space-y-4">
           <ReconciliationPicker value={selectedId} onChange={setSelectedId} onSelected={setSelected} />

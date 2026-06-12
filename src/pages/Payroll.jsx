@@ -11,7 +11,7 @@ import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
 import SignDialog from '@/components/approval/SignDialog';
 import ReconciliationPicker, { RebuildPayrollModal } from '@/components/payroll/ReconciliationPicker';
 import { loadPayrollApprovalContext } from '@/lib/payrollApproval';
-import { fmtDate } from '@/lib/dateFormat';
+import { fmtDate, fmtDateRange } from '@/lib/dateFormat';
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
@@ -235,7 +235,7 @@ export default function Payroll() {
                 return (
                 <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-3.5 px-4">
-                    <p className="font-medium">{run.period_label}</p>
+                    <p className="font-medium">{fmtDateRange(run.period_start, run.period_end)}</p>
                     <p className="text-xs text-muted-foreground">{fmtDate(run.period_start)} → {fmtDate(run.period_end)}</p>
                     {run.branch_name && <p className="text-xs text-primary mt-0.5">{run.branch_name}</p>}
                   </td>
