@@ -236,7 +236,7 @@ export default function Payroll() {
                 <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-3.5 px-4">
                     <p className="font-medium">{fmtDateRange(run.period_start, run.period_end)}</p>
-                    <p className="text-xs text-muted-foreground">{fmtDate(run.period_start)} → {fmtDate(run.period_end)}</p>
+                    <p className="text-xs text-muted-foreground">Cutoff period</p>
                     {run.branch_name && <p className="text-xs text-primary mt-0.5">{run.branch_name}</p>}
                   </td>
                   <td className="py-3.5 px-4 text-muted-foreground">{fmtDate(run.pay_date)}</td>
