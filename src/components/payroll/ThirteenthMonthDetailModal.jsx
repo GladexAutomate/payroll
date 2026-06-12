@@ -10,7 +10,7 @@ const round = (n) => Math.round(Number(n || 0) * 100) / 100;
 // Full computation breakdown for a single employee's 13th month pay.
 // Monthly basic-earned figures are editable; totals recompute live.
 // "Approve & Save" persists the (possibly edited) record to the 13th Month Pay table.
-export default function ThirteenthMonthDetailModal({ record, year, basis, onClose, onSave }) {
+export default function ThirteenthMonthDetailModal({ record, year, basis, onClose, onSave, readOnly = false }) {
   const basisLabel = basis === 'prorated' ? 'Prorated Full-Year' : 'Accrued (Earned So Far)';
 
   // Editable per-month amounts keyed by month index.
@@ -85,7 +85,7 @@ export default function ThirteenthMonthDetailModal({ record, year, basis, onClos
           </div>
 
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">Basic salary earned per month (editable)</p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Basic salary earned per month{readOnly ? '' : ' (editable)'}</p>
             <div className="rounded-lg border border-border overflow-hidden">
               {months.map((m, idx) => (
                 <div key={idx} className="flex items-center gap-3 px-3 py-1.5 border-b border-border/50 last:border-0">
@@ -99,7 +99,9 @@ export default function ThirteenthMonthDetailModal({ record, year, basis, onClos
                     value={m.basic_earned === 0 ? '' : m.basic_earned}
                     placeholder="0.00"
                     onChange={(e) => setMonthValue(idx, e.target.value)}
-                    className="ml-auto h-8 w-40 text-right tabular-nums"
+                    readOnly={readOnly}
+                    disabled={readOnly}
+                    className="ml-auto h-8 w-40 text-right tabular-nums disabled:opacity-100 read-only:bg-muted/40"
                   />
                 </div>
               ))}
@@ -116,17 +118,21 @@ export default function ThirteenthMonthDetailModal({ record, year, basis, onClos
             </div>
           </div>
 
-          {isEdited && (
+          {readOnly ? (
+            <p className="text-xs text-muted-foreground">This 13th month pay has been approved &amp; saved and can no longer be edited. Delete the saved record to recompute.</p>
+          ) : isEdited && (
             <p className="text-xs text-amber-700">Monthly amounts were edited — the saved record will reflect your changes.</p>
           )}
         </div>
 
         <div className="flex gap-2 p-4 border-t border-border">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
-            Approve &amp; Save
-          </Button>
+          <Button variant="outline" className="flex-1" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
+          {!readOnly && (
+            <Button className="flex-1" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+              Approve &amp; Save
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -145,7 +145,7 @@ export default function ThirteenthMonth() {
               employees={data.employees}
               totals={data.totals}
               basis={basis}
-              onViewPayslip={setDetailFor}
+              onViewPayslip={(r) => setDetailFor({ ...r, _readOnly: false })}
             />
           )}
         </>
@@ -154,7 +154,7 @@ export default function ThirteenthMonth() {
           records={saved}
           loading={loadingSaved}
           onDelete={setDeleteRecord}
-          onView={(r) => setDetailFor({ ...r, monthly: r.monthly || [] })}
+          onView={(r) => setDetailFor({ ...r, monthly: r.monthly || [], _readOnly: true })}
         />
       )}
 
@@ -163,6 +163,7 @@ export default function ThirteenthMonth() {
           record={detailFor}
           year={detailFor.year || filters.year}
           basis={detailFor.basis || basis}
+          readOnly={!!detailFor._readOnly}
           onClose={() => setDetailFor(null)}
           onSave={handleSave}
         />
