@@ -1,0 +1,90 @@
+{
+  "name": "ThirteenthMonthRecord",
+  "type": "object",
+  "properties": {
+    "year": {
+      "type": "number",
+      "description": "Year the 13th month pay was computed for"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Branch filter applied when this record was saved, or 'all'"
+    },
+    "basis": {
+      "type": "string",
+      "enum": [
+        "accrued",
+        "prorated"
+      ],
+      "default": "accrued",
+      "description": "Computation basis used for the saved amount"
+    },
+    "employee_id": {
+      "type": "string",
+      "description": "AirtableEmployeeRecord backend record ID"
+    },
+    "employee_code": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "basic_salary": {
+      "type": "number",
+      "default": 0,
+      "description": "Monthly basic salary used"
+    },
+    "months_worked": {
+      "type": "number",
+      "default": 0
+    },
+    "projected_months": {
+      "type": "number",
+      "default": 0
+    },
+    "basic_earned": {
+      "type": "number",
+      "default": 0,
+      "description": "Total basic salary earned in the year (sum of monthly amounts)"
+    },
+    "monthly": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": [],
+      "description": "Per-month breakdown: { month, basic_earned, projected }"
+    },
+    "accrued": {
+      "type": "number",
+      "default": 0,
+      "description": "Accrued 13th month = basic_earned / 12"
+    },
+    "prorated": {
+      "type": "number",
+      "default": 0,
+      "description": "Prorated full-year 13th month projection"
+    },
+    "amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Final saved 13th month pay amount (based on basis)"
+    },
+    "is_edited": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if monthly amounts were manually edited before saving"
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "Email of the user who approved/saved this record"
+    },
+    "approved_date": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "year",
+    "employee_id"
+  ]
+}

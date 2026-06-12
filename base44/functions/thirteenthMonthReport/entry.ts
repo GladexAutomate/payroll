@@ -62,6 +62,7 @@ Deno.serve(async (req) => {
           basic_earned: 0,
           months: new Set(),       // months with actual reconciled data
           projected_months: new Set(), // months filled in from plotted schedule
+          monthly: new Map(),      // month0 -> basic earned that month
         });
       }
       const e = byEmployee.get(id);
@@ -70,6 +71,8 @@ Deno.serve(async (req) => {
       if (Number(s.basic_salary || 0) > 0) e.basic_salary = Number(s.basic_salary);
       const m = new Date(s.period_start).getMonth(); // 0-11
       e.months.add(m);
+      // Track per-month earned (actual reconciled).
+      e.monthly.set(m, (e.monthly.get(m) || 0) + Number(s.gross || 0));
     }
 
     // For the current year, precompute months that have plotted schedules but no
@@ -100,8 +103,10 @@ Deno.serve(async (req) => {
           const dailyRate = Number(e.basic_salary) / monthlyWorkDays(year, month0);
           // Cap projected paid days at a full month's worth of working days.
           const cappedDays = Math.min(paidDays, monthlyWorkDays(year, month0));
-          e.basic_earned += dailyRate * cappedDays;
+          const projectedEarned = dailyRate * cappedDays;
+          e.basic_earned += projectedEarned;
           e.projected_months.add(month0);
+          e.monthly.set(month0, (e.monthly.get(month0) || 0) + projectedEarned);
         }
       }
     }
@@ -114,6 +119,15 @@ Deno.serve(async (req) => {
       // Prorated full-year projection: project the monthly basic salary across the
       // months the employee was active this year (mid-year hire / resignation).
       const prorated = (e.basic_salary * monthsWorked) / 12;
+      // Per-month breakdown for all 12 months (0 if no earnings that month).
+      const monthly = [];
+      for (let m = 0; m < 12; m++) {
+        monthly.push({
+          month: m,
+          basic_earned: money(e.monthly.get(m) || 0),
+          projected: e.projected_months.has(m),
+        });
+      }
       return {
         employee_id: e.employee_id,
         employee_code: e.employee_code,
@@ -124,6 +138,7 @@ Deno.serve(async (req) => {
         projected_months: projectedMonths,
         accrued: money(accrued),
         prorated: money(prorated),
+        monthly,
       };
     }).sort((a, b) => a.employee_name.localeCompare(b.employee_name));
 
