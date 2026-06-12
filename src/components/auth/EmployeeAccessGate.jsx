@@ -83,15 +83,18 @@ export default function EmployeeAccessGate({ children }) {
   if (allowed) return children;
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-xl p-6">
-        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-          {blockedMessage ? <LockKeyhole className="w-6 h-6 text-primary" /> : <ShieldCheck className="w-6 h-6 text-primary" />}
+    <div className="min-h-screen bg-gradient-to-br from-navy-900 via-navy-800 to-primary flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-8">
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
+            {blockedMessage ? <LockKeyhole className="w-7 h-7 text-primary-foreground" /> : <ShieldCheck className="w-7 h-7 text-primary-foreground" />}
+          </div>
+          <h1 className="text-2xl font-bold text-navy">PaySync PH</h1>
+          <p className="text-sm font-medium text-foreground mt-1">Employee Sign In</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Use your employee code and generated password to continue.
+          </p>
         </div>
-        <h1 className="text-2xl font-semibold">Employee Sign In</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Use your employee code and generated password to continue.
-        </p>
         {user?.email && (
           <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
             <span>Currently logged in as <span className="font-medium text-foreground">{user.email}</span></span>
@@ -102,7 +105,7 @@ export default function EmployeeAccessGate({ children }) {
         )}
 
         {blockedMessage ? (
-          <div className="mt-5 space-y-4">
+          <div className="space-y-4">
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
               {blockedMessage}
             </div>
@@ -111,7 +114,7 @@ export default function EmployeeAccessGate({ children }) {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-sm font-medium">Employee Code</label>
               <Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="Enter employee code" className="mt-1" required />
