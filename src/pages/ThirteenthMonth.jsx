@@ -5,6 +5,7 @@ import { Gift, Calculator, Loader2, Info, Download } from 'lucide-react';
 import ReportFilters from '@/components/compliance/ReportFilters';
 import ThirteenthMonthTable from '@/components/payroll/ThirteenthMonthTable';
 import ThirteenthMonthDetailModal from '@/components/payroll/ThirteenthMonthDetailModal';
+import ThirteenthMonthPayslip from '@/components/payroll/ThirteenthMonthPayslip';
 import SavedThirteenthMonthTable from '@/components/payroll/SavedThirteenthMonthTable';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { exportToCsv } from '@/lib/exportCsv';
@@ -22,6 +23,10 @@ export default function ThirteenthMonth() {
   const [saved, setSaved] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
   const [deleteRecord, setDeleteRecord] = useState(null);
+  // Printable payslip for an approved/saved record.
+  const [payslipFor, setPayslipFor] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [brandings, setBrandings] = useState([]);
 
   const loadSaved = async () => {
     setLoadingSaved(true);
@@ -30,7 +35,23 @@ export default function ThirteenthMonth() {
     setLoadingSaved(false);
   };
 
-  useEffect(() => { loadSaved(); }, []);
+  useEffect(() => {
+    loadSaved();
+    Promise.all([
+      base44.entities.AirtableEmployeeRecord.list('-updated_date', 5000),
+      base44.entities.BranchBranding.list('-updated_date', 1000),
+    ]).then(([emps, brands]) => { setEmployees(emps || []); setBrandings(brands || []); });
+  }, []);
+
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const brandingForEmployee = (emp) => {
+    const f = emp?.fields || {};
+    const branch = norm(f.Branch || f.BRANCH || emp?.branch);
+    const company = norm(f.Company || f.COMPANY || emp?.company);
+    if (!branch) return null;
+    return brandings.find(b => norm(b.branch_name) === branch && (!company || norm(b.company_name) === company))
+      || brandings.find(b => norm(b.branch_name) === branch) || null;
+  };
 
   const run = async () => {
     setLoading(true);
@@ -154,9 +175,23 @@ export default function ThirteenthMonth() {
           records={saved}
           loading={loadingSaved}
           onDelete={setDeleteRecord}
-          onView={(r) => setDetailFor({ ...r, monthly: r.monthly || [], _readOnly: true })}
+          onView={(r) => setPayslipFor(r)}
         />
       )}
+
+      {payslipFor && (() => {
+        const emp = employees.find(e => e.id === payslipFor.employee_id || e.airtable_record_id === payslipFor.employee_id);
+        return (
+          <ThirteenthMonthPayslip
+            employee={emp}
+            record={payslipFor}
+            year={payslipFor.year}
+            basis={payslipFor.basis || 'accrued'}
+            branding={brandingForEmployee(emp)}
+            onClose={() => setPayslipFor(null)}
+          />
+        );
+      })()}
 
       {detailFor && (
         <ThirteenthMonthDetailModal
