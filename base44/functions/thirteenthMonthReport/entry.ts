@@ -28,10 +28,11 @@ Deno.serve(async (req) => {
     const year = Number(body.year) || new Date().getFullYear();
     const branchNorm = cleanText(body.branch).toLowerCase();
 
-    // All attendance pay summaries for the year.
-    const all = await base44.asServiceRole.entities.AttendancePaySummary.list('-period_start', 20000);
+    // SOURCE OF TRUTH: only APPROVED payroll, archived in ApprovedPayrollHistory.
+    // Each history row holds a snapshot of the run plus every employee PayrollRecord.
+    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.list('-period_start', 20000);
 
-    // Branch filter via AirtableEmployeeRecord (summaries carry no branch).
+    // Branch filter via AirtableEmployeeRecord (for the plotted-schedule projection).
     let branchEmployeeIds = null;
     if (branchNorm) {
       const emps = await base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000);
@@ -42,37 +43,39 @@ Deno.serve(async (req) => {
       );
     }
 
-    const summaries = all.filter((s) => {
-      const start = s.period_start ? new Date(s.period_start) : null;
-      if (!start || start.getFullYear() !== year) return false;
-      if (branchEmployeeIds && !branchEmployeeIds.has(s.employee_id)) return false;
-      return true;
-    });
-
-    // Aggregate per employee.
+    // Aggregate per employee from approved payroll snapshots.
     const byEmployee = new Map();
-    for (const s of summaries) {
-      const id = s.employee_id;
-      if (!byEmployee.has(id)) {
-        byEmployee.set(id, {
-          employee_id: id,
-          employee_code: s.employee_code || '',
-          employee_name: s.employee_name || '',
-          basic_salary: Number(s.basic_salary || 0),
-          basic_earned: 0,
-          months: new Set(),       // months with actual reconciled data
-          projected_months: new Set(), // months filled in from plotted schedule
-          monthly: new Map(),      // month0 -> basic earned that month
-        });
+    for (const h of history) {
+      const start = h.period_start ? new Date(h.period_start) : null;
+      if (!start || start.getFullYear() !== year) continue;
+      if (branchNorm && cleanText(h.branch_name).toLowerCase() !== branchNorm) continue;
+      const month0 = start.getMonth(); // 0-11
+      const records = Array.isArray(h.records_snapshot) ? h.records_snapshot : [];
+      for (const r of records) {
+        if (r.is_held) continue; // held salaries were excluded from the approved run
+        const id = r.employee_id;
+        if (!id) continue;
+        if (branchEmployeeIds && !branchEmployeeIds.has(id)) continue;
+        if (!byEmployee.has(id)) {
+          byEmployee.set(id, {
+            employee_id: id,
+            employee_code: r.employee_code || '',
+            employee_name: r.employee_name || '',
+            basic_salary: Number(r.basic_salary || 0),
+            basic_earned: 0,
+            months: new Set(),          // months with approved payroll data
+            projected_months: new Set(), // months filled in from plotted schedule
+            monthly: new Map(),         // month0 -> basic earned that month
+          });
+        }
+        const e = byEmployee.get(id);
+        // "basic salary earned" = regular (basic) pay actually earned this approved period.
+        const earned = Number(r.regular_pay || 0);
+        e.basic_earned += earned;
+        if (Number(r.basic_salary || 0) > 0) e.basic_salary = Number(r.basic_salary);
+        e.months.add(month0);
+        e.monthly.set(month0, (e.monthly.get(month0) || 0) + earned);
       }
-      const e = byEmployee.get(id);
-      // "basic salary earned" = the gross actually earned from worked/paid time.
-      e.basic_earned += Number(s.gross || 0);
-      if (Number(s.basic_salary || 0) > 0) e.basic_salary = Number(s.basic_salary);
-      const m = new Date(s.period_start).getMonth(); // 0-11
-      e.months.add(m);
-      // Track per-month earned (actual reconciled).
-      e.monthly.set(m, (e.monthly.get(m) || 0) + Number(s.gross || 0));
     }
 
     // For the current year, precompute months that have plotted schedules but no
@@ -92,6 +95,30 @@ Deno.serve(async (req) => {
         if (!plotted.has(sc.employee_id)) plotted.set(sc.employee_id, new Map());
         const mm = plotted.get(sc.employee_id);
         mm.set(month0, (mm.get(month0) || 0) + 1);
+      }
+
+      // Seed identity/salary for plotted employees who have no approved payroll yet,
+      // so future-month projection still appears even before their first approved run.
+      const missingIds = [...plotted.keys()].filter((id) => !byEmployee.has(id));
+      if (missingIds.length) {
+        const empRecords = await base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000);
+        const empById = new Map(empRecords.map((e) => [e.id, e]));
+        for (const id of missingIds) {
+          const emp = empById.get(id);
+          if (!emp) continue;
+          const basic = Number(emp.fields?.['Basic Salary'] || emp.fields?.['Monthly Salary'] || 0);
+          if (!(basic > 0)) continue;
+          byEmployee.set(id, {
+            employee_id: id,
+            employee_code: emp.employee_code || '',
+            employee_name: emp.full_name || '',
+            basic_salary: basic,
+            basic_earned: 0,
+            months: new Set(),
+            projected_months: new Set(),
+            monthly: new Map(),
+          });
+        }
       }
 
       for (const [empId, monthMap] of plotted) {
