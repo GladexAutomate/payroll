@@ -83,16 +83,14 @@ export default function EmployeeAccessGate({ children }) {
   if (allowed) return children;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-navy-900 via-navy-800 to-primary flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-8">
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-28 h-28 rounded-2xl bg-white flex items-center justify-center mb-4 shadow-lg p-2">
-            <img
-              src="https://media.base44.com/images/public/6a1686805d8389bea4666b9d/517798171_GladexLogonobackground.png"
-              alt="Gladex Travel and Tours Corp."
-              className="w-full h-full object-contain"
-            />
-          </div>
+          <img
+            src="https://media.base44.com/images/public/6a1686805d8389bea4666b9d/517798171_GladexLogonobackground.png"
+            alt="Gladex Travel and Tours Corp."
+            className="w-32 h-32 object-contain mb-3"
+          />
           <h1 className="text-2xl font-bold text-navy">Employee Sign In</h1>
           <p className="text-sm text-muted-foreground mt-2">
             Use your employee code and generated password to continue.
