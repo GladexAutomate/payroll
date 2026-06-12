@@ -23,6 +23,7 @@ export default function ThirteenthMonth() {
   const [saved, setSaved] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
   const [deleteRecord, setDeleteRecord] = useState(null);
+  const [releaseRecord, setReleaseRecord] = useState(null);
   // Printable payslip for an approved/saved record.
   const [payslipFor, setPayslipFor] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -90,6 +91,20 @@ export default function ThirteenthMonth() {
     });
     toast({ title: 'Saved', description: `${payload.employee_name}'s 13th month pay saved to the table.` });
     setDetailFor(null);
+    loadSaved();
+  };
+
+  const performRelease = async () => {
+    const r = releaseRecord;
+    setReleaseRecord(null);
+    const user = await base44.auth.me();
+    setSaved(prev => prev.map(x => x.id === r.id ? { ...x, release_status: 'released' } : x));
+    await base44.entities.ThirteenthMonthRecord.update(r.id, {
+      release_status: 'released',
+      released_by: user?.email || '',
+      released_date: new Date().toISOString(),
+    });
+    toast({ title: 'Released', description: `${r.employee_name}'s 13th month pay marked as released.` });
     loadSaved();
   };
 
@@ -175,6 +190,7 @@ export default function ThirteenthMonth() {
           records={saved}
           loading={loadingSaved}
           onDelete={setDeleteRecord}
+          onRelease={setReleaseRecord}
           onView={(r) => setPayslipFor(r)}
         />
       )}
@@ -212,6 +228,15 @@ export default function ThirteenthMonth() {
         confirmLabel="Delete"
         destructive
         onConfirm={performDelete}
+      />
+
+      <ConfirmDialog
+        open={!!releaseRecord}
+        onOpenChange={(open) => { if (!open) setReleaseRecord(null); }}
+        title="Mark as released?"
+        description={releaseRecord ? `Mark ${releaseRecord.employee_name}'s 13th month pay for ${releaseRecord.year} as released? This confirms the payment has been disbursed.` : ''}
+        confirmLabel="Mark Released"
+        onConfirm={performRelease}
       />
     </div>
   );

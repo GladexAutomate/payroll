@@ -75,6 +75,22 @@
       "default": false,
       "description": "True if monthly amounts were manually edited before saving"
     },
+    "release_status": {
+      "type": "string",
+      "enum": [
+        "ready_to_release",
+        "released"
+      ],
+      "default": "ready_to_release",
+      "description": "Whether this approved 13th month pay has been released to the employee"
+    },
+    "released_by": {
+      "type": "string",
+      "description": "Email of the user who marked this record as released"
+    },
+    "released_date": {
+      "type": "string"
+    },
     "approved_by": {
       "type": "string",
       "description": "Email of the user who approved/saved this record"

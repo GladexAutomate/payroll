@@ -1,10 +1,10 @@
-import { Trash2, FileText, CheckCircle2 } from 'lucide-react';
+import { Trash2, FileText, CheckCircle2, Send, BadgeCheck } from 'lucide-react';
 import { fmtDate } from '@/lib/dateFormat';
 
 const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
 // Read-only list of approved/saved 13th month pay records.
-export default function SavedThirteenthMonthTable({ records, loading, onDelete, onView }) {
+export default function SavedThirteenthMonthTable({ records, loading, onDelete, onView, onRelease }) {
   if (loading) {
     return (
       <div className="bg-card rounded-xl border border-border p-6 space-y-3">
@@ -34,6 +34,7 @@ export default function SavedThirteenthMonthTable({ records, loading, onDelete, 
               <th className="text-right py-3 px-4 font-medium">Monthly Basic</th>
               <th className="text-right py-3 px-4 font-medium">Months</th>
               <th className="text-right py-3 px-4 font-medium">13th Month Pay</th>
+              <th className="text-left py-3 px-4 font-medium">Status</th>
               <th className="text-left py-3 px-4 font-medium">Approved</th>
               <th className="py-3 px-4" />
             </tr>
@@ -52,13 +53,27 @@ export default function SavedThirteenthMonthTable({ records, loading, onDelete, 
                   {r.is_edited && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 text-blue-700 text-[10px] font-medium px-1.5 py-0.5">edited</span>}
                 </td>
                 <td className="py-3 px-4 text-right tabular-nums font-semibold text-primary">{fmt(r.amount)}</td>
+                <td className="py-3 px-4">
+                  {r.release_status === 'released' ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-xs font-medium px-2 py-0.5">
+                      <BadgeCheck className="w-3.5 h-3.5" /> Released
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2 py-0.5">
+                      Ready to Release
+                    </span>
+                  )}
+                </td>
                 <td className="py-3 px-4 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-green-600" />{fmtDate(r.approved_date)}</span>
                   <span className="block">{r.approved_by}</span>
                 </td>
                 <td className="py-3 px-4">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => onView?.(r)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="View computation"><FileText className="w-3.5 h-3.5" /></button>
+                    {r.release_status !== 'released' && (
+                      <button onClick={() => onRelease?.(r)} className="p-1.5 rounded hover:bg-green-50 text-green-600 hover:text-green-700" title="Mark as released"><Send className="w-3.5 h-3.5" /></button>
+                    )}
+                    <button onClick={() => onView?.(r)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="View payslip"><FileText className="w-3.5 h-3.5" /></button>
                     <button onClick={() => onDelete?.(r)} className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700" title="Delete saved record"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 </td>
@@ -70,7 +85,7 @@ export default function SavedThirteenthMonthTable({ records, loading, onDelete, 
               <td className="py-3 px-4">Total ({records.length})</td>
               <td className="py-3 px-4" colSpan={3} />
               <td className="py-3 px-4 text-right tabular-nums text-primary">{fmt(total)}</td>
-              <td className="py-3 px-4" colSpan={2} />
+              <td className="py-3 px-4" colSpan={3} />
             </tr>
           </tfoot>
         </table>
