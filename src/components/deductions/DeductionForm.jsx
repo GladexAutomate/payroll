@@ -13,6 +13,8 @@ export default function DeductionForm({ kind, employees, companies = [], branche
     company: '',
     branch: '',
     label: '',
+    deduction_mode: 'fixed',
+    percent_of_gross: '',
     amount_per_cutoff: '',
     total_amount: '',
     total_cutoffs: '',
@@ -20,6 +22,7 @@ export default function DeductionForm({ kind, employees, companies = [], branche
     recurring: !isDeduction,
     notes: '',
   });
+  const isPercent = isDeduction && form.deduction_mode === 'percent';
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const availableBranches = form.company ? (branchesByCompany[form.company] || []) : [];
 
@@ -42,9 +45,12 @@ export default function DeductionForm({ kind, employees, companies = [], branche
       branch: form.branch || '',
       kind,
       label: form.label,
-      amount_per_cutoff: parseFloat(form.amount_per_cutoff) || 0,
+      deduction_mode: isDeduction ? form.deduction_mode : 'fixed',
+      percent_of_gross: isPercent ? (parseFloat(form.percent_of_gross) || 0) : 0,
+      amount_per_cutoff: isPercent ? 0 : (parseFloat(form.amount_per_cutoff) || 0),
       total_amount: isDeduction ? (parseFloat(form.total_amount) || 0) : 0,
-      total_cutoffs: (isDeduction || !form.recurring) ? (parseInt(form.total_cutoffs, 10) || 0) : 0,
+      total_cutoffs: (isDeduction && !isPercent) || (!isDeduction && !form.recurring) ? (parseInt(form.total_cutoffs, 10) || 0) : 0,
+      amount_paid: 0,
       cutoffs_paid: 0,
       start_date: form.start_date || undefined,
       recurring: isDeduction ? false : !!form.recurring,
@@ -100,15 +106,33 @@ export default function DeductionForm({ kind, employees, companies = [], branche
 
           {isDeduction ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs font-medium text-muted-foreground">Total Amount*</label><Input type="number" step="0.01" min="0" value={form.total_amount} onChange={e => onTotalsChange('total_amount', e.target.value)} required className="mt-1" /></div>
-                <div><label className="text-xs font-medium text-muted-foreground"># of Cutoffs*</label><Input type="number" min="1" value={form.total_cutoffs} onChange={e => onTotalsChange('total_cutoffs', e.target.value)} required className="mt-1" /></div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Deduction Method*</label>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  {[['fixed', 'Fixed per cutoff'], ['percent', '% of gross']].map(([v, lbl]) => (
+                    <button type="button" key={v} onClick={() => set('deduction_mode', v)}
+                      className={`text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${form.deduction_mode === v ? 'bg-primary text-white border-primary' : 'bg-card border-border text-muted-foreground hover:text-foreground'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs font-medium text-muted-foreground">Per Cutoff*</label><Input type="number" step="0.01" min="0" value={form.amount_per_cutoff} onChange={e => set('amount_per_cutoff', e.target.value)} required className="mt-1" /></div>
-                <div><label className="text-xs font-medium text-muted-foreground">Start Date*</label><Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} required className="mt-1" /></div>
-              </div>
-              <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">Deduction begins on the cutoff covering the start date and runs for the set number of cutoffs (or until the total is fully paid). Send the ATD for the employee to authorize before it goes active.</p>
+              {isPercent ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-muted-foreground">Total Amount*</label><Input type="number" step="0.01" min="0" value={form.total_amount} onChange={e => set('total_amount', e.target.value)} required className="mt-1" /></div>
+                  <div><label className="text-xs font-medium text-muted-foreground">% of Gross*</label><Input type="number" step="0.01" min="0" max="100" value={form.percent_of_gross} onChange={e => set('percent_of_gross', e.target.value)} required className="mt-1" /></div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-xs font-medium text-muted-foreground">Total Amount*</label><Input type="number" step="0.01" min="0" value={form.total_amount} onChange={e => onTotalsChange('total_amount', e.target.value)} required className="mt-1" /></div>
+                    <div><label className="text-xs font-medium text-muted-foreground"># of Cutoffs*</label><Input type="number" min="1" value={form.total_cutoffs} onChange={e => onTotalsChange('total_cutoffs', e.target.value)} required className="mt-1" /></div>
+                  </div>
+                  <div><label className="text-xs font-medium text-muted-foreground">Per Cutoff*</label><Input type="number" step="0.01" min="0" value={form.amount_per_cutoff} onChange={e => set('amount_per_cutoff', e.target.value)} required className="mt-1" /></div>
+                </>
+              )}
+              <div><label className="text-xs font-medium text-muted-foreground">Start Date*</label><Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} required className="mt-1" /></div>
+              <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">{isPercent ? 'Each cutoff deducts the set percentage of that cutoff\'s gross pay (or the remaining balance, whichever is smaller) until the total is fully paid.' : 'Deduction begins on the cutoff covering the start date and runs for the set number of cutoffs (or until the total is fully paid).'} Send the ATD for the employee to authorize before it goes active.</p>
             </>
           ) : (
             <>
