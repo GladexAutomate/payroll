@@ -32,8 +32,11 @@
         "draft",
         "computing",
         "processing",
+        "pending_approval_1",
+        "pending_approval_2",
         "approved",
-        "released"
+        "released",
+        "rejected"
       ],
       "default": "draft"
     },
@@ -69,6 +72,38 @@
     },
     "employee_count": {
       "type": "number"
+    },
+    "submitted_by": {
+      "type": "string",
+      "description": "Email of the user who submitted this run for approval"
+    },
+    "submitted_date": {
+      "type": "string"
+    },
+    "approval_1_by": {
+      "type": "string",
+      "description": "Email of Approver 1 who approved step 1"
+    },
+    "approval_1_date": {
+      "type": "string"
+    },
+    "approval_2_by": {
+      "type": "string",
+      "description": "Email of Approver 2 who approved step 2"
+    },
+    "approval_2_date": {
+      "type": "string"
+    },
+    "rejected_by": {
+      "type": "string",
+      "description": "Email of the approver who rejected this run"
+    },
+    "rejected_date": {
+      "type": "string"
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "Reason given when an approver rejects the run back to the creator"
     },
     "approved_by": {
       "type": "string"

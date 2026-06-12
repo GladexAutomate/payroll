@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw, Send, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
-import { format } from 'date-fns';
+import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
+import { loadPayrollApprovalContext } from '@/lib/payrollApproval';
+
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 const formatPeso = (value) => (
   value == null ? '—' : `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
@@ -21,8 +24,15 @@ export default function Payroll() {
   const [computing, setComputing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [dialog, setDialog] = useState(null);
+  const [rejectRun, setRejectRun] = useState(null);
+  const [perms, setPerms] = useState({ canCreate: false, canApprove1: false, canApprove2: false, isAdmin: false, email: '' });
 
-  useEffect(() => { loadRuns(); }, []);
+  useEffect(() => { loadRuns(); loadPerms(); }, []);
+
+  const loadPerms = async () => {
+    const ctx = await loadPayrollApprovalContext();
+    setPerms(ctx);
+  };
 
   useEffect(() => {
     const hasComputingRun = runs.some(run => run.status === 'computing');
@@ -69,25 +79,81 @@ export default function Payroll() {
     });
   };
 
-  const handleApprove = (run) => {
+  // Step 1 of 3: creator submits a computed run for approval.
+  const handleSubmit = (run) => {
     setDialog({
-      title: 'Approve payroll?',
-      description: `Approve ${run.period_label}? This locks the run and saves a permanent copy to Approved Payroll History. The delete option will be removed.`,
-      confirmLabel: 'Approve',
-      onConfirm: () => { setDialog(null); performApprove(run); },
+      title: 'Submit for approval?',
+      description: `Submit ${run.period_label} to Approver 1? You won't be able to delete it while it's under review.`,
+      confirmLabel: 'Submit',
+      onConfirm: async () => {
+        setDialog(null);
+        setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'pending_approval_1' } : item));
+        await base44.entities.PayrollRun.update(run.id, {
+          status: 'pending_approval_1',
+          submitted_by: perms.email,
+          submitted_date: new Date().toISOString(),
+          rejection_reason: '', rejected_by: '', rejected_date: '',
+        });
+        loadRuns({ silent: true });
+      },
     });
   };
 
-  const performApprove = (run) => {
-    setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'approved' } : item));
-    base44.functions.invoke('approvePayroll', { payroll_run_id: run.id })
-      .catch(error => {
-        setDialog({
-          title: 'Approval failed',
-          description: error?.response?.data?.error || error?.message || 'Unable to approve payroll. Please retry.',
+  // Step 2 of 3: Approver 1 approves -> moves to Approver 2.
+  const handleApprove1 = (run) => {
+    setDialog({
+      title: 'Approve (Step 1)?',
+      description: `Approve ${run.period_label} as Approver 1? It will then go to Approver 2 for final approval.`,
+      confirmLabel: 'Approve',
+      onConfirm: async () => {
+        setDialog(null);
+        setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'pending_approval_2' } : item));
+        await base44.entities.PayrollRun.update(run.id, {
+          status: 'pending_approval_2',
+          approval_1_by: perms.email,
+          approval_1_date: new Date().toISOString(),
         });
-      })
-      .finally(() => loadRuns({ silent: true }));
+        loadRuns({ silent: true });
+      },
+    });
+  };
+
+  // Step 3 of 3: Approver 2 gives final approval -> archives via existing function.
+  const handleApprove2 = (run) => {
+    setDialog({
+      title: 'Final approval (Step 2)?',
+      description: `Give final approval to ${run.period_label}? This locks the run and saves a permanent copy to Approved Payroll History.`,
+      confirmLabel: 'Approve',
+      onConfirm: async () => {
+        setDialog(null);
+        setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'approved' } : item));
+        await base44.entities.PayrollRun.update(run.id, {
+          approval_2_by: perms.email,
+          approval_2_date: new Date().toISOString(),
+        });
+        base44.functions.invoke('approvePayroll', { payroll_run_id: run.id })
+          .catch(error => {
+            setDialog({
+              title: 'Approval failed',
+              description: error?.response?.data?.error || error?.message || 'Unable to approve payroll. Please retry.',
+            });
+          })
+          .finally(() => loadRuns({ silent: true }));
+      },
+    });
+  };
+
+  const performReject = async (reason) => {
+    const run = rejectRun;
+    setRejectRun(null);
+    setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'rejected' } : item));
+    await base44.entities.PayrollRun.update(run.id, {
+      status: 'rejected',
+      rejected_by: perms.email,
+      rejected_date: new Date().toISOString(),
+      rejection_reason: reason,
+    });
+    loadRuns({ silent: true });
   };
 
   const handleDelete = (run) => {
@@ -123,9 +189,11 @@ export default function Payroll() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{runs.length} payroll runs</p>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="w-4 h-4 mr-1.5" /> New Payroll Run
-        </Button>
+        {perms.canCreate && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="w-4 h-4 mr-1.5" /> New Payroll Run
+          </Button>
+        )}
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
@@ -175,6 +243,12 @@ export default function Payroll() {
                   <td className="py-3.5 px-4">
                     <StatusBadge status={run.status} label={run.status === 'processing' ? 'Computed' : undefined} />
                     <PayrollProgress run={run} />
+                    {run.status === 'rejected' && run.rejection_reason && (
+                      <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-red-700">Rejected: {run.rejection_reason}</p>
+                    )}
+                    {run.status === 'pending_approval_2' && run.approval_1_by && (
+                      <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-muted-foreground">Step 1 approved by {run.approval_1_by}</p>
+                    )}
                     {missingComputedTotals && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">No totals were saved. Click recompute.</p>}
                     {run.notes && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">{run.notes}</p>}
                   </td>
@@ -197,7 +271,7 @@ export default function Payroll() {
                           <Play className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
-                      {run.status === 'processing' && (
+                      {(run.status === 'processing' || run.status === 'rejected') && (
                         <button
                           onClick={() => handleRecompute(run)}
                           disabled={computing === run.id}
@@ -207,16 +281,47 @@ export default function Payroll() {
                           <RefreshCw className={`w-3.5 h-3.5 ${computing === run.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
-                      {run.status === 'processing' && (
+                      {/* Step 1: creator submits a computed run for approval */}
+                      {run.status === 'processing' && perms.canCreate && (
                         <button
-                          onClick={() => handleApprove(run)}
+                          onClick={() => handleSubmit(run)}
+                          className="p-1.5 rounded hover:bg-primary/10 text-primary transition-colors"
+                          title="Submit for approval"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {/* Step 2: Approver 1 (cannot be the submitter) */}
+                      {run.status === 'pending_approval_1' && perms.canApprove1 && normalizeEmail(run.submitted_by) !== perms.email && (
+                        <button
+                          onClick={() => handleApprove1(run)}
                           className="p-1.5 rounded hover:bg-green-50 text-green-600 hover:text-green-700 transition-colors"
-                          title="Approve payroll"
+                          title="Approve (Step 1)"
                         >
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {run.status !== 'approved' && run.status !== 'released' && (
+                      {/* Step 3: Approver 2 final approval (cannot be the submitter) */}
+                      {run.status === 'pending_approval_2' && perms.canApprove2 && normalizeEmail(run.submitted_by) !== perms.email && (
+                        <button
+                          onClick={() => handleApprove2(run)}
+                          className="p-1.5 rounded hover:bg-green-50 text-green-600 hover:text-green-700 transition-colors"
+                          title="Final approval (Step 2)"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {/* Reject: available to the relevant approver at either pending stage */}
+                      {((run.status === 'pending_approval_1' && perms.canApprove1) || (run.status === 'pending_approval_2' && perms.canApprove2)) && normalizeEmail(run.submitted_by) !== perms.email && (
+                        <button
+                          onClick={() => setRejectRun(run)}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors"
+                          title="Reject back to creator"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {run.status !== 'approved' && run.status !== 'released' && run.status !== 'pending_approval_1' && run.status !== 'pending_approval_2' && (
                         <button
                           onClick={() => handleDelete(run)}
                           disabled={deleting === run.id}
@@ -257,6 +362,13 @@ export default function Payroll() {
         confirmLabel={dialog?.confirmLabel}
         destructive={dialog?.destructive}
         onConfirm={dialog?.onConfirm}
+      />
+
+      <RejectPayrollDialog
+        open={!!rejectRun}
+        run={rejectRun}
+        onOpenChange={(open) => { if (!open) setRejectRun(null); }}
+        onConfirm={performReject}
       />
     </div>
   );

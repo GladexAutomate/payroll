@@ -1,0 +1,26 @@
+{
+  "name": "PayrollApprovalRole",
+  "type": "object",
+  "properties": {
+    "role_key": {
+      "type": "string",
+      "enum": [
+        "payroll_creator",
+        "payroll_approver_1",
+        "payroll_approver_2"
+      ],
+      "description": "Which step of the payroll approval hierarchy this assignment is for"
+    },
+    "user_emails": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Emails of users assigned to this approval role"
+    }
+  },
+  "required": [
+    "role_key"
+  ]
+}

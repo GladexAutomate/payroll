@@ -43,6 +43,7 @@ import Teams from './pages/Teams';
 import UserManagement from './pages/UserManagement';
 import Permissions from './pages/Permissions';
 import RoleHierarchy from './pages/RoleHierarchy';
+import PayrollApprovalHierarchy from './pages/PayrollApprovalHierarchy';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -113,6 +114,7 @@ const GatedRoutes = () => {
         <Route path="/offsets" element={<Offsets />} />
         <Route path="/deductions" element={<Deductions />} />
         <Route path="/payroll" element={<Payroll />} />
+        <Route path="/payroll-approval-hierarchy" element={<PayrollApprovalHierarchy />} />
         <Route path="/thirteenth-month" element={<ThirteenthMonth />} />
         <Route path="/tax-compliance" element={<TaxCompliance />} />
         <Route path="/reports" element={<Reports />} />

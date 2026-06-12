@@ -64,6 +64,7 @@ export const navGroups = [
     items: [
       { label: 'Reconciliation', icon: ClipboardCheck, path: '/reconciliation' },
       { label: 'Payroll', icon: DollarSign, path: '/payroll' },
+      { label: 'Payroll Approval Hierarchy', icon: Network, path: '/payroll-approval-hierarchy', adminOnly: true },
       { label: 'Allowances & Charges', icon: Receipt, path: '/deductions' },
     ],
   },
