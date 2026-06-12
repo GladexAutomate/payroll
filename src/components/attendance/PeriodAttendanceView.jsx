@@ -209,7 +209,7 @@ export default function PeriodAttendanceView({ startDate, endDate, periodLabel }
     try {
       const d = new Date(String(iso).split(' ')[0]);
       if (isNaN(d.getTime())) return '';
-      return format(d, 'HH:mm');
+      return format(d, 'h:mm a');
     } catch { return ''; }
   };
 

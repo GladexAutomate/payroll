@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { useEmployeeScope } from '@/lib/useEmployeeScope';
 import { useCurrentTier } from '@/hooks/useCurrentTier';
+import { fmtDate } from '@/lib/dateFormat';
 import { buildRequestorTierMap } from '@/lib/requestorTier';
 import ApprovalChain from '@/components/approval/ApprovalChain';
 
@@ -92,8 +93,8 @@ export default function Leaves() {
                   <tr key={req.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3.5 px-4 font-medium">{emp ? (emp.full_name || emp.fields?.['Full Name'] || req.employee_id) : req.employee_id}</td>
                     <td className="py-3.5 px-4 capitalize text-muted-foreground">{req.leave_type?.replace('_', ' ')}</td>
-                    <td className="py-3.5 px-4">{req.date_from}</td>
-                    <td className="py-3.5 px-4">{req.date_to}</td>
+                    <td className="py-3.5 px-4">{fmtDate(req.date_from)}</td>
+                    <td className="py-3.5 px-4">{fmtDate(req.date_to)}</td>
                     <td className="py-3.5 px-4 text-right">{req.days_count}</td>
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[200px] truncate">{req.reason || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={req.status} /></td>

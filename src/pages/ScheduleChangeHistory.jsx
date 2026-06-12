@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
 import { History, RefreshCw, Search, ArrowRight, User } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-
-const fmtDateTime = (iso) => {
-  if (!iso) return '—';
-  try { return format(new Date(iso), 'MMM d, yyyy · h:mm a'); } catch { return iso; }
-};
+import { fmtDateTime, fmtDate } from '@/lib/dateFormat';
 
 export default function ScheduleChangeHistory() {
   const [logs, setLogs] = useState([]);
@@ -85,7 +80,7 @@ export default function ScheduleChangeHistory() {
                     <p className="font-medium">{log.employee_name || '—'}</p>
                     {log.department && <p className="text-xs text-muted-foreground">{log.department}</p>}
                   </td>
-                  <td className="py-3 px-4 whitespace-nowrap">{log.date}</td>
+                  <td className="py-3 px-4 whitespace-nowrap">{fmtDate(log.date)}</td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2 text-xs">
                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">{log.old_label || log.old_value || 'No Sched'}</span>

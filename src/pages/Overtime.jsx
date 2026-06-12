@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { getAirtableEmployeeName, isActiveAirtableEmployee } from '@/utils/airtableEmployee';
 import { useEmployeeScope } from '@/lib/useEmployeeScope';
+import { fmtDate } from '@/lib/dateFormat';
 import { useCurrentTier } from '@/hooks/useCurrentTier';
 import { buildRequestorTierMap } from '@/lib/requestorTier';
 import ApprovalChain from '@/components/approval/ApprovalChain';
@@ -94,7 +95,7 @@ export default function Overtime() {
                 return (
                   <tr key={req.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3.5 px-4 font-medium">{emp ? getAirtableEmployeeName(emp) : req.employee_id}</td>
-                    <td className="py-3.5 px-4">{req.date}</td>
+                    <td className="py-3.5 px-4">{fmtDate(req.date)}</td>
                     <td className="py-3.5 px-4 text-right">{req.requested_hours}h</td>
                     <td className="py-3.5 px-4 text-right font-medium">{req.approved_hours ? `${req.approved_hours}h` : '—'}</td>
                     <td className="py-3.5 px-4 text-muted-foreground max-w-[180px] truncate">{req.reason || '—'}</td>

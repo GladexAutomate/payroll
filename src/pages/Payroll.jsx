@@ -10,6 +10,7 @@ import PayrollProgress from '@/components/payroll/PayrollProgress';
 import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
 import SignDialog from '@/components/approval/SignDialog';
 import { loadPayrollApprovalContext } from '@/lib/payrollApproval';
+import { fmtDate } from '@/lib/dateFormat';
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
@@ -222,10 +223,10 @@ export default function Payroll() {
                 <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-3.5 px-4">
                     <p className="font-medium">{run.period_label}</p>
-                    <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
+                    <p className="text-xs text-muted-foreground">{fmtDate(run.period_start)} → {fmtDate(run.period_end)}</p>
                     {run.branch_name && <p className="text-xs text-primary mt-0.5">{run.branch_name}</p>}
                   </td>
-                  <td className="py-3.5 px-4 text-muted-foreground">{run.pay_date || '—'}</td>
+                  <td className="py-3.5 px-4 text-muted-foreground">{fmtDate(run.pay_date)}</td>
                   <td className="py-3.5 px-4 text-right">{run.employee_count || '—'}</td>
                   <td className="py-3.5 px-4 text-right font-medium">
                     {formatPeso(run.total_gross)}
@@ -467,7 +468,7 @@ function CreatePayrollModal({ onClose, onCreated }) {
           {selected && (
             <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
               <p className="font-medium">{selected.period_label}</p>
-              <p className="text-xs text-muted-foreground">{selected.period_start} → {selected.period_end} · {selected.branch_filter || 'all'} branch</p>
+              <p className="text-xs text-muted-foreground">{fmtDate(selected.period_start)} → {fmtDate(selected.period_end)} · {selected.branch_filter || 'all'} branch</p>
               <div className="flex justify-between text-xs pt-1">
                 <span className="text-muted-foreground">{selected.employee_count || 0} employees</span>
                 <span className="font-medium">{fmtPeso(selected.total_gross)} gross</span>

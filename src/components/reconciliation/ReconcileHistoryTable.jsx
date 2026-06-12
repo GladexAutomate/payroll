@@ -1,6 +1,6 @@
 import { Eye, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { peso, fmtDateTime, fmtDuration, RUN_STATUS } from './reconcileFormat';
+import { peso, fmtDateTime, fmtDuration, fmtDateRange, RUN_STATUS } from './reconcileFormat';
 
 // History of past reconciliation runs.
 export default function ReconcileHistoryTable({ runs, onView }) {
@@ -34,7 +34,7 @@ export default function ReconcileHistoryTable({ runs, onView }) {
             return (
               <tr key={run.id} className="border-b border-border/60 hover:bg-accent/40">
                 <td className="py-2.5 px-3 whitespace-nowrap">{fmtDateTime(run.started_at || run.created_date)}</td>
-                <td className="py-2.5 px-3 whitespace-nowrap text-muted-foreground">{run.period_label || `${run.period_start} – ${run.period_end}`}</td>
+                <td className="py-2.5 px-3 whitespace-nowrap text-muted-foreground">{fmtDateRange(run.period_start, run.period_end)}</td>
                 <td className="py-2.5 px-3 whitespace-nowrap">{run.branch_filter || 'all'}</td>
                 <td className="py-2.5 px-3">
                   <span className={`inline-flex items-center text-xs font-medium border rounded-full px-2 py-0.5 ${status.className}`}>

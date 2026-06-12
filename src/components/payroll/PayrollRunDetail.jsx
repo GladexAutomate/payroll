@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import PayslipDocument from '@/components/payroll/PayslipDocument';
 import { exportToCsv } from '@/lib/exportCsv';
+import { fmtDate } from '@/lib/dateFormat';
 
 export default function PayrollRunDetail({ run, onClose }) {
   const [records, setRecords] = useState([]);
@@ -127,7 +128,7 @@ export default function PayrollRunDetail({ run, onClose }) {
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h2 className="font-semibold text-lg">{run.period_label}</h2>
-            <p className="text-xs text-muted-foreground">{run.period_start} → {run.period_end}</p>
+            <p className="text-xs text-muted-foreground">{fmtDate(run.period_start)} → {fmtDate(run.period_end)}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleExport} disabled={loading || records.length === 0}>

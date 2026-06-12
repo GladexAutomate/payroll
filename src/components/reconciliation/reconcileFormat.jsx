@@ -1,13 +1,12 @@
-import { format, parseISO } from 'date-fns';
+import { fmtDateTime as fmtDT, fmtDate, fmtDateRange } from '@/lib/dateFormat';
 
 export const peso = (n) =>
   `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const fmtDateTime = (iso) => {
-  if (!iso) return '—';
-  try { return format(parseISO(iso), 'MMM d, yyyy h:mm a'); } catch { return '—'; }
-};
+export const fmtDateTime = (iso) => fmtDT(iso);
+export { fmtDate, fmtDateRange };
 
+// eslint-disable-next-line
 export const fmtDuration = (ms) => {
   const s = Math.round(Number(ms || 0) / 1000);
   if (s < 60) return `${s}s`;
