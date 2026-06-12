@@ -27,10 +27,11 @@ Deno.serve(async (req) => {
     const month = body.month ? Number(body.month) : null;
     const branchNorm = cleanText(body.branch).toLowerCase();
 
-    // Pull all attendance pay summaries; filter by year/month/branch in memory.
-    const all = await base44.asServiceRole.entities.AttendancePaySummary.list('-period_start', 20000);
+    // SOURCE OF TRUTH: only APPROVED payroll, archived in ApprovedPayrollHistory.
+    // Tax filings must reflect actual approved & released payroll (no projections).
+    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.list('-period_start', 20000);
 
-    // Optional branch lookup: AttendancePaySummary has no branch, so match via AirtableEmployeeRecord.
+    // Optional branch filter via AirtableEmployeeRecord (records carry employee_id only).
     let branchEmployeeIds = null;
     if (branchNorm) {
       const emps = await base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000);
@@ -41,13 +42,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    const summaries = all.filter((s) => {
-      const start = s.period_start ? new Date(s.period_start) : null;
-      if (!start || start.getFullYear() !== year) return false;
-      if (month && start.getMonth() + 1 !== month) return false;
-      if (branchEmployeeIds && !branchEmployeeIds.has(s.employee_id)) return false;
-      return true;
-    });
+    // Flatten approved payroll snapshots into per-period employee records.
+    const summaries = [];
+    for (const h of history) {
+      const start = h.period_start ? new Date(h.period_start) : null;
+      if (!start || start.getFullYear() !== year) continue;
+      if (month && start.getMonth() + 1 !== month) continue;
+      if (branchNorm && cleanText(h.branch_name).toLowerCase() !== branchNorm) continue;
+      const records = Array.isArray(h.records_snapshot) ? h.records_snapshot : [];
+      for (const r of records) {
+        if (r.is_held) continue; // held salaries were excluded from the approved run
+        if (!r.employee_id) continue;
+        if (branchEmployeeIds && !branchEmployeeIds.has(r.employee_id)) continue;
+        summaries.push({
+          employee_id: r.employee_id,
+          employee_code: r.employee_code || '',
+          employee_name: r.employee_name || '',
+          gross: Number(r.gross_pay || 0),
+          allowances: 0, // gross_pay already includes allowances; avoid double-count
+          sss_employee: Number(r.sss_employee || 0),
+          philhealth_employee: Number(r.philhealth_employee || 0),
+          pagibig_employee: Number(r.pagibig_employee || 0),
+          withholding_tax: Number(r.withholding_tax || 0),
+        });
+      }
+    }
 
     // ---- 1601-C: monthly remittance summary ----
     if (report === '1601c') {
