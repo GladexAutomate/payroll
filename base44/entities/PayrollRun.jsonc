@@ -87,12 +87,20 @@
     "approval_1_date": {
       "type": "string"
     },
+    "approval_1_signature": {
+      "type": "string",
+      "description": "Signature image URL of Approver 1"
+    },
     "approval_2_by": {
       "type": "string",
       "description": "Email of Approver 2 who approved step 2"
     },
     "approval_2_date": {
       "type": "string"
+    },
+    "approval_2_signature": {
+      "type": "string",
+      "description": "Signature image URL of Approver 2"
     },
     "rejected_by": {
       "type": "string",

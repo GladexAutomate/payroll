@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
 import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
+import SignDialog from '@/components/approval/SignDialog';
 import { loadPayrollApprovalContext } from '@/lib/payrollApproval';
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
@@ -25,13 +26,15 @@ export default function Payroll() {
   const [deleting, setDeleting] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [rejectRun, setRejectRun] = useState(null);
-  const [perms, setPerms] = useState({ canCreate: false, canApprove1: false, canApprove2: false, isAdmin: false, email: '' });
+  const [perms, setPerms] = useState({ canCreate: false, canApprove1: false, canApprove2: false, isAdmin: false, email: '', userId: '' });
+  // { run, step } when an approval signature is being captured
+  const [signTarget, setSignTarget] = useState(null);
 
   useEffect(() => { loadRuns(); loadPerms(); }, []);
 
   const loadPerms = async () => {
     const ctx = await loadPayrollApprovalContext();
-    setPerms(ctx);
+    setPerms({ ...ctx, userId: ctx.user?.id || '' });
   };
 
   useEffect(() => {
@@ -99,48 +102,41 @@ export default function Payroll() {
     });
   };
 
-  // Step 2 of 3: Approver 1 approves -> moves to Approver 2.
-  const handleApprove1 = (run) => {
-    setDialog({
-      title: 'Approve (Step 1)?',
-      description: `Approve ${run.period_label} as Approver 1? It will then go to Approver 2 for final approval.`,
-      confirmLabel: 'Approve',
-      onConfirm: async () => {
-        setDialog(null);
-        setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'pending_approval_2' } : item));
-        await base44.entities.PayrollRun.update(run.id, {
-          status: 'pending_approval_2',
-          approval_1_by: perms.email,
-          approval_1_date: new Date().toISOString(),
-        });
-        loadRuns({ silent: true });
-      },
-    });
-  };
+  // Step 2 of 3: Approver 1 signs to approve -> moves to Approver 2.
+  const handleApprove1 = (run) => setSignTarget({ run, step: 1 });
 
-  // Step 3 of 3: Approver 2 gives final approval -> archives via existing function.
-  const handleApprove2 = (run) => {
-    setDialog({
-      title: 'Final approval (Step 2)?',
-      description: `Give final approval to ${run.period_label}? This locks the run and saves a permanent copy to Approved Payroll History.`,
-      confirmLabel: 'Approve',
-      onConfirm: async () => {
-        setDialog(null);
-        setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'approved' } : item));
-        await base44.entities.PayrollRun.update(run.id, {
-          approval_2_by: perms.email,
-          approval_2_date: new Date().toISOString(),
-        });
-        base44.functions.invoke('approvePayroll', { payroll_run_id: run.id })
-          .catch(error => {
-            setDialog({
-              title: 'Approval failed',
-              description: error?.response?.data?.error || error?.message || 'Unable to approve payroll. Please retry.',
-            });
-          })
-          .finally(() => loadRuns({ silent: true }));
-      },
-    });
+  // Step 3 of 3: Approver 2 signs for final approval -> archives via existing function.
+  const handleApprove2 = (run) => setSignTarget({ run, step: 2 });
+
+  // Persist the signature for whichever approval step is active.
+  const applySignature = async (signatureUrl) => {
+    const { run, step } = signTarget;
+    setSignTarget(null);
+    if (step === 1) {
+      setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'pending_approval_2' } : item));
+      await base44.entities.PayrollRun.update(run.id, {
+        status: 'pending_approval_2',
+        approval_1_by: perms.email,
+        approval_1_date: new Date().toISOString(),
+        approval_1_signature: signatureUrl,
+      });
+      loadRuns({ silent: true });
+    } else {
+      setRuns(prev => prev.map(item => item.id === run.id ? { ...item, status: 'approved' } : item));
+      await base44.entities.PayrollRun.update(run.id, {
+        approval_2_by: perms.email,
+        approval_2_date: new Date().toISOString(),
+        approval_2_signature: signatureUrl,
+      });
+      base44.functions.invoke('approvePayroll', { payroll_run_id: run.id })
+        .catch(error => {
+          setDialog({
+            title: 'Approval failed',
+            description: error?.response?.data?.error || error?.message || 'Unable to approve payroll. Please retry.',
+          });
+        })
+        .finally(() => loadRuns({ silent: true }));
+    }
   };
 
   const performReject = async (reason) => {
@@ -248,6 +244,22 @@ export default function Payroll() {
                     )}
                     {run.status === 'pending_approval_2' && run.approval_1_by && (
                       <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-muted-foreground">Step 1 approved by {run.approval_1_by}</p>
+                    )}
+                    {(run.approval_1_signature || run.approval_2_signature) && (
+                      <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+                        {run.approval_1_signature && (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <img src={run.approval_1_signature} alt="Approver 1" className="h-7 w-auto object-contain border border-border rounded bg-white px-1" />
+                            <span className="text-[10px] text-muted-foreground">Approver 1</span>
+                          </div>
+                        )}
+                        {run.approval_2_signature && (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <img src={run.approval_2_signature} alt="Approver 2" className="h-7 w-auto object-contain border border-border rounded bg-white px-1" />
+                            <span className="text-[10px] text-muted-foreground">Approver 2</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {missingComputedTotals && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">No totals were saved. Click recompute.</p>}
                     {run.notes && <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-amber-700">{run.notes}</p>}
@@ -370,6 +382,14 @@ export default function Payroll() {
         onOpenChange={(open) => { if (!open) setRejectRun(null); }}
         onConfirm={performReject}
       />
+
+      {signTarget && (
+        <SignDialog
+          userId={perms.userId}
+          onClose={() => setSignTarget(null)}
+          onSign={applySignature}
+        />
+      )}
     </div>
   );
 }
