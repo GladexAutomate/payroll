@@ -3,8 +3,12 @@ import { format } from 'date-fns';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X, Settings2, Pencil } from 'lucide-react';
 import { SCHEDULE_TYPES, getScheduleDays, parseShiftValue } from './scheduleUtils';
 import ShiftCellOptions from './ShiftCellOptions';
+import { fmtClock } from '@/lib/dateFormat';
 
-const fmtCustom = (c) => c && c.includes('-') ? c.split('-').map(p => p.length === 4 ? `${p.slice(0,2)}:${p.slice(2)}` : p).join('-') : c;
+const fmtCustom = (c) => {
+  if (!c || !c.includes('-')) return c;
+  return c.split('-').map(p => fmtClock(p.length === 4 ? `${p.slice(0, 2)}:${p.slice(2)}` : p, p)).join('-');
+};
 
 // resolve a card config — supports built-in keys and dynamic shift cards (shift:<id> + ::wfh / ::custom)
 const resolveConfig = (type, shiftCards = {}) => {
@@ -94,7 +98,7 @@ export default function ScheduleGrid({ employees, assignments, periodStart, peri
   shiftTemplates.forEach(t => {
     shiftCards[`shift:${t.id}`] = {
       label: (t.name || 'Shift').slice(0, 10),
-      short: `${t.name} (${t.start_time}-${t.end_time})`,
+      short: `${t.name} (${fmtClock(t.start_time)}-${fmtClock(t.end_time)})`,
       className: 'text-white',
       color: t.card_color || '#6366f1',
     };

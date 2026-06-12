@@ -1,13 +1,14 @@
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { SCHEDULE_TYPES, getScheduleDays } from './scheduleUtils';
+import { fmtClock } from '@/lib/dateFormat';
 
 // Build a label for a cell value (supports shift:<id> keys)
 const cellLabel = (type, shiftTemplates) => {
   if (!type || type === 'none') return '';
   if (type.startsWith('shift:')) {
     const t = shiftTemplates.find(s => `shift:${s.id}` === type);
-    return t ? `${t.name} (${t.start_time}-${t.end_time})` : 'Shift';
+    return t ? `${t.name} (${fmtClock(t.start_time)}-${fmtClock(t.end_time)})` : 'Shift';
   }
   return SCHEDULE_TYPES[type]?.short || type;
 };

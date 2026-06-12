@@ -3,15 +3,19 @@ import { format } from 'date-fns';
 import { X, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getScheduleDays, SCHEDULE_TYPES, parseShiftValue } from './scheduleUtils';
+import { fmtClock } from '@/lib/dateFormat';
 
-const fmtCustom = (c) => c && c.includes('-') ? c.split('-').map(p => p.length === 4 ? `${p.slice(0,2)}:${p.slice(2)}` : p).join('-') : c;
+const fmtCustom = (c) => {
+  if (!c || !c.includes('-')) return c;
+  return c.split('-').map(p => fmtClock(p.length === 4 ? `${p.slice(0, 2)}:${p.slice(2)}` : p, p)).join('-');
+};
 
 // Build the ordered list of card options a user can cycle through for a cell.
 const buildCardOptions = (shiftTemplates) => {
   const options = [{ value: 'none', label: 'No Sched', color: null, className: 'bg-slate-100 text-slate-600 border-slate-300' }];
   shiftTemplates.forEach(t => options.push({
     value: `shift:${t.id}`,
-    label: `${t.name} (${t.start_time}-${t.end_time})`,
+    label: `${t.name} (${fmtClock(t.start_time)}-${fmtClock(t.end_time)})`,
     color: t.card_color || '#6366f1',
     className: 'text-white',
   }));
@@ -27,7 +31,7 @@ const labelFor = (type, shiftTemplates) => {
     const { baseType, mode, custom } = parseShiftValue(type);
     const id = baseType.slice('shift:'.length);
     const t = shiftTemplates.find(s => String(s.id) === String(id));
-    const base = t ? `${t.name} (${t.start_time}-${t.end_time})` : 'Shift';
+    const base = t ? `${t.name} (${fmtClock(t.start_time)}-${fmtClock(t.end_time)})` : 'Shift';
     if (mode === 'wfh') return `${base} · WFH`;
     if (mode === 'custom') return `${base} · ${fmtCustom(custom)}`;
     return base;

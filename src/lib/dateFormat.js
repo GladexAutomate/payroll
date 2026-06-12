@@ -36,6 +36,17 @@ export const fmtTime = (value, fallback = '—') => {
   return d ? format(d, 'h:mm a') : fallback;
 };
 
+// "07:00" (plain HH:mm clock string) -> "7:00 AM". No military time.
+export const fmtClock = (hm, fallback = '—') => {
+  if (!hm || typeof hm !== 'string' || !/^\d{1,2}:\d{2}/.test(hm)) return fallback;
+  const [hStr, mStr] = hm.split(':');
+  let h = Number(hStr);
+  const m = mStr.slice(0, 2);
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${period}`;
+};
+
 // "Jun 1 2026 – Jun 15 2026"
 export const fmtDateRange = (start, end) => {
   const s = fmtDate(start, '');

@@ -1,5 +1,6 @@
 import { Draggable } from '@hello-pangea/dnd';
 import { Pencil, Clock, Trash2, GripVertical } from 'lucide-react';
+import { fmtClock } from '@/lib/dateFormat';
 
 export default function ShiftCard({ shift, index, onEdit, onDelete }) {
   return (
@@ -33,8 +34,8 @@ export default function ShiftCard({ shift, index, onEdit, onDelete }) {
             </div>
           </div>
           <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Start Time</span><span className="font-medium">{shift.start_time}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">End Time</span><span className="font-medium">{shift.end_time}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Start Time</span><span className="font-medium">{fmtClock(shift.start_time)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">End Time</span><span className="font-medium">{fmtClock(shift.end_time)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Break</span><span>{shift.break_minutes || 60} min</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Grace Period</span><span>{shift.grace_period_minutes || 15} min</span></div>
           </div>

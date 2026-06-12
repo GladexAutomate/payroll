@@ -1,4 +1,5 @@
 import { SCHEDULE_TYPES } from './scheduleUtils';
+import { fmtClock } from '@/lib/dateFormat';
 
 const ORDER = ['off', 'paid_vl', 'sick', 'unpaid_vl', 'emergency', 'maternity', 'paternity', 'none'];
 
@@ -18,7 +19,7 @@ export default function ScheduleLegend({ shiftTemplates = [], draggable = false 
           style={{ backgroundColor: t.card_color || '#6366f1', borderColor: t.card_color || '#6366f1' }}
           className={`px-2 py-0.5 rounded border font-semibold text-white ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
         >
-          {t.name} ({t.start_time}-{t.end_time})
+          {t.name} ({fmtClock(t.start_time)}-{fmtClock(t.end_time)})
         </span>
       ))}
       {ORDER.map(key => {
