@@ -9,6 +9,7 @@ import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
 import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
 import SignDialog from '@/components/approval/SignDialog';
+import ReconciliationPicker, { RebuildPayrollModal } from '@/components/payroll/ReconciliationPicker';
 import { loadPayrollApprovalContext } from '@/lib/payrollApproval';
 import { fmtDate } from '@/lib/dateFormat';
 
@@ -30,6 +31,8 @@ export default function Payroll() {
   const [perms, setPerms] = useState({ canCreate: false, canApprove1: false, canApprove2: false, isAdmin: false, email: '', userId: '' });
   // { run, step } when an approval signature is being captured
   const [signTarget, setSignTarget] = useState(null);
+  // The run currently being rebuilt — opens the reconciliation picker.
+  const [rebuildRun, setRebuildRun] = useState(null);
 
   useEffect(() => { loadRuns(); loadPerms(); }, []);
 
@@ -74,13 +77,23 @@ export default function Payroll() {
       .finally(() => setComputing(null));
   };
 
-  const handleRecompute = (run) => {
-    setDialog({
-      title: 'Rebuild payroll?',
-      description: `Rebuild ${run.period_label} from its reconciled result? This regenerates payroll records from the (possibly edited) reconciliation.`,
-      confirmLabel: 'Rebuild',
-      onConfirm: () => { setDialog(null); handleCompute(run); },
+  // Rebuild opens the reconciliation picker so the user re-chooses which reconciled
+  // result to build from (it may differ from the original).
+  const handleRecompute = (run) => setRebuildRun(run);
+
+  // Apply the chosen reconciliation to the existing run, then rebuild from it.
+  const handleRebuildConfirm = async (recon) => {
+    const run = rebuildRun;
+    setRebuildRun(null);
+    const branchName = recon.branch_filter && recon.branch_filter !== 'all' ? recon.branch_filter : '';
+    await base44.entities.PayrollRun.update(run.id, {
+      period_label: recon.period_label || `${recon.period_start} – ${recon.period_end}`,
+      period_start: recon.period_start,
+      period_end: recon.period_end,
+      branch_id: branchName,
+      branch_name: branchName,
     });
+    handleCompute({ ...run, period_start: recon.period_start, period_end: recon.period_end });
   };
 
   // Step 1 of 3: creator submits a computed run for approval.
@@ -391,29 +404,23 @@ export default function Payroll() {
           onSign={applySignature}
         />
       )}
+
+      {rebuildRun && (
+        <RebuildPayrollModal
+          run={rebuildRun}
+          onClose={() => setRebuildRun(null)}
+          onConfirm={handleRebuildConfirm}
+        />
+      )}
     </div>
   );
 }
 
 function CreatePayrollModal({ onClose, onCreated }) {
-  const [reconciledRuns, setReconciledRuns] = useState([]);
-  const [loadingRuns, setLoadingRuns] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState('');
+  const [selected, setSelected] = useState(null);
   const [payDate, setPayDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  // Pull completed reconciliation runs — the payroll basis is chosen from this history.
-  useEffect(() => {
-    setLoadingRuns(true);
-    base44.functions.invoke('reconcilePeriod', { action: 'list_runs' })
-      .then(res => {
-        const runs = (res.data?.runs || []).filter(r => r.status === 'completed');
-        setReconciledRuns(runs);
-      })
-      .finally(() => setLoadingRuns(false));
-  }, []);
-
-  const selected = reconciledRuns.find(r => r.id === selectedRunId);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -432,8 +439,6 @@ function CreatePayrollModal({ onClose, onCreated }) {
     onCreated();
   };
 
-  const fmtPeso = (v) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
-
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md">
@@ -442,39 +447,7 @@ function CreatePayrollModal({ onClose, onCreated }) {
           <p className="text-xs text-muted-foreground mt-0.5">Choose a reconciled result as the payroll basis.</p>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Reconciled result*</label>
-            {loadingRuns ? (
-              <div className="mt-2 h-9 bg-muted rounded animate-pulse" />
-            ) : reconciledRuns.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">No completed reconciliations yet. Run a reconciliation first, then come back here.</p>
-            ) : (
-              <select
-                value={selectedRunId}
-                onChange={e => setSelectedRunId(e.target.value)}
-                required
-                className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">Choose a reconciled period...</option>
-                {reconciledRuns.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.period_label} · {r.branch_filter || 'all'} · {r.employee_count || 0} emp
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {selected && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
-              <p className="font-medium">{selected.period_label}</p>
-              <p className="text-xs text-muted-foreground">{fmtDate(selected.period_start)} → {fmtDate(selected.period_end)} · {selected.branch_filter || 'all'} branch</p>
-              <div className="flex justify-between text-xs pt-1">
-                <span className="text-muted-foreground">{selected.employee_count || 0} employees</span>
-                <span className="font-medium">{fmtPeso(selected.total_gross)} gross</span>
-              </div>
-            </div>
-          )}
+          <ReconciliationPicker value={selectedRunId} onChange={setSelectedRunId} onSelected={setSelected} />
 
           <div>
             <label className="text-xs font-medium text-muted-foreground">Pay Date</label>
