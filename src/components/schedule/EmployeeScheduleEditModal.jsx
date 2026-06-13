@@ -45,6 +45,15 @@ export default function EmployeeScheduleEditModal({ employee, periodStart, perio
   const original = baseAssignments?.[employee.id] || {};
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [dragValue, setDragValue] = useState(null);
+  const [dragOverDate, setDragOverDate] = useState(null);
+
+  const applyValue = (date, value) => setDraft(prev => ({ ...prev, [date]: value }));
+  const handleDrop = (date) => {
+    if (dragValue !== null) applyValue(date, dragValue);
+    setDragValue(null);
+    setDragOverDate(null);
+  };
 
   const currentType = (date) => (draft[date] !== undefined ? draft[date] : (original[date] || 'none'));
 
@@ -96,10 +105,13 @@ export default function EmployeeScheduleEditModal({ employee, periodStart, perio
           <div className="mb-4">
             <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Available cards</p>
             <div className="flex flex-wrap gap-1.5">
-              {options.filter(o => o.value !== 'none').map(o => (
+              {options.map(o => (
                 <span
                   key={o.value}
-                  className={`rounded px-2 py-1 text-[11px] font-semibold border ${o.color ? 'text-white' : o.className}`}
+                  draggable
+                  onDragStart={() => setDragValue(o.value)}
+                  onDragEnd={() => { setDragValue(null); setDragOverDate(null); }}
+                  className={`cursor-grab active:cursor-grabbing rounded px-2 py-1 text-[11px] font-semibold border ${o.color ? 'text-white' : o.className}`}
                   style={o.color ? { backgroundColor: o.color, borderColor: o.color } : undefined}
                 >
                   {o.label}
@@ -107,7 +119,7 @@ export default function EmployeeScheduleEditModal({ employee, periodStart, perio
               ))}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mb-3">Click a day to cycle through schedule cards (shift → OFF → leave → No Sched).</p>
+          <p className="text-xs text-muted-foreground mb-3">Click a day to cycle through cards, or drag a card above onto a day.</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {days.map(day => {
               const date = format(day, 'yyyy-MM-dd');
@@ -119,7 +131,10 @@ export default function EmployeeScheduleEditModal({ employee, periodStart, perio
                   key={date}
                   type="button"
                   onClick={() => cycle(date)}
-                  className={`relative rounded-lg border px-2 py-2 text-left transition hover:scale-[1.02] ${opt.color ? '' : opt.className}`}
+                  onDragOver={(e) => { if (dragValue !== null) { e.preventDefault(); setDragOverDate(date); } }}
+                  onDragLeave={() => setDragOverDate(d => d === date ? null : d)}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(date); }}
+                  className={`relative rounded-lg border px-2 py-2 text-left transition hover:scale-[1.02] ${dragOverDate === date ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${opt.color ? '' : opt.className}`}
                   style={opt.color ? { backgroundColor: opt.color, borderColor: opt.color, color: '#fff' } : undefined}
                 >
                   {changed && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-yellow-300 ring-1 ring-white" />}
