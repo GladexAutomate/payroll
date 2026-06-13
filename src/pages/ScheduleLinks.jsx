@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link2, Building2, Users } from 'lucide-react';
+import { Link2, Building2, Users, Search } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { Input } from '@/components/ui/input';
 import ScheduleLinkRow from '@/components/schedule/ScheduleLinkRow';
 
 function LinkSection({ icon: Icon, title, count, children }) {
@@ -45,6 +46,7 @@ export default function ScheduleLinks() {
   const [approvedProposals, setApprovedProposals] = useState([]);
   const [plottedSourceIds, setPlottedSourceIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => { load(); }, []);
 
@@ -110,6 +112,13 @@ export default function ScheduleLinks() {
     })
   ), [scheduleProposals]);
 
+  const q = search.trim().toLowerCase();
+  const matches = (text) => !q || String(text || '').toLowerCase().includes(q);
+  const filteredBranches = useMemo(() => branches.filter(b => matches(b.label)), [branches, q]);
+  const filteredDepartments = useMemo(() => departments.filter(d => matches(d.label)), [departments, q]);
+  const filteredRoles = useMemo(() => roles.filter(r => matches(r.label)), [roles, q]);
+  const filteredTeams = useMemo(() => teams.filter(t => matches(t.name)), [teams, q]);
+
   return (
     <div className="space-y-5 max-w-4xl">
       <div className="bg-card border border-border rounded-xl p-5">
@@ -120,38 +129,42 @@ export default function ScheduleLinks() {
             <p className="text-xs text-muted-foreground">Each link opens an approved plotted schedule filtered to that group.</p>
           </div>
         </div>
+        <div className="relative mt-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search branch, department, role, or team..." className="pl-9" />
+        </div>
       </div>
 
       {loading ? (
         <div className="text-sm text-muted-foreground py-8 text-center">Loading approved schedule links...</div>
       ) : (
         <>
-          <LinkSection icon={Building2} title="Per Branch" count={branches.length}>
-            {branches.map(branch => (
+          <LinkSection icon={Building2} title="Per Branch" count={filteredBranches.length}>
+            {filteredBranches.map(branch => (
               <ScheduleLinkRow key={branch.id} label={branch.label} scope="branch" value={branch.value} />
             ))}
-            {branches.length === 0 && <p className="text-xs text-muted-foreground">No approved branch schedules found.</p>}
+            {filteredBranches.length === 0 && <p className="text-xs text-muted-foreground">No matching branch schedules found.</p>}
           </LinkSection>
 
-          <LinkSection icon={Building2} title="Per Department" count={departments.length}>
-            {departments.map(department => (
+          <LinkSection icon={Building2} title="Per Department" count={filteredDepartments.length}>
+            {filteredDepartments.map(department => (
               <ScheduleLinkRow key={department.id} label={department.label} scope="department" value={department.value} />
             ))}
-            {departments.length === 0 && <p className="text-xs text-muted-foreground">No approved department schedules found.</p>}
+            {filteredDepartments.length === 0 && <p className="text-xs text-muted-foreground">No matching department schedules found.</p>}
           </LinkSection>
 
-          <LinkSection icon={Building2} title="Per Department Role" count={roles.length}>
-            {roles.map(role => (
+          <LinkSection icon={Building2} title="Per Department Role" count={filteredRoles.length}>
+            {filteredRoles.map(role => (
               <ScheduleLinkRow key={role.id} label={role.label} scope="department_role" value={role.value} />
             ))}
-            {roles.length === 0 && <p className="text-xs text-muted-foreground">No approved role schedules found.</p>}
+            {filteredRoles.length === 0 && <p className="text-xs text-muted-foreground">No matching role schedules found.</p>}
           </LinkSection>
 
-          <LinkSection icon={Users} title="Per Team" count={teams.length}>
-            {teams.map(team => (
+          <LinkSection icon={Users} title="Per Team" count={filteredTeams.length}>
+            {filteredTeams.map(team => (
               <ScheduleLinkRow key={team.id} label={team.name} scope="team" value={team.value} />
             ))}
-            {teams.length === 0 && <p className="text-xs text-muted-foreground">No approved team schedules found.</p>}
+            {filteredTeams.length === 0 && <p className="text-xs text-muted-foreground">No matching team schedules found.</p>}
           </LinkSection>
         </>
       )}
