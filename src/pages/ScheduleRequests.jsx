@@ -96,6 +96,9 @@ export default function ScheduleRequests() {
       await base44.functions.invoke('scheduleWebhook', { proposalId: id, eventType: status });
       if (status === 'approved') {
         await base44.functions.invoke('plotApprovedSchedule', { proposalId: id });
+      } else if (status === 'rejected') {
+        // If this proposal was previously approved & plotted, remove its rows from the Approved Schedule.
+        await base44.functions.invoke('unplotApprovedSchedule', { proposalId: id });
       }
     }
     setBusyId(null);
