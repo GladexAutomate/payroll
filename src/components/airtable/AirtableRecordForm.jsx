@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AirtableSelectField from './AirtableSelectField';
 import FileUploadField from './FileUploadField';
+import { groupEmployeeColumns } from './employeeFieldGroups';
 
 // Legacy known re-hosted file columns. Any column whose schema type is
 // 'fileAttachment' is also rendered with the upload/view/download UI.
@@ -114,6 +115,55 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
     setSaving(false);
   };
 
+  // Order columns into HR sections (Identity, Job & Org, Compensation, etc.)
+  const groupedCols = useMemo(() => groupEmployeeColumns(editableCols), [editableCols]);
+
+  const renderField = (col) => {
+    const fileField = isFileField(col);
+    const isAttachment = !fileField && Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
+    const meta = fieldsMeta[col];
+    const isCompanyField = col.toLowerCase() === 'company';
+    const isSingleSelect = meta?.type === 'singleSelect';
+    const isMultiSelect = meta?.type === 'multipleSelects';
+    return (
+      <div key={col} className={(fileField || isAttachment) ? 'md:col-span-2' : ''}>
+        <label className="text-xs font-medium text-muted-foreground">{col}</label>
+        {fileField ? (
+          <FileUploadField
+            value={values[col]}
+            onChange={(v) => handleChange(col, v)}
+          />
+        ) : isAttachment ? (
+          <div className="mt-1 text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
+            Attachment(s): {initialFields[col].map(a => a.filename).join(', ')}
+            <p className="mt-1 text-[10px]">Attachments must be managed directly in Airtable.</p>
+          </div>
+        ) : (isCompanyField && companyChoices.length > 0) ? (
+          <AirtableSelectField
+            value={values[col]}
+            onChange={(v) => handleChange(col, v)}
+            choices={companyChoices}
+            multi={false}
+          />
+        ) : (isSingleSelect || isMultiSelect) ? (
+          <AirtableSelectField
+            value={values[col]}
+            onChange={(v) => handleChange(col, v)}
+            choices={(meta.choices && meta.choices.length) ? meta.choices : employeeChoices}
+            multi={isMultiSelect}
+          />
+        ) : (
+          <Input
+            value={typeof values[col] === 'object' ? '' : (values[col] ?? '')}
+            onChange={e => handleChange(col, e.target.value)}
+            className="mt-1"
+            placeholder=""
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
@@ -141,53 +191,16 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {editableCols.map(col => {
-                const fileField = isFileField(col);
-                const isAttachment = !fileField && Array.isArray(initialFields[col]) && initialFields[col][0]?.url;
-                const meta = fieldsMeta[col];
-                const isCompanyField = col.toLowerCase() === 'company';
-                const isSingleSelect = meta?.type === 'singleSelect';
-                const isMultiSelect = meta?.type === 'multipleSelects';
-                return (
-                  <div key={col} className={(fileField || isAttachment) ? 'md:col-span-2' : ''}>
-                    <label className="text-xs font-medium text-muted-foreground">{col}</label>
-                    {fileField ? (
-                      <FileUploadField
-                        value={values[col]}
-                        onChange={(v) => handleChange(col, v)}
-                      />
-                    ) : isAttachment ? (
-                      <div className="mt-1 text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
-                        Attachment(s): {initialFields[col].map(a => a.filename).join(', ')}
-                        <p className="mt-1 text-[10px]">Attachments must be managed directly in Airtable.</p>
-                      </div>
-                    ) : (isCompanyField && companyChoices.length > 0) ? (
-                      <AirtableSelectField
-                        value={values[col]}
-                        onChange={(v) => handleChange(col, v)}
-                        choices={companyChoices}
-                        multi={false}
-                      />
-                    ) : (isSingleSelect || isMultiSelect) ? (
-                      <AirtableSelectField
-                        value={values[col]}
-                        onChange={(v) => handleChange(col, v)}
-                        choices={(meta.choices && meta.choices.length) ? meta.choices : employeeChoices}
-                        multi={isMultiSelect}
-                      />
-                    ) : (
-                      <Input
-                        value={typeof values[col] === 'object' ? '' : (values[col] ?? '')}
-                        onChange={e => handleChange(col, e.target.value)}
-                        className="mt-1"
-                        placeholder=""
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            {groupedCols.map(({ group, columns }) => (
+              <div key={group} className="space-y-2">
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 border-b border-border pb-1">
+                  {group}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {columns.map(col => renderField(col))}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
