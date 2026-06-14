@@ -201,6 +201,16 @@ export default function AirtableEmployees() {
     return arr;
   }, [records, fieldsMeta]);
 
+  // Unique employee names for "from employee list" dropdown columns (e.g. Immediate Supervisor)
+  const employeeNames = useMemo(() => {
+    const names = new Set();
+    for (const r of records) {
+      const n = r.fields?.['Full Name'] || r.fields?.['Employee Code ID'];
+      if (n) names.add(String(n));
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [records]);
+
   const isFileColumn = (col) =>
     FILE_COLUMNS.has(col) || fieldsMeta[col]?.type === 'fileAttachment';
 
@@ -419,6 +429,7 @@ export default function AirtableEmployees() {
         <AddColumnDialog
           onCancel={() => setShowAddColumn(false)}
           onCreate={handleAddColumn}
+          employeeNames={employeeNames}
         />
       )}
     </div>

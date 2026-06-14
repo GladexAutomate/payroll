@@ -22,18 +22,25 @@ const FIELD_TYPES = [
   { value: 'multipleSelects', label: 'Multi-select' },
   { value: 'rating', label: 'Rating' },
   { value: 'fileAttachment', label: 'File attachments' },
+  { value: 'employeeSingleSelect', label: 'Single select (from employee list)' },
+  { value: 'employeeMultiSelect', label: 'Multi-select (from employee list)' },
 ];
 
-export default function AddColumnDialog({ onCancel, onCreate }) {
+export default function AddColumnDialog({ onCancel, onCreate, employeeNames = [] }) {
   const [name, setName] = useState('');
   const [type, setType] = useState('singleLineText');
   const [choicesText, setChoicesText] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  const isEmployeeList = type === 'employeeSingleSelect' || type === 'employeeMultiSelect';
   const needsChoices = type === 'singleSelect' || type === 'multipleSelects';
 
   const buildOptions = () => {
+    if (isEmployeeList) {
+      const choices = employeeNames.filter(Boolean).map(n => ({ name: n }));
+      return { choices: choices.length ? choices : [{ name: 'Option 1' }] };
+    }
     if (needsChoices) {
       const choices = choicesText
         .split(/\n|,/)
@@ -57,7 +64,10 @@ export default function AddColumnDialog({ onCancel, onCreate }) {
     setSaving(true);
     setError(null);
     try {
-      await onCreate({ name: name.trim(), type, options: buildOptions() });
+      const realType = type === 'employeeSingleSelect' ? 'singleSelect'
+        : type === 'employeeMultiSelect' ? 'multipleSelects'
+        : type;
+      await onCreate({ name: name.trim(), type: realType, options: buildOptions() });
     } catch (err) {
       setError(err?.response?.data?.error || err?.response?.data?.details?.error?.message || err.message || 'Failed to create column');
       setSaving(false);
@@ -100,6 +110,11 @@ export default function AddColumnDialog({ onCancel, onCreate }) {
               </SelectContent>
             </Select>
           </div>
+          {isEmployeeList && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+              Dropdown choices will be filled with {employeeNames.length} employee name{employeeNames.length === 1 ? '' : 's'} from the current employee records. Pick a supervisor per record after creating the column.
+            </div>
+          )}
           {needsChoices && (
             <div>
               <label className="text-xs font-medium text-muted-foreground">
