@@ -447,6 +447,7 @@ export default function AirtableEmployees() {
           readOnlyFields={READ_ONLY_FIELDS}
           fieldsMeta={fieldsMeta}
           companyChoices={companyChoices}
+          employeeNames={employeeNames}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
         />

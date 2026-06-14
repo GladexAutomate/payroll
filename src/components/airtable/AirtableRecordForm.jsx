@@ -13,7 +13,8 @@ const KNOWN_FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
  * Generic Airtable record form.
  * Renders an input for each editable column. Excludes computed/formula fields.
  */
-export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], onCancel, onSave }) {
+export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], employeeNames = [], onCancel, onSave }) {
+  const employeeChoices = employeeNames.filter(Boolean).map(n => ({ name: String(n) }));
   const isEditing = !!record?.id;
   const initialFields = record?.fields || {};
 
@@ -172,7 +173,7 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
                       <AirtableSelectField
                         value={values[col]}
                         onChange={(v) => handleChange(col, v)}
-                        choices={meta.choices || []}
+                        choices={(meta.choices && meta.choices.length) ? meta.choices : employeeChoices}
                         multi={isMultiSelect}
                       />
                     ) : (
