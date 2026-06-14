@@ -11,6 +11,7 @@ import {
 import AirtableRecordForm from '@/components/airtable/AirtableRecordForm';
 import TableWithTopScrollbar from '@/components/airtable/TableWithTopScrollbar';
 import AddColumnDialog from '@/components/airtable/AddColumnDialog';
+import ColumnVisibilityMenu from '@/components/airtable/ColumnVisibilityMenu';
 import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
 import EmployeeFilesCell from '@/components/airtable/EmployeeFilesCell';
 import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
@@ -57,6 +58,21 @@ export default function AirtableEmployees() {
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [sortConfig, setSortConfig] = useState({ column: null, direction: null });
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('airtableHiddenColumns') || '[]'); } catch { return []; }
+  });
+
+  const toggleHiddenColumn = (col) => {
+    setHiddenColumns(prev => {
+      const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
+      localStorage.setItem('airtableHiddenColumns', JSON.stringify(next));
+      return next;
+    });
+  };
+  const showAllColumns = () => {
+    setHiddenColumns([]);
+    localStorage.setItem('airtableHiddenColumns', '[]');
+  };
 
   const loadPage = async (offset = null, searchQuery = '') => {
     setLoading(true);
@@ -201,6 +217,12 @@ export default function AirtableEmployees() {
     return arr;
   }, [records, fieldsMeta]);
 
+  // Columns shown in the table only (edit form still uses the full `columns` list)
+  const visibleColumns = useMemo(
+    () => columns.filter(c => !hiddenColumns.includes(c)),
+    [columns, hiddenColumns]
+  );
+
   // Unique employee names for "from employee list" dropdown columns (e.g. Immediate Supervisor)
   const employeeNames = useMemo(() => {
     const names = new Set();
@@ -288,6 +310,12 @@ export default function AirtableEmployees() {
         </Button>
         <ExtractFilesButton onDone={handleRefresh} />
         <div className="ml-auto flex items-center gap-2">
+          <ColumnVisibilityMenu
+            columns={columns}
+            hiddenColumns={hiddenColumns}
+            onToggle={toggleHiddenColumn}
+            onShowAll={showAllColumns}
+          />
           <Button variant="outline" onClick={() => setShowAddColumn(true)} disabled={loading}>
             <Columns3 className="w-4 h-4 mr-1.5" /> Add Column
           </Button>
@@ -304,14 +332,14 @@ export default function AirtableEmployees() {
       )}
 
       {/* Table */}
-      <TableWithTopScrollbar resetKey={`${pageIdx}-${records[0]?.id || 'empty'}-${columns.join('|')}`}>
+      <TableWithTopScrollbar resetKey={`${pageIdx}-${records[0]?.id || 'empty'}-${visibleColumns.join('|')}`}>
           <table className="text-xs min-w-full">
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
                 <th className="sticky left-0 z-20 bg-muted py-2.5 px-3 text-left font-medium text-muted-foreground uppercase tracking-wide border-b border-r border-border min-w-[100px]">
                   Actions
                 </th>
-                {columns.map(col => (
+                {visibleColumns.map(col => (
                   <th key={col} className="py-2.5 px-3 text-left font-medium text-muted-foreground uppercase tracking-wide border-b border-border whitespace-nowrap min-w-[220px] align-top">
                     <ColumnSortFilter
                       name={col}
@@ -328,14 +356,14 @@ export default function AirtableEmployees() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={columns.length + 1} className="text-center py-16 text-muted-foreground">
+                  <td colSpan={visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
                     Loading records from backend database...
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 1} className="text-center py-16 text-muted-foreground">
+                  <td colSpan={visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">
                     {records.length === 0 ? 'No records found.' : 'No records match your search.'}
                   </td>
                 </tr>
@@ -382,7 +410,7 @@ export default function AirtableEmployees() {
                       </AlertDialog>
                     </div>
                   </td>
-                  {columns.map(col => (
+                  {visibleColumns.map(col => (
                     <td key={col} className="py-1.5 px-3 border-r border-border/30 whitespace-nowrap">
                       {isFileColumn(col)
                         ? <EmployeeFilesCell files={rec.fields?.[col]} />
