@@ -59,7 +59,23 @@ Deno.serve(async (req) => {
       history = await base44.asServiceRole.entities.ApprovedPayrollHistory.create(snapshot);
     }
 
-    return Response.json({ success: true, history_id: history?.id || existing[0]?.id, employee_count: records.length });
+    // For 13th month pay runs, flip every source saved record to 'released' so it can't
+    // be picked again for a future 13th month generation.
+    let released_count = 0;
+    if (run.run_type === 'thirteenth_month' && Array.isArray(run.source_thirteenth_ids)) {
+      for (const recordId of run.source_thirteenth_ids) {
+        try {
+          await base44.asServiceRole.entities.ThirteenthMonthRecord.update(recordId, {
+            release_status: 'released',
+            released_by: user.email,
+            released_date: approvedDate,
+          });
+          released_count += 1;
+        } catch (_e) { /* skip records that were deleted in the meantime */ }
+      }
+    }
+
+    return Response.json({ success: true, history_id: history?.id || existing[0]?.id, employee_count: records.length, released_count });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

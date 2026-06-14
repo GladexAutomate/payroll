@@ -18,6 +18,23 @@
       "type": "string",
       "format": "date"
     },
+    "run_type": {
+      "type": "string",
+      "enum": [
+        "regular",
+        "thirteenth_month"
+      ],
+      "default": "regular",
+      "description": "Type of payroll run. 'thirteenth_month' runs are generated from saved 13th month pay records."
+    },
+    "source_thirteenth_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "ThirteenthMonthRecord ids this 13th month payroll run was generated from. On approval these records flip to 'released'."
+    },
     "branch_id": {
       "type": "string",
       "description": "Branch this payroll run is for"

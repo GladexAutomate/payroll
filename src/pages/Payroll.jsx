@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw, Send, XCircle } from 'lucide-react';
+import { Plus, Play, CheckCircle, Eye, Trash2, RefreshCw, Send, XCircle, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import PayrollRunDetail from '@/components/payroll/PayrollRunDetail';
+import ThirteenthMonthPayrollModal from '@/components/payroll/ThirteenthMonthPayrollModal';
 import PayrollProgress from '@/components/payroll/PayrollProgress';
 import RejectPayrollDialog from '@/components/payroll/RejectPayrollDialog';
 import SignDialog from '@/components/approval/SignDialog';
@@ -23,6 +24,7 @@ export default function Payroll() {
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showThirteenth, setShowThirteenth] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
   const [computing, setComputing] = useState(null);
   const [deleting, setDeleting] = useState(null);
@@ -200,9 +202,14 @@ export default function Payroll() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{runs.length} payroll runs</p>
         {perms.canCreate && (
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4 mr-1.5" /> New Payroll Run
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowThirteenth(true)}>
+              <Gift className="w-4 h-4 mr-1.5" /> Generate 13th Month Pay
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-1.5" /> New Payroll Run
+            </Button>
+          </div>
         )}
       </div>
 
@@ -235,8 +242,10 @@ export default function Payroll() {
                 return (
                 <tr key={run.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-3.5 px-4">
-                    <p className="font-medium">{fmtDateRange(run.period_start, run.period_end)}</p>
-                    <p className="text-xs text-muted-foreground">Cutoff period</p>
+                    <p className="font-medium">{run.run_type === 'thirteenth_month' ? run.period_label : fmtDateRange(run.period_start, run.period_end)}</p>
+                    {run.run_type === 'thirteenth_month'
+                      ? <span className="inline-flex items-center gap-1 mt-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium px-2 py-0.5"><Gift className="w-3 h-3" /> 13th Month Pay</span>
+                      : <p className="text-xs text-muted-foreground">Cutoff period</p>}
                     {run.branch_name && <p className="text-xs text-primary mt-0.5">{run.branch_name}</p>}
                   </td>
                   <td className="py-3.5 px-4 text-muted-foreground">{fmtDate(run.pay_date)}</td>
@@ -370,6 +379,13 @@ export default function Payroll() {
         <CreatePayrollModal
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRuns(); }}
+        />
+      )}
+
+      {showThirteenth && (
+        <ThirteenthMonthPayrollModal
+          onClose={() => setShowThirteenth(false)}
+          onGenerated={() => { setShowThirteenth(false); loadRuns(); }}
         />
       )}
 
