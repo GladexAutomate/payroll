@@ -22,8 +22,9 @@ Deno.serve(async (req) => {
       {}, '-created_date', 5000,
     );
     const selectedSet = new Set(record_ids);
+    // Records saved before release_status existed have no value — treat missing as ready.
     const eligible = allSaved.filter(
-      r => selectedSet.has(r.id) && r.release_status === 'ready_to_release',
+      r => selectedSet.has(r.id) && (!r.release_status || r.release_status === 'ready_to_release'),
     );
 
     if (eligible.length === 0) {

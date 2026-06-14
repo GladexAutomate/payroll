@@ -9,9 +9,10 @@ const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractio
 // Lets the user pick saved 13th month pay records (Ready to Release only) and
 // generate a 13th month payroll run from them.
 export default function ThirteenthMonthPayrollModal({ onClose, onGenerated }) {
-  const [records, setRecords] = useState([]);
+  const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState({}); // { recordId: true }
+  const [year, setYear] = useState('');
   const [payDate, setPayDate] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -19,14 +20,28 @@ export default function ThirteenthMonthPayrollModal({ onClose, onGenerated }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      // Only Ready to Release records are eligible — avoids re-generating released pay.
-      const data = await base44.entities.ThirteenthMonthRecord.filter(
-        { release_status: 'ready_to_release' }, '-created_date', 5000,
-      );
-      setRecords(data);
+      const data = await base44.entities.ThirteenthMonthRecord.filter({}, '-created_date', 5000);
+      // Eligible = not yet released (records saved before this field exists count as ready).
+      const eligible = data.filter(r => r.release_status !== 'released');
+      setAllRecords(eligible);
+      // Default to the most recent year present.
+      const years = [...new Set(eligible.map(r => r.year).filter(Boolean))].sort((a, b) => b - a);
+      if (years.length) setYear(String(years[0]));
       setLoading(false);
     })();
   }, []);
+
+  // Distinct years available, newest first.
+  const years = useMemo(
+    () => [...new Set(allRecords.map(r => r.year).filter(Boolean))].sort((a, b) => b - a),
+    [allRecords]
+  );
+
+  // Records shown depend on the selected year.
+  const records = useMemo(
+    () => (year ? allRecords.filter(r => String(r.year) === String(year)) : []),
+    [allRecords, year]
+  );
 
   const allChecked = records.length > 0 && records.every(r => checked[r.id]);
   const selectedIds = useMemo(() => records.filter(r => checked[r.id]).map(r => r.id), [records, checked]);
@@ -81,11 +96,28 @@ export default function ThirteenthMonthPayrollModal({ onClose, onGenerated }) {
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{error}</div>
           )}
 
+          {!loading && years.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Year</label>
+              <select
+                value={year}
+                onChange={e => { setYear(e.target.value); setChecked({}); }}
+                className="mt-1 block w-44 h-9 rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          )}
+
           {loading ? (
             <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-9 bg-muted rounded animate-pulse" />)}</div>
+          ) : allRecords.length === 0 ? (
+            <div className="text-center py-10 text-sm text-muted-foreground">
+              No unreleased 13th month pay records found. Compute and save records in the 13th Month Pay page first.
+            </div>
           ) : records.length === 0 ? (
             <div className="text-center py-10 text-sm text-muted-foreground">
-              No "Ready to Release" 13th month pay records found. Compute and save records in the 13th Month Pay page first.
+              No records for {year}. Pick another year above.
             </div>
           ) : (
             <div className="border border-border rounded-xl overflow-hidden">
