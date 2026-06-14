@@ -467,6 +467,17 @@ Deno.serve(async (req) => {
       return Response.json({ records });
     }
 
+    if (action === 'employeeNames') {
+      // Every full name across the entire active employee list, for "from employee list" dropdowns.
+      const allRecords = await listMirrorRecords(5000);
+      const names = new Set();
+      for (const record of allRecords.filter(isNotResigned)) {
+        const name = clean(record.full_name || record.fields?.['Full Name'] || record.fields?.['Employee Code ID']);
+        if (name) names.add(name);
+      }
+      return Response.json({ names: Array.from(names).sort((a, b) => a.localeCompare(b)) });
+    }
+
     if (action === 'organizationHierarchy') {
       return Response.json(await buildHierarchy());
     }

@@ -61,6 +61,7 @@ export default function AirtableEmployees() {
   const [hiddenColumns, setHiddenColumns] = useState(() => {
     try { return JSON.parse(localStorage.getItem('airtableHiddenColumns') || '[]'); } catch { return []; }
   });
+  const [employeeNames, setEmployeeNames] = useState([]); // all full names across the entire employee list
 
   const toggleHiddenColumn = (col) => {
     setHiddenColumns(prev => {
@@ -110,9 +111,15 @@ export default function AirtableEmployees() {
     setCompanyChoices((res.data?.companies || []).map(company => ({ name: company.name })));
   };
 
+  const loadEmployeeNames = async () => {
+    const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeNames' });
+    setEmployeeNames(res.data?.names || []);
+  };
+
   useEffect(() => {
     loadSchema();
     loadCompanyChoices();
+    loadEmployeeNames();
   }, []);
 
   const handleRenameColumn = async (oldName, newName) => {
@@ -222,16 +229,6 @@ export default function AirtableEmployees() {
     () => columns.filter(c => !hiddenColumns.includes(c)),
     [columns, hiddenColumns]
   );
-
-  // Unique employee names for "from employee list" dropdown columns (e.g. Immediate Supervisor)
-  const employeeNames = useMemo(() => {
-    const names = new Set();
-    for (const r of records) {
-      const n = r.fields?.['Full Name'] || r.fields?.['Employee Code ID'];
-      if (n) names.add(String(n));
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [records]);
 
   const isFileColumn = (col) =>
     FILE_COLUMNS.has(col) || fieldsMeta[col]?.type === 'fileAttachment';
