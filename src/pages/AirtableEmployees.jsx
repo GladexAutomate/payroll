@@ -266,6 +266,23 @@ export default function AirtableEmployees() {
     return result;
   }, [records, columnFilters, sortConfig]);
 
+  // Format "Years of Service" as "X years Y months" computed from Date Hired.
+  const formatYearsOfService = (dateHired) => {
+    if (!dateHired) return null;
+    const start = new Date(dateHired);
+    if (isNaN(start.getTime())) return null;
+    const now = new Date();
+    let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+    if (now.getDate() < start.getDate()) months -= 1;
+    if (months < 0) months = 0;
+    const years = Math.floor(months / 12);
+    const remMonths = months % 12;
+    const parts = [];
+    parts.push(`${years} ${years === 1 ? 'year' : 'years'}`);
+    parts.push(`${remMonths} ${remMonths === 1 ? 'month' : 'months'}`);
+    return parts.join(' ');
+  };
+
   const renderCell = (value) => {
     if (value == null || value === '') return <span className="text-muted-foreground/40">—</span>;
     if (Array.isArray(value)) {
@@ -411,7 +428,9 @@ export default function AirtableEmployees() {
                     <td key={col} className="py-1.5 px-3 border-r border-border/30 whitespace-nowrap">
                       {isFileColumn(col)
                         ? <EmployeeFilesCell files={rec.fields?.[col]} />
-                        : renderCell(rec.fields?.[col])}
+                        : col === 'Years of Service'
+                          ? (formatYearsOfService(rec.fields?.['Date Hired']) ?? renderCell(rec.fields?.[col]))
+                          : renderCell(rec.fields?.[col])}
                     </td>
                   ))}
                 </tr>
