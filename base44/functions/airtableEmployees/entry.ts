@@ -435,11 +435,12 @@ Deno.serve(async (req) => {
 
     if (action === 'list') {
       const { pageSize = 50, offset = 0, search } = body;
+      // The Airtable Employee List is the full record-management table, so it shows
+      // every employee including resigned ones (other actions stay active-only).
       const allRecords = await listMirrorRecords(5000);
-      const activeRecords = allRecords.filter(isNotResigned);
       const filtered = search?.trim()
-        ? activeRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
-        : activeRecords;
+        ? allRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
+        : allRecords;
       const start = Number(offset) || 0;
       const records = filtered.slice(start, start + Math.min(pageSize, 100)).map(record => {
         const fields = { ...(record.fields || {}) };
