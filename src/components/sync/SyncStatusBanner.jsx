@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { getAppEnv } from '@/lib/appEnv';
 import { Button } from '@/components/ui/button';
 
 const STATUS = {
@@ -36,7 +37,7 @@ export default function SyncStatusBanner() {
     setRunning(true);
     // Airtable first, then Supabase — keeps downstream data fresh.
     await base44.functions.invoke('airtableEmployees', { action: 'syncFromAirtable' }).catch(() => {});
-    await base44.functions.invoke('syncToSupabase', {}).catch(() => {});
+    await base44.functions.invoke('syncToSupabase', { env: getAppEnv() }).catch(() => {});
     setRunning(false);
     load();
   };

@@ -138,15 +138,26 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
     }
 
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-    const SUPABASE_SECRET_KEY = Deno.env.get('SUPABASE_SECRET_KEY');
+    // Branch selection: the preview frontend sends env:'preview' so this run targets the
+    // Supabase TEST branch. Published app, scheduled automation, and anything else default
+    // to the PRODUCTION branch. We fail safe to production whenever it's ambiguous.
+    let fullSync = false;
+    let appEnv = 'published';
+    try {
+      const body = await req.json();
+      fullSync = !!body?.full;
+      if (String(body?.env || '').toLowerCase() === 'preview') appEnv = 'preview';
+    } catch (_e) { /* no body */ }
+
+    const useTest = appEnv === 'preview'
+      && Deno.env.get('SUPABASE_TEST_URL')
+      && Deno.env.get('SUPABASE_TEST_SECRET_KEY');
+
+    const SUPABASE_URL = useTest ? Deno.env.get('SUPABASE_TEST_URL') : Deno.env.get('SUPABASE_URL');
+    const SUPABASE_SECRET_KEY = useTest ? Deno.env.get('SUPABASE_TEST_SECRET_KEY') : Deno.env.get('SUPABASE_SECRET_KEY');
     if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
       return Response.json({ error: 'Supabase secrets not configured' }, { status: 500 });
     }
-
-    // full=true forces a full re-sync (ignores cursors), e.g. for the first run or backfills.
-    let fullSync = false;
-    try { const body = await req.json(); fullSync = !!body?.full; } catch (_e) { /* no body */ }
 
     const { map: cursors, idByEntity } = await loadCursors(base44);
 
@@ -214,10 +225,10 @@ Deno.serve(async (req) => {
       total_synced: totalSynced,
       error_count: errorCount,
       summary,
-      message: fullSync ? 'Full re-sync' : 'Incremental sync',
+      message: `${fullSync ? 'Full re-sync' : 'Incremental sync'} → ${useTest ? 'TEST branch' : 'PRODUCTION branch'}`,
     }).catch(() => {});
 
-    return Response.json({ success: true, synced_at: finishedAt.toISOString(), total_synced: totalSynced, error_count: errorCount, summary });
+    return Response.json({ success: true, target: useTest ? 'test' : 'production', synced_at: finishedAt.toISOString(), total_synced: totalSynced, error_count: errorCount, summary });
   } catch (error) {
     const finishedAt = new Date();
     try {
