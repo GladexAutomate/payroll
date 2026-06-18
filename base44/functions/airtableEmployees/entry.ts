@@ -189,6 +189,61 @@ Deno.serve(async (req) => {
       }
     };
 
+    // Airtable write helpers. Only push fields that are real Airtable columns and not
+    // computed/read-only (Airtable rejects writes to formula/auto fields with a 422).
+    const AIRTABLE_READONLY = new Set([
+      'RECORD ID', 'Calculated Employment Status', 'Tenure(Months)', 'New Formula Column',
+      'Employee Code', 'Full Name', 'Employee #', 'Birth Month', 'Age', 'Years of Service',
+      'Tenure', 'Year',
+    ]);
+    const airtableWritableFields = (fields) => {
+      const out = {};
+      for (const [key, value] of Object.entries(fields || {})) {
+        if (AIRTABLE_READONLY.has(key)) continue;
+        // Skip re-hosted file attachments (Base44 file_uri objects, not Airtable attachments).
+        if (Array.isArray(value) && value.some((v) => v && typeof v === 'object' && v.file_uri)) continue;
+        out[key] = value;
+      }
+      return out;
+    };
+    const airtableConfig = () => {
+      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
+      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
+      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
+      if (!apiKey || !baseId || !tableName) throw new Error('Airtable is not configured.');
+      return { apiKey, baseId, tableName };
+    };
+    // Create a new Airtable record; returns the new Airtable record id.
+    const createInAirtable = async (fields) => {
+      const { apiKey, baseId, tableName } = airtableConfig();
+      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: airtableWritableFields(fields), typecast: true }),
+      });
+      if (!resp.ok) throw new Error(`Airtable create failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+      return (await resp.json()).id;
+    };
+    // Patch an existing Airtable record by id.
+    const updateInAirtable = async (airtableId, fields) => {
+      const { apiKey, baseId, tableName } = airtableConfig();
+      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: airtableWritableFields(fields), typecast: true }),
+      });
+      if (!resp.ok) throw new Error(`Airtable update failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+    };
+    // Delete an Airtable record by id.
+    const deleteInAirtable = async (airtableId) => {
+      const { apiKey, baseId, tableName } = airtableConfig();
+      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!resp.ok) throw new Error(`Airtable delete failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+    };
+
     // Fetch every record from the configured Airtable table (handles pagination).
     const fetchAirtableRecords = async () => {
       const apiKey = Deno.env.get('AIRTABLE_API_KEY');
@@ -675,7 +730,9 @@ Deno.serve(async (req) => {
     if (action === 'create') {
       const { fields } = body;
       const orgFields = await getOrgFields();
-      const mirrorData = buildStandaloneMirror(fields, orgFields);
+      // Create in Airtable first so the mirror stores the real Airtable record id.
+      const airtableId = await createInAirtable(fields);
+      const mirrorData = buildStandaloneMirror(fields, orgFields, airtableId);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
       await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ record: { id: created.airtable_record_id, fields: created.fields, backend_id: created.id } });
@@ -688,6 +745,8 @@ Deno.serve(async (req) => {
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...fields };
+      // Push only the changed fields back to the real Airtable record.
+      if (String(recordId).startsWith('rec')) await updateInAirtable(recordId, fields);
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const updated = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
       await upsertAccountForRecord(updated).catch(() => {});
@@ -717,6 +776,7 @@ Deno.serve(async (req) => {
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...updates };
+      if (String(recordId).startsWith('rec')) await updateInAirtable(recordId, updates);
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
       return Response.json({ record: { id: mirrored.airtable_record_id, fields: mirrored.fields, backend_id: mirrored.id } });
@@ -737,6 +797,10 @@ Deno.serve(async (req) => {
 
       for (const record of matching) {
         const mergedFields = { ...(record.fields || {}), [orgFields.company]: cleanCompany };
+        if (String(record.airtable_record_id).startsWith('rec')) {
+          await updateInAirtable(record.airtable_record_id, { [orgFields.company]: cleanCompany }).catch(() => {});
+          await wait(150);
+        }
         const mirrorData = buildStandaloneMirror(mergedFields, orgFields, record.airtable_record_id);
         await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
       }
@@ -790,6 +854,8 @@ Deno.serve(async (req) => {
     if (action === 'delete') {
       const { recordId } = body;
       if (!recordId) return Response.json({ error: 'recordId required' }, { status: 400 });
+      // Delete the real Airtable record too (skip app-only records never pushed to Airtable).
+      if (String(recordId).startsWith('rec')) await deleteInAirtable(recordId).catch(() => {});
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 10);
       for (const record of existing) await base44.asServiceRole.entities[MIRROR_ENTITY].delete(record.id);
       return Response.json({ deleted: true, id: recordId });
