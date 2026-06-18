@@ -469,6 +469,23 @@ Deno.serve(async (req) => {
       return Response.json({ computedFields: [], fieldsMeta });
     }
 
+    // Diagnostic: list the tables Airtable actually sees for the configured base,
+    // so a 404 (wrong base id / table name) can be pinpointed quickly.
+    if (action === 'airtableDiagnostics') {
+      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
+      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
+      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
+      const meta = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const metaText = await meta.text();
+      let tables = null;
+      try { tables = (JSON.parse(metaText).tables || []).map(t => ({ name: t.name, id: t.id })); } catch (_e) { /* keep raw */ }
+      return Response.json({
+        configured: { baseId_prefix: String(baseId || '').slice(0, 4), baseId_length: String(baseId || '').length, tableName },
+        meta_status: meta.status,
+        tables: tables || metaText.slice(0, 300),
+      });
+    }
+
     if (action === 'syncFromAirtable') {
       const startedAt = new Date();
       try {
