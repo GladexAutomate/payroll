@@ -27,10 +27,12 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const year = Number(body.year) || new Date().getFullYear();
     const branchNorm = cleanText(body.branch).toLowerCase();
+    const recEnv = body.env === 'test' ? 'test' : 'prod';
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
 
     // SOURCE OF TRUTH: only APPROVED payroll, archived in ApprovedPayrollHistory.
     // Each history row holds a snapshot of the run plus every employee PayrollRecord.
-    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.list('-period_start', 20000);
+    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.filter({ ...envClause }, '-period_start', 20000);
 
     // Branch filter via AirtableEmployeeRecord (for the plotted-schedule projection).
     let branchEmployeeIds = null;
@@ -82,7 +84,7 @@ Deno.serve(async (req) => {
     // actual reconciled summary yet (e.g. December still in progress). We project
     // pay from the plotted ApprovedSchedule: dailyRate × paid plotted days.
     if (year === new Date().getFullYear()) {
-      const schedules = await base44.asServiceRole.entities.ApprovedSchedule.list('-date', 50000);
+      const schedules = await base44.asServiceRole.entities.ApprovedSchedule.filter({ ...envClause }, '-date', 50000);
       // Group plotted paid days by employee+month.
       const plotted = new Map(); // empId -> Map(month0 -> paidDays)
       for (const sc of schedules) {

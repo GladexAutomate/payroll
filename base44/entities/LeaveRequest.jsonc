@@ -2,6 +2,14 @@
   "name": "LeaveRequest",
   "type": "object",
   "properties": {
+    "env": {
+      "type": "string",
+      "enum": [
+        "test",
+        "prod"
+      ],
+      "description": "Virtual namespace tag: 'test' for editor preview data, 'prod' for published app data"
+    },
     "employee_id": {
       "type": "string"
     },

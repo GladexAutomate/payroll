@@ -2,6 +2,14 @@
   "name": "PayrollRun",
   "type": "object",
   "properties": {
+    "env": {
+      "type": "string",
+      "enum": [
+        "test",
+        "prod"
+      ],
+      "description": "Virtual namespace tag: 'test' for editor preview data, 'prod' for published app data"
+    },
     "period_label": {
       "type": "string",
       "description": "e.g. May 1-15 2026"

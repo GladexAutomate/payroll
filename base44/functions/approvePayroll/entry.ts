@@ -11,7 +11,9 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { payroll_run_id } = body;
+    const { payroll_run_id, env } = body;
+    const recEnv = env === 'test' ? 'test' : 'prod';
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
 
     const runs = await base44.asServiceRole.entities.PayrollRun.filter({ id: payroll_run_id });
@@ -35,6 +37,7 @@ Deno.serve(async (req) => {
     // Avoid duplicate history rows if approve is clicked twice.
     const existing = await base44.asServiceRole.entities.ApprovedPayrollHistory.filter({ payroll_run_id });
     const snapshot = {
+      env: recEnv,
       payroll_run_id,
       period_label: run.period_label,
       period_start: run.period_start,

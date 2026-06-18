@@ -2,6 +2,14 @@
   "name": "ApprovedPayrollHistory",
   "type": "object",
   "properties": {
+    "env": {
+      "type": "string",
+      "enum": [
+        "test",
+        "prod"
+      ],
+      "description": "Virtual namespace tag: 'test' for editor preview data, 'prod' for published app data"
+    },
     "payroll_run_id": {
       "type": "string",
       "description": "Original PayrollRun id this snapshot was taken from"

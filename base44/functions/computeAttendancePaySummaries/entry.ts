@@ -52,19 +52,21 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { period_start, period_end, period_label, env } = body;
     const recEnv = env === 'test' ? 'test' : 'prod';
+    // Environment isolation read clause (see envScopedClient.js for the rules).
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
 
     const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
     await wait(600);
-    const localEmployees = await withRetry(() => base44.asServiceRole.entities.Employee.list('-updated_date', 5000));
+    const localEmployees = await withRetry(() => base44.asServiceRole.entities.Employee.filter({ ...envClause }, '-updated_date', 5000));
     await wait(600);
     const savedMatches = await withRetry(() => base44.asServiceRole.entities.EmployeeAirtableMatch.list('-updated_date', 5000));
     await wait(600);
-    const hiddenUploads = await withRetry(() => base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200));
+    const hiddenUploads = await withRetry(() => base44.asServiceRole.entities.AttendanceUpload.filter({ ...envClause }, '-created_date', 200));
     await wait(600);
-    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
+    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ ...envClause, date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
     await wait(600);
-    const existingSummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start, period_end }, '-created_date', 5000));
+    const existingSummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ ...envClause, period_start, period_end }, '-created_date', 5000));
 
     const activeUploadIds = new Set(hiddenUploads.filter(upload => !['deleting', 'deleted'].includes(upload.status)).map(upload => upload.id));
     const logs = allLogs.filter(log => !log.upload_id || activeUploadIds.has(log.upload_id));

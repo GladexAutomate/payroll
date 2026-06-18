@@ -48,6 +48,9 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { payroll_run_id, env } = body;
     const recEnv = env === 'test' ? 'test' : 'prod';
+    // Environment isolation read clause: in preview ('test') only see test rows; in prod
+    // see prod rows OR legacy untagged rows (so existing data stays visible).
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
     globalThis.__activePayrollRunId = payroll_run_id;
 
@@ -66,7 +69,7 @@ Deno.serve(async (req) => {
 
     // Pull the reconciled summaries for this run's period. These are the single source of truth.
     const paySummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter(
-      { period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000,
+      { ...envClause, period_start: run.period_start, period_end: run.period_end }, '-created_date', 5000,
     ));
     await wait(400);
 

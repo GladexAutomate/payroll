@@ -26,10 +26,12 @@ Deno.serve(async (req) => {
     const year = Number(body.year) || new Date().getFullYear();
     const month = body.month ? Number(body.month) : null;
     const branchNorm = cleanText(body.branch).toLowerCase();
+    const recEnv = body.env === 'test' ? 'test' : 'prod';
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
 
     // SOURCE OF TRUTH: only APPROVED payroll, archived in ApprovedPayrollHistory.
     // Tax filings must reflect actual approved & released payroll (no projections).
-    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.list('-period_start', 20000);
+    const history = await base44.asServiceRole.entities.ApprovedPayrollHistory.filter({ ...envClause }, '-period_start', 20000);
 
     // Optional branch filter via AirtableEmployeeRecord (records carry employee_id only).
     let branchEmployeeIds = null;

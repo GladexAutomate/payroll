@@ -230,36 +230,40 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     const P = { ...POLICY_DEFAULTS, ...(policyRows[0] || {}) };
     await wait(200);
 
+    // Environment isolation read clause (see envScopedClient.js for the rules):
+    // preview ('test') sees only test rows; prod sees prod OR legacy untagged rows.
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
+
     const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
     await wait(400);
-    const localEmployees = await withRetry(() => base44.asServiceRole.entities.Employee.list('-updated_date', 5000));
+    const localEmployees = await withRetry(() => base44.asServiceRole.entities.Employee.filter({ ...envClause }, '-updated_date', 5000));
     await wait(400);
     const savedMatches = await withRetry(() => base44.asServiceRole.entities.EmployeeAirtableMatch.list('-updated_date', 5000));
     await wait(400);
-    const hiddenUploads = await withRetry(() => base44.asServiceRole.entities.AttendanceUpload.list('-created_date', 200));
+    const hiddenUploads = await withRetry(() => base44.asServiceRole.entities.AttendanceUpload.filter({ ...envClause }, '-created_date', 200));
     await wait(400);
-    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
+    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ ...envClause, date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
     await wait(400);
-    const plotted = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
+    const plotted = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ ...envClause, date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
     await wait(400);
     const holidays = await withRetry(() => base44.asServiceRole.entities.HolidayCalendar.list('-date', 500));
     await wait(400);
-    const existing = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ period_start, period_end }, '-created_date', 5000));
+    const existing = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter({ ...envClause, period_start, period_end }, '-created_date', 5000));
     await wait(400);
     // Only APPROVED overtime within the period is paid. Unfiled / pending / rejected OT is ignored.
-    const approvedOT = await withRetry(() => base44.asServiceRole.entities.OvertimeRequest.filter({ status: 'approved', date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
+    const approvedOT = await withRetry(() => base44.asServiceRole.entities.OvertimeRequest.filter({ ...envClause, status: 'approved', date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
     await wait(300);
     // Approved offsets within the period
-    const approvedOffsets = await withRetry(() => base44.asServiceRole.entities.OffsetRequest.filter({ status: 'approved', offset_date: { $gte: period_start, $lte: period_end } }, 'offset_date', 5000));
+    const approvedOffsets = await withRetry(() => base44.asServiceRole.entities.OffsetRequest.filter({ ...envClause, status: 'approved', offset_date: { $gte: period_start, $lte: period_end } }, 'offset_date', 5000));
     await wait(300);
     // Approved leave requests (paid leaves are paid even when not plotted on the approved schedule)
-    const approvedLeaves = await withRetry(() => base44.asServiceRole.entities.LeaveRequest.filter({ status: 'approved' }, '-date_from', 5000));
+    const approvedLeaves = await withRetry(() => base44.asServiceRole.entities.LeaveRequest.filter({ ...envClause, status: 'approved' }, '-date_from', 5000));
     await wait(300);
     // Active allowances & ATD charges
-    const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.list('-created_date', 5000));
+    const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ ...envClause }, '-created_date', 5000));
     await wait(300);
     // Per-employee government contribution toggles (SSS / PhilHealth / Pag-IBIG)
-    const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.list('-updated_date', 5000));
+    const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.filter({ ...envClause }, '-updated_date', 5000));
     const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
 
     // Statutory contributions + withholding tax are charged ONLY on the 2nd cutoff

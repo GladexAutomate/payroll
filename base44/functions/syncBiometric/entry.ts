@@ -122,6 +122,7 @@ Deno.serve(async (req) => {
         });
       } else {
         await base44.asServiceRole.entities.AttendanceLog.create({
+          env: 'prod',
           employee_id: empId || group.pin,
           biometric_id: group.pin,
           date: group.date,

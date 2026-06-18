@@ -19,8 +19,9 @@ Deno.serve(async (req) => {
     }
 
     // Load the selected saved 13th month records and keep only the ready-to-release ones.
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
     const allSaved = await base44.asServiceRole.entities.ThirteenthMonthRecord.filter(
-      {}, '-created_date', 5000,
+      envClause, '-created_date', 5000,
     );
     const selectedSet = new Set(record_ids);
     // Records saved before release_status existed have no value — treat missing as ready.
