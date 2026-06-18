@@ -628,6 +628,34 @@ Deno.serve(async (req) => {
       return Response.json({ departmentRoles: hierarchy.departmentRoles });
     }
 
+    if (action === 'fieldChoices') {
+      // Distinct dropdown values for org/HR columns, gathered from every active mirror record
+      // so the edit form's Department Role / Branch / Department / Team / Job Title dropdowns
+      // list every value currently in use (not just whatever is on the page being edited).
+      const orgFields = await getOrgFields();
+      const records = (await listMirrorRecords(5000)).filter(isNotResigned);
+      const columns = {
+        [orgFields.branch]: new Set(),
+        [orgFields.department]: new Set(),
+        [orgFields.role]: new Set(),
+        [orgFields.team]: new Set(),
+        'Job Title': new Set(),
+      };
+      for (const record of records) {
+        const fields = record.fields || {};
+        for (const col of Object.keys(columns)) {
+          const raw = fields[col];
+          const text = valueText(raw).trim();
+          if (text) columns[col].add(text);
+        }
+      }
+      const choices = {};
+      for (const [col, set] of Object.entries(columns)) {
+        choices[col] = Array.from(set).sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
+      }
+      return Response.json({ choices });
+    }
+
     if (action === 'create') {
       const { fields } = body;
       const orgFields = await getOrgFields();
