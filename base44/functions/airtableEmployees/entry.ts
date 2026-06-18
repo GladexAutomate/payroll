@@ -633,7 +633,8 @@ Deno.serve(async (req) => {
       // so the edit form's Department Role / Branch / Department / Team / Job Title dropdowns
       // list every value currently in use (not just whatever is on the page being edited).
       const orgFields = await getOrgFields();
-      const records = (await listMirrorRecords(5000)).filter(isNotResigned);
+      const allRecords = await listMirrorRecords(5000);
+      const records = allRecords.filter(isNotResigned);
       const columns = {
         [orgFields.branch]: new Set(),
         [orgFields.department]: new Set(),
@@ -648,6 +649,12 @@ Deno.serve(async (req) => {
           const text = valueText(raw).trim();
           if (text) columns[col].add(text);
         }
+      }
+      // Job titles come from EVERY record (including resigned employees) so a valid title
+      // is still selectable even when its only current holders have resigned.
+      for (const record of allRecords) {
+        const text = valueText((record.fields || {})['Job Title']).trim();
+        if (text) columns['Job Title'].add(text);
       }
       const choices = {};
       for (const [col, set] of Object.entries(columns)) {
