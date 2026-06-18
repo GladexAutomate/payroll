@@ -118,7 +118,7 @@ function buildRecords(parsed, byBioId, byName, uploadId, recEnv) {
         ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100 : 0;
 
       records.push({
-        employee_id: emp.id, date: dateStr, time_in: timeInISO, time_out: timeOutISO,
+        env: recEnv, employee_id: emp.id, date: dateStr, time_in: timeInISO, time_out: timeOutISO,
         raw_punches: allPunches.map(t => buildISO(t)), total_hours: totalHours,
         employee_name: rawName, biometric_id: code, status: 'present', upload_id: uploadId,
       });
@@ -132,6 +132,7 @@ function buildRecords(parsed, byBioId, byName, uploadId, recEnv) {
 async function prepareImport(base44, uploadId) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
+  const recEnv = upload.env || 'prod';
 
   console.log('[prepare] parsing file...');
   const parsed = await parseFile(upload.file_url, upload.filename);
@@ -166,7 +167,7 @@ async function prepareImport(base44, uploadId) {
     const first_name = parts.length > 1 ? parts.slice(0, -1).join(' ') : ne.name;
     try {
       const created = await base44.asServiceRole.entities.Employee.create({
-        employee_id: ne.code, biometric_id: ne.code, first_name, last_name, status: 'active',
+        env: recEnv, employee_id: ne.code, biometric_id: ne.code, first_name, last_name, status: 'active',
       });
       createdEmployees.push({ id: created.id, employee_id: ne.code, name: ne.name });
       byBioId[ne.code] = created;
@@ -175,7 +176,7 @@ async function prepareImport(base44, uploadId) {
   }
 
   console.log('[prepare] auto-created employees:', createdEmployees.length);
-  const records = buildRecords(parsed, byBioId, byName, uploadId);
+  const records = buildRecords(parsed, byBioId, byName, uploadId, recEnv);
   console.log('[prepare] built records:', records.length);
 
   if (records.length === 0) {
@@ -213,6 +214,7 @@ async function prepareImport(base44, uploadId) {
 async function processBatch(base44, uploadId, offset) {
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
+  const recEnv = upload.env || 'prod';
 
   const parsed = await parseFile(upload.file_url, upload.filename);
 
@@ -225,7 +227,7 @@ async function processBatch(base44, uploadId, offset) {
     byName[`${emp.first_name} ${emp.last_name}`.toLowerCase().trim()] = emp;
   }
 
-  const allRecords = buildRecords(parsed, byBioId, byName, uploadId);
+  const allRecords = buildRecords(parsed, byBioId, byName, uploadId, recEnv);
   const total = allRecords.length;
   const batch = allRecords.slice(offset, offset + BATCH_SIZE);
 
@@ -332,6 +334,7 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
+    const recEnv = String(body?.env || '').toLowerCase() === 'test' ? 'test' : 'prod';
 
     // ── DELETE UPLOAD mode ──────────────────────────────────────────────────
     if (body.action === 'delete') {
@@ -349,7 +352,7 @@ Deno.serve(async (req) => {
       if (!fileUrl) return Response.json({ error: 'fileUrl required' }, { status: 400 });
 
       const uploadRecord = await base44.asServiceRole.entities.AttendanceUpload.create({
-        filename, file_url: fileUrl, records_imported: 0, status: 'processing',
+        env: recEnv, filename, file_url: fileUrl, records_imported: 0, status: 'processing',
         progress: 0, total_rows: 0, processed_rows: 0, uploaded_by: user.email || '',
       });
 
