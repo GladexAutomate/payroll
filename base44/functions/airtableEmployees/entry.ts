@@ -169,12 +169,84 @@ Deno.serve(async (req) => {
       }
     };
 
-    // Standalone: the Base44 mirror is now the source of truth, so "sync" just
-    // refreshes the EmployeeAccount table from the mirror. No Airtable pull.
+    // Fetch every record from the configured Airtable table (handles pagination).
+    const fetchAirtableRecords = async () => {
+      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
+      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
+      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
+      if (!apiKey || !baseId || !tableName) {
+        throw new Error('Airtable is not configured. Set AIRTABLE_API_KEY, AIRTABLE_BASE_ID and AIRTABLE_TABLE_NAME.');
+      }
+      const records = [];
+      let offset = null;
+      do {
+        const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
+        url.searchParams.set('pageSize', '100');
+        if (offset) url.searchParams.set('offset', offset);
+        const resp = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey}` } });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`Airtable API error ${resp.status}: ${text.slice(0, 200)}`);
+        }
+        const data = await resp.json();
+        records.push(...(data.records || []));
+        offset = data.offset || null;
+      } while (offset);
+      return records;
+    };
+
+    // Pull the latest changes from Airtable into the Base44 mirror, then refresh
+    // employee accounts. Existing re-hosted file attachments are preserved (Airtable
+    // returns its own attachment URLs which we don't want to overwrite the hosted files with).
     const syncFromAirtable = async () => {
-      const mirror = await listMirrorRecords(5000);
+      const orgFields = await getOrgFields();
+      const remote = await fetchAirtableRecords();
+      const existing = await listMirrorRecords(5000);
+      const existingByAirtableId = new Map(existing.map((r) => [r.airtable_record_id, r]));
+      const seen = new Set();
+
+      let created = 0;
+      let updated = 0;
+      const toCreate = [];
+
+      // Field keys that hold re-hosted file attachments — keep the mirror's value.
+      const fileKeys = (record) => Object.entries(record.fields || {})
+        .filter(([, v]) => Array.isArray(v) && v.some((item) => item && typeof item === 'object' && item.file_uri))
+        .map(([k]) => k);
+
+      for (const rec of remote) {
+        seen.add(rec.id);
+        const current = existingByAirtableId.get(rec.id);
+        // Preserve any re-hosted file fields already on the mirror record.
+        const mergedFields = { ...(rec.fields || {}) };
+        if (current) {
+          for (const k of fileKeys(current)) mergedFields[k] = current.fields[k];
+        }
+        const mirrorData = buildStandaloneMirror(mergedFields, orgFields, rec.id);
+        if (!current) {
+          toCreate.push(mirrorData);
+        } else {
+          await base44.asServiceRole.entities[MIRROR_ENTITY].update(current.id, mirrorData);
+          updated += 1;
+        }
+      }
+
+      for (let i = 0; i < toCreate.length; i += 50) {
+        await base44.asServiceRole.entities[MIRROR_ENTITY].bulkCreate(toCreate.slice(i, i + 50));
+        created += toCreate.slice(i, i + 50).length;
+      }
+
+      // Remove mirror records that no longer exist in Airtable.
+      let removed = 0;
+      for (const r of existing) {
+        if (!seen.has(r.airtable_record_id)) {
+          await base44.asServiceRole.entities[MIRROR_ENTITY].delete(r.id);
+          removed += 1;
+        }
+      }
+
       await syncEmployeeAccounts();
-      return { synced: mirror.length, created: 0, updated: 0, pending_updates: 0, removed: 0 };
+      return { synced: remote.length, created, updated, pending_updates: 0, removed };
     };
 
     const buildHierarchy = async () => {

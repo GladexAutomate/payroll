@@ -35,17 +35,15 @@ Deno.serve(async (req) => {
     const employees = proposal.employees || [];
     const assignments = proposal.assignments || {};
 
-    // Remove any prior plot from this same proposal (re-approval safe)
-    const existing = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ source_proposal_id: proposalId }, '-created_date', 5000));
-    for (const rec of existing) {
-      await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.delete(rec.id));
-    }
-
+    // Build the new rows first so we know exactly which employee+date slots this
+    // approval covers.
     const rows = [];
+    const affectedEmployeeIds = new Set();
     employees.forEach(emp => {
       const dayMap = assignments[emp.id] || {};
       Object.entries(dayMap).forEach(([date, schedule_type]) => {
         if (!schedule_type || schedule_type === 'none') return;
+        affectedEmployeeIds.add(emp.id);
         rows.push({
           employee_id: emp.id,
           employee_name: emp.name,
@@ -57,6 +55,26 @@ Deno.serve(async (req) => {
         });
       });
     });
+
+    // Latest approval wins: delete any existing approved schedule for the same
+    // employee+date (from ANY prior proposal), so the newly approved shift
+    // overrides the older one. Also removes this proposal's own prior plot,
+    // keeping re-approval safe.
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
+    const newSlots = new Set(rows.map(r => `${r.employee_id}|${r.date}`));
+    const empIds = Array.from(affectedEmployeeIds);
+    const conflicting = empIds.length
+      ? await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter(
+          { ...envClause, employee_id: { $in: empIds } }, '-created_date', 5000))
+      : [];
+    const sameProposal = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter(
+      { ...envClause, source_proposal_id: proposalId }, '-created_date', 5000));
+    const toDeleteIds = new Set();
+    conflicting.forEach(rec => { if (newSlots.has(`${rec.employee_id}|${rec.date}`)) toDeleteIds.add(rec.id); });
+    sameProposal.forEach(rec => toDeleteIds.add(rec.id));
+    for (const id of toDeleteIds) {
+      await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.delete(id));
+    }
 
     // Bulk create in chunks
     let saved = 0;
