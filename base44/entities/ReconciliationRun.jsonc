@@ -2,6 +2,14 @@
   "name": "ReconciliationRun",
   "type": "object",
   "properties": {
+    "env": {
+      "type": "string",
+      "enum": [
+        "test",
+        "prod"
+      ],
+      "description": "Virtual namespace tag: 'test' for editor preview data, 'prod' for published app data"
+    },
     "period_start": {
       "type": "string",
       "format": "date"
