@@ -183,7 +183,8 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { action, period_start, period_end, period_label, branch_filter } = body;
+    const { action, period_start, period_end, period_label, branch_filter, env } = body;
+    const recEnv = env === 'test' ? 'test' : 'prod';
 
     // History list: read runs via service role (runs are created by the service account,
     // so user-scoped reads would otherwise return nothing).
@@ -198,13 +199,14 @@ Deno.serve(async (req) => {
     // Second step: run the heavy computation synchronously (awaited so the isolate stays
     // alive). The client fires this right after creating the run, then polls for progress.
     if (action === 'process') {
-      await processReconciliation({ base44, run: { id: body.run_id }, runStartedAt: new Date(body.started_at || Date.now()), period_start, period_end, period_label, branchScope });
+      await processReconciliation({ base44, run: { id: body.run_id }, runStartedAt: new Date(body.started_at || Date.now()), period_start, period_end, period_label, branchScope, recEnv });
       return Response.json({ success: true, run_id: body.run_id, done: true });
     }
 
     // First step: create the history record up front so the UI can poll progress.
     const runStartedAt = new Date();
     const run = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.create({
+      env: recEnv,
       period_start, period_end,
       period_label: period_label || `${period_start} – ${period_end}`,
       branch_filter: branchScope || 'all',
@@ -219,7 +221,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope }) {
+async function processReconciliation({ base44, run, runStartedAt, period_start, period_end, period_label, branchScope, recEnv }) {
   // Use the server clock for duration so it can't go negative from client/server skew.
   const processStart = new Date();
   try {
@@ -601,6 +603,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       const netPay = gross - totalEmpDeductions;
 
       const summary = {
+        env: recEnv,
         period_start,
         period_end,
         period_label: period_label || `${period_start} – ${period_end}`,

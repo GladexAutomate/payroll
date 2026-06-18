@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { record_ids, pay_date } = body || {};
+    const { record_ids, pay_date, env } = body || {};
+    const recEnv = env === 'test' ? 'test' : 'prod';
     if (!Array.isArray(record_ids) || record_ids.length === 0) {
       return Response.json({ error: 'record_ids required' }, { status: 400 });
     }
@@ -44,6 +45,7 @@ Deno.serve(async (req) => {
       period_end: periodEnd,
       pay_date: pay_date || null,
       run_type: 'thirteenth_month',
+      env: recEnv,
       source_thirteenth_ids: eligible.map(r => r.id),
       branch_id: branchName,
       branch_name: branchName,
@@ -61,6 +63,7 @@ Deno.serve(async (req) => {
     // One PayrollRecord per employee — the 13th month amount is the net pay (no deductions).
     const records = eligible.map(r => ({
       payroll_run_id: run.id,
+      env: recEnv,
       employee_id: r.employee_id,
       employee_code: r.employee_code || '',
       employee_name: r.employee_name || '',

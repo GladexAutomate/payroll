@@ -46,7 +46,8 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { payroll_run_id } = body;
+    const { payroll_run_id, env } = body;
+    const recEnv = env === 'test' ? 'test' : 'prod';
     if (!payroll_run_id) return Response.json({ error: 'payroll_run_id required' }, { status: 400 });
     globalThis.__activePayrollRunId = payroll_run_id;
 
@@ -103,6 +104,7 @@ Deno.serve(async (req) => {
 
       recordsToCreate.push({
         payroll_run_id,
+        env: recEnv,
         employee_id: s.employee_id,
         airtable_record_id: s.airtable_record_id,
         employee_code: s.employee_code,

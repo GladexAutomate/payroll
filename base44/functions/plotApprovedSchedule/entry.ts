@@ -22,8 +22,12 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { proposalId } = await req.json();
+    const { proposalId, env } = await req.json();
     if (!proposalId) return Response.json({ error: 'proposalId is required' }, { status: 400 });
+    // Environment isolation: stamp every plotted row with the caller's env
+    // ('test' from editor preview, 'prod' from the published app). Defaults to
+    // 'prod' so anything ambiguous stays in production.
+    const recEnv = env === 'test' ? 'test' : 'prod';
 
     const proposal = await withRetry(() => base44.asServiceRole.entities.AttendanceProposal.get(proposalId));
     if (!proposal) return Response.json({ error: 'Proposal not found' }, { status: 404 });
@@ -49,6 +53,7 @@ Deno.serve(async (req) => {
           date,
           schedule_type,
           source_proposal_id: proposalId,
+          env: recEnv,
         });
       });
     });

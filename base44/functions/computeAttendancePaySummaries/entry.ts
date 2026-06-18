@@ -50,7 +50,8 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { period_start, period_end, period_label } = body;
+    const { period_start, period_end, period_label, env } = body;
+    const recEnv = env === 'test' ? 'test' : 'prod';
     if (!period_start || !period_end) return Response.json({ error: 'period_start and period_end required' }, { status: 400 });
 
     const allEmployees = await withRetry(() => base44.asServiceRole.entities.AirtableEmployeeRecord.list('-updated_date', 5000));
@@ -119,6 +120,7 @@ Deno.serve(async (req) => {
       const gross = (hours * hourlyRate) + (overtimeHours * hourlyRate * 1.25);
       const latesDeduction = (lateMinutes / 60) * hourlyRate;
       const summary = {
+        env: recEnv,
         period_start,
         period_end,
         period_label: period_label || `${period_start} – ${period_end}`,

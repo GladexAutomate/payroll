@@ -85,7 +85,7 @@ async function parseFile(fileUrl, filename) {
 }
 
 // Turn parsed rows into a flat list of attendance records (no DB calls).
-function buildRecords(parsed, byBioId, byName, uploadId) {
+function buildRecords(parsed, byBioId, byName, uploadId, recEnv) {
   const { rows, personCodeIdx, nameIdx, dateCols, year } = parsed;
   const records = [];
   for (let r = 1; r < rows.length; r++) {
