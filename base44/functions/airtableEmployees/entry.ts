@@ -663,11 +663,21 @@ Deno.serve(async (req) => {
       return Response.json({ choices });
     }
 
+    // Upsert the single EmployeeAccount row for one mirror record, so User Management
+    // reflects edits made directly in the app (without waiting for a full Airtable pull).
+    const upsertAccountForRecord = async (mirrorRecord) => {
+      const account = accountFromRecord({ airtable_record_id: mirrorRecord.airtable_record_id, full_name: mirrorRecord.full_name, employee_code: mirrorRecord.employee_code, fields: mirrorRecord.fields });
+      const existing = await base44.asServiceRole.entities.EmployeeAccount.filter({ airtable_record_id: mirrorRecord.airtable_record_id }, '-updated_date', 1);
+      if (existing.length) await base44.asServiceRole.entities.EmployeeAccount.update(existing[0].id, account);
+      else await base44.asServiceRole.entities.EmployeeAccount.create(account);
+    };
+
     if (action === 'create') {
       const { fields } = body;
       const orgFields = await getOrgFields();
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ record: { id: created.airtable_record_id, fields: created.fields, backend_id: created.id } });
     }
 
@@ -680,6 +690,7 @@ Deno.serve(async (req) => {
       const mergedFields = { ...(existing[0].fields || {}), ...fields };
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const updated = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
+      await upsertAccountForRecord(updated).catch(() => {});
       return Response.json({ record: { id: updated.airtable_record_id, fields: updated.fields, backend_id: updated.id } });
     }
 
