@@ -189,7 +189,10 @@ Deno.serve(async (req) => {
     // History list: read runs via service role (runs are created by the service account,
     // so user-scoped reads would otherwise return nothing).
     if (action === 'list_runs') {
-      const runs = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.list('-started_at', 50));
+      // Environment isolation: only show runs from the caller's environment
+      // (preview sees test runs; published sees prod OR legacy untagged runs).
+      const runEnvClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
+      const runs = await withRetry(() => base44.asServiceRole.entities.ReconciliationRun.filter(runEnvClause, '-started_at', 50));
       return Response.json({ runs });
     }
 
