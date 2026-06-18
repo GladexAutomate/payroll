@@ -428,7 +428,10 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         }
       });
 
-      const sched = scheduleByEmp[employee.id] || {};
+      // ApprovedSchedule.employee_id holds the Airtable record id (set by plotApprovedSchedule
+      // from the proposal's emp.id). Match on airtable_record_id first, with the Base44 id as
+      // a fallback for any legacy rows.
+      const sched = scheduleByEmp[employee.airtable_record_id] || scheduleByEmp[employee.id] || {};
 
       // Merge per-key lookups for this employee
       const approvedOTForEmp = {};
@@ -533,8 +536,10 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
           continue;
         }
 
-        // 4. Scheduled work day (opener/closer/wfh) OR no schedule
-        const isScheduledWork = WORK_TYPES.has(schedType);
+        // 4. Scheduled work day (opener/closer/wfh, or a shift:<id> template) OR no schedule.
+        // shift:<id> values are the primary "work day" marker used by the schedule grid, so
+        // a plotted shift with no punch counts as an absence just like opener/closer/wfh.
+        const isScheduledWork = WORK_TYPES.has(schedType) || String(schedType).startsWith('shift:');
 
         // Offset: approved banked OT used to shorten this day -> still credited as full standard day
         const offsetReq = offsetForEmp[date] || 0;
