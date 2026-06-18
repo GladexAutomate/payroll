@@ -62,6 +62,7 @@ export default function AirtableEmployees() {
     try { return JSON.parse(localStorage.getItem('airtableHiddenColumns') || '[]'); } catch { return []; }
   });
   const [employeeNames, setEmployeeNames] = useState([]); // all full names across the entire employee list
+  const [fieldChoices, setFieldChoices] = useState({}); // distinct dropdown values per org/HR column
 
   const toggleHiddenColumn = (col) => {
     setHiddenColumns(prev => {
@@ -116,10 +117,16 @@ export default function AirtableEmployees() {
     setEmployeeNames(res.data?.names || []);
   };
 
+  const loadFieldChoices = async () => {
+    const res = await base44.functions.invoke('airtableEmployees', { action: 'fieldChoices' });
+    setFieldChoices(res.data?.choices || {});
+  };
+
   useEffect(() => {
     loadSchema();
     loadCompanyChoices();
     loadEmployeeNames();
+    loadFieldChoices();
   }, []);
 
   const handleRenameColumn = async (oldName, newName) => {
@@ -463,6 +470,7 @@ export default function AirtableEmployees() {
           readOnlyFields={READ_ONLY_FIELDS}
           fieldsMeta={fieldsMeta}
           companyChoices={companyChoices}
+          fieldChoices={fieldChoices}
           employeeNames={employeeNames}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}

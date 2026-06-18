@@ -14,8 +14,11 @@ const KNOWN_FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
  * Generic Airtable record form.
  * Renders an input for each editable column. Excludes computed/formula fields.
  */
-export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], employeeNames = [], onCancel, onSave }) {
+export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], fieldChoices = {}, employeeNames = [], onCancel, onSave }) {
   const employeeChoices = employeeNames.filter(Boolean).map(n => ({ name: String(n) }));
+  // Match a column to its provided distinct-value choices case-insensitively
+  // (e.g. "BRANCH" -> Branch, "DEPARTMENT ROLE" -> Department Role).
+  const choiceKeyFor = (col) => Object.keys(fieldChoices).find((k) => k.toLowerCase() === String(col).toLowerCase());
   const isEditing = !!record?.id;
   const initialFields = record?.fields || {};
 
@@ -125,6 +128,8 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
     const isCompanyField = col.toLowerCase() === 'company';
     const isSingleSelect = meta?.type === 'singleSelect';
     const isMultiSelect = meta?.type === 'multipleSelects';
+    const choiceKey = choiceKeyFor(col);
+    const orgChoices = (!fileField && !isAttachment && !isCompanyField && choiceKey) ? fieldChoices[choiceKey] : null;
     return (
       <div key={col} className={(fileField || isAttachment) ? 'md:col-span-2' : ''}>
         <label className="text-xs font-medium text-muted-foreground">{col}</label>
@@ -143,6 +148,13 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
             value={values[col]}
             onChange={(v) => handleChange(col, v)}
             choices={companyChoices}
+            multi={false}
+          />
+        ) : orgChoices ? (
+          <AirtableSelectField
+            value={values[col]}
+            onChange={(v) => handleChange(col, v)}
+            choices={orgChoices}
             multi={false}
           />
         ) : (isSingleSelect || isMultiSelect) ? (
