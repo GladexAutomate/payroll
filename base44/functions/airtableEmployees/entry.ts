@@ -125,6 +125,25 @@ Deno.serve(async (req) => {
       return await base44.asServiceRole.entities[MIRROR_ENTITY].list('-updated_date', limit);
     };
 
+    // Throttled write helper: retries on rate-limit/transient errors with backoff,
+    // and spaces calls so a full Airtable pull stays under the Base44 write limit.
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const writeWithRetry = async (op, attempts = 3) => {
+      let lastErr;
+      for (let i = 0; i < attempts; i += 1) {
+        try { return await op(); } catch (err) {
+          lastErr = err;
+          const m = String(err?.message || '').toLowerCase();
+          const retryable = m.includes('429') || m.includes('rate limit') || m.includes('connection')
+            || m.includes('timeout') || m.includes('network') || m.includes('fetch') || m.includes('socket')
+            || m.includes('502') || m.includes('503') || m.includes('504');
+          if (!retryable) throw err;
+          await wait(Math.min(3000, 800 * (i + 1)) + Math.floor(Math.random() * 200));
+        }
+      }
+      throw lastErr;
+    };
+
     const accountFromRecord = (record) => {
       const fields = record.fields || {};
       return {
@@ -157,15 +176,16 @@ Deno.serve(async (req) => {
         } else {
           const changed = ['full_name', 'email', 'employee_code', 'generated_password', 'job_title', 'status']
             .some((k) => String(current[k] || '') !== String(account[k] || ''));
-          if (changed) await base44.asServiceRole.entities.EmployeeAccount.update(current.id, account);
+          if (changed) { await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.update(current.id, account)); await wait(120); }
         }
       }
 
       for (let i = 0; i < toCreate.length; i += 50) {
-        await base44.asServiceRole.entities.EmployeeAccount.bulkCreate(toCreate.slice(i, i + 50));
+        await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.bulkCreate(toCreate.slice(i, i + 50)));
+        await wait(250);
       }
       for (const account of existing) {
-        if (!seen.has(account.airtable_record_id)) await base44.asServiceRole.entities.EmployeeAccount.delete(account.id);
+        if (!seen.has(account.airtable_record_id)) { await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.delete(account.id)); await wait(120); }
       }
     };
 
@@ -198,7 +218,7 @@ Deno.serve(async (req) => {
     // Pull the latest changes from Airtable into the Base44 mirror, then refresh
     // employee accounts. Existing re-hosted file attachments are preserved (Airtable
     // returns its own attachment URLs which we don't want to overwrite the hosted files with).
-    const syncFromAirtable = async () => {
+    const syncFromAirtable = async (dryRun = false) => {
       const orgFields = await getOrgFields();
       const remote = await fetchAirtableRecords();
       const existing = await listMirrorRecords(5000);
@@ -226,25 +246,40 @@ Deno.serve(async (req) => {
         if (!current) {
           toCreate.push(mirrorData);
         } else {
-          await base44.asServiceRole.entities[MIRROR_ENTITY].update(current.id, mirrorData);
-          updated += 1;
+          // Only write when field values actually changed (skips ~unchanged rows,
+          // which is what keeps a large pull under the write rate limit). Compare the
+          // already-sanitized stored fields against the freshly-sanitized merged fields
+          // with sorted keys so unchanged records round-trip identically and skip.
+          const sortedJson = (o) => JSON.stringify(Object.keys(o || {}).sort().reduce((a, k) => { a[k] = o[k]; return a; }, {}));
+          const changed = sortedJson(current.fields) !== sortedJson(mirrorData.fields);
+          if (changed) {
+            updated += 1;
+            if (!dryRun) {
+              await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(current.id, mirrorData));
+              await wait(150);
+            }
+          }
         }
       }
 
-      for (let i = 0; i < toCreate.length; i += 50) {
-        await base44.asServiceRole.entities[MIRROR_ENTITY].bulkCreate(toCreate.slice(i, i + 50));
-        created += toCreate.slice(i, i + 50).length;
+      if (!dryRun) {
+        for (let i = 0; i < toCreate.length; i += 50) {
+          await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].bulkCreate(toCreate.slice(i, i + 50)));
+          await wait(250);
+        }
       }
+      created = toCreate.length;
 
       // Remove mirror records that no longer exist in Airtable.
       let removed = 0;
       for (const r of existing) {
         if (!seen.has(r.airtable_record_id)) {
-          await base44.asServiceRole.entities[MIRROR_ENTITY].delete(r.id);
           removed += 1;
+          if (!dryRun) { await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].delete(r.id)); await wait(120); }
         }
       }
 
+      if (dryRun) return { synced: remote.length, created, updated, removed, dryRun: true };
       await syncEmployeeAccounts();
       return { synced: remote.length, created, updated, pending_updates: 0, removed };
     };
@@ -489,7 +524,8 @@ Deno.serve(async (req) => {
     if (action === 'syncFromAirtable') {
       const startedAt = new Date();
       try {
-        const result = await syncFromAirtable();
+        const result = await syncFromAirtable(body.dryRun === true);
+        if (body.dryRun === true) return Response.json(result);
         const finishedAt = new Date();
         await base44.asServiceRole.entities.SyncLog.create({
           kind: 'airtable', status: 'success',
