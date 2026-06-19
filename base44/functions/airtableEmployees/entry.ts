@@ -83,6 +83,21 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Employee records are a single shared roster backed by the real Airtable base —
+    // there is no test/prod copy. To avoid accidentally changing live employee data
+    // (and the real Airtable base) while experimenting in the editor, block all write
+    // actions when the request comes from the in-editor PREVIEW (env: 'test').
+    // Reads stay open everywhere.
+    const WRITE_ACTIONS = new Set([
+      'create', 'update', 'delete', 'reassignEmployeeCategory', 'updateCompanyForBranch',
+      'renameField', 'createField', 'syncBiometricsMatch', 'autoMatchBiometrics',
+    ]);
+    if (body.env === 'test' && WRITE_ACTIONS.has(action)) {
+      return Response.json({
+        error: 'Editing employee records is disabled in the preview. Open the published app to add, edit, or delete records.',
+      }, { status: 403 });
+    }
+
     // Standalone org-field resolver: pick canonical column names from existing records' keys,
     // so we don't depend on Airtable's schema endpoint.
     const getOrgFields = async () => {

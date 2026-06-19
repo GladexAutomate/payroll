@@ -15,6 +15,11 @@ import ColumnVisibilityMenu from '@/components/airtable/ColumnVisibilityMenu';
 import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
 import EmployeeFilesCell from '@/components/airtable/EmployeeFilesCell';
 import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
+import { isPreview } from '@/lib/appEnv';
+
+// In the editor preview, employee records are read-only (they're a single shared roster
+// backed by the real Airtable base — editing only happens in the published app).
+const READ_ONLY_ENV = isPreview();
 
 // Mirror fields that hold re-hosted Airtable attachments (rendered with download UI).
 // Legacy known file columns; any column with a 'fileAttachment' schema type is also treated as one.
@@ -314,6 +319,11 @@ export default function AirtableEmployees() {
 
   return (
     <div className="space-y-4">
+      {READ_ONLY_ENV && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+          You're viewing the <strong>preview</strong>. Employee records are read-only here — open the published app to add, edit, or delete records.
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-xs">
@@ -329,7 +339,7 @@ export default function AirtableEmployees() {
           <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
-        <ExtractFilesButton onDone={handleRefresh} />
+        {!READ_ONLY_ENV && <ExtractFilesButton onDone={handleRefresh} />}
         <div className="ml-auto flex items-center gap-2">
           <ColumnVisibilityMenu
             columns={columns}
@@ -337,12 +347,16 @@ export default function AirtableEmployees() {
             onToggle={toggleHiddenColumn}
             onShowAll={showAllColumns}
           />
-          <Button variant="outline" onClick={() => setShowAddColumn(true)} disabled={loading}>
-            <Columns3 className="w-4 h-4 mr-1.5" /> Add Column
-          </Button>
-          <Button onClick={() => { setEditing({}); setShowForm(true); }} disabled={loading}>
-            <Plus className="w-4 h-4 mr-1.5" /> Add Record
-          </Button>
+          {!READ_ONLY_ENV && (
+            <Button variant="outline" onClick={() => setShowAddColumn(true)} disabled={loading}>
+              <Columns3 className="w-4 h-4 mr-1.5" /> Add Column
+            </Button>
+          )}
+          {!READ_ONLY_ENV && (
+            <Button onClick={() => { setEditing({}); setShowForm(true); }} disabled={loading}>
+              <Plus className="w-4 h-4 mr-1.5" /> Add Record
+            </Button>
+          )}
         </div>
       </div>
 
@@ -391,6 +405,9 @@ export default function AirtableEmployees() {
               ) : filteredRecords.map(rec => (
                 <tr key={rec.id} className="border-b border-border/50 hover:bg-muted/20">
                   <td className="sticky left-0 z-10 bg-card hover:bg-muted/20 py-1.5 px-3 border-r border-border">
+                    {READ_ONLY_ENV ? (
+                      <span className="text-muted-foreground/40 text-xs">—</span>
+                    ) : (
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => { setEditing(rec); setShowForm(true); }}
@@ -430,6 +447,7 @@ export default function AirtableEmployees() {
                         </AlertDialogContent>
                       </AlertDialog>
                     </div>
+                    )}
                   </td>
                   {visibleColumns.map(col => (
                     <td key={col} className="py-1.5 px-3 border-r border-border/30 whitespace-nowrap">
