@@ -24,10 +24,15 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { proposalId } = await req.json();
+    const { proposalId, env } = await req.json();
     if (!proposalId) return Response.json({ error: 'proposalId is required' }, { status: 400 });
+    // Environment isolation: only unplot rows from the caller's environment
+    // ('test' in preview, 'prod'/legacy untagged when published), so a reject
+    // in one world never wipes the other world's plotted schedule.
+    const recEnv = env === 'test' ? 'test' : 'prod';
+    const envClause = recEnv === 'test' ? { env: 'test' } : { env: { $in: ['prod', null] } };
 
-    const existing = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ source_proposal_id: proposalId }, '-created_date', 5000));
+    const existing = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ ...envClause, source_proposal_id: proposalId }, '-created_date', 5000));
     let removed = 0;
     for (const rec of existing) {
       await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.delete(rec.id));
