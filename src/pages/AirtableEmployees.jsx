@@ -193,20 +193,19 @@ export default function AirtableEmployees() {
   };
 
   const handleSave = async (fields, recordId) => {
-    const res = recordId
-      ? await base44.functions.invoke('airtableEmployees', { action: 'update', recordId, fields })
-      : await base44.functions.invoke('airtableEmployees', { action: 'create', fields });
-
-    if (res.data?.record) {
-      setRecords(prev => recordId
-        ? prev.map(record => record.id === recordId ? res.data.record : record)
-        : [res.data.record, ...prev.filter(record => record.id !== res.data.record.id)].slice(0, PAGE_SIZE)
-      );
-    }
+    // Save first. If the backend rejects the write (e.g. Airtable drops a value),
+    // it throws and the form surfaces the error — we do NOT close or optimistically
+    // update the grid in that case.
+    await (recordId
+      ? base44.functions.invoke('airtableEmployees', { action: 'update', recordId, fields })
+      : base44.functions.invoke('airtableEmployees', { action: 'create', fields }));
 
     setShowForm(false);
     setEditing(null);
-    await Promise.all([loadSchema(), loadCompanyChoices()]);
+    // Re-read from the server so the grid always reflects the truly persisted value,
+    // never an optimistic guess that a later sync could appear to "revert".
+    const currentOffset = offsetStack[pageIdx];
+    await Promise.all([loadSchema(), loadCompanyChoices(), loadPage(currentOffset, search)]);
   };
 
   const handleDelete = async (recordId) => {
