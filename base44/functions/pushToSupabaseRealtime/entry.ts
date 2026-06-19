@@ -43,15 +43,6 @@ async function upsertRow(baseUrl, key, table, row) {
   if (!res.ok) throw new Error(`Supabase upsert ${table} failed (${res.status}): ${await res.text()}`);
 }
 
-async function deleteRow(baseUrl, key, table, id) {
-  const url = `${restBase(baseUrl)}/${table}?id=eq.${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
-    method: 'DELETE',
-    headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=minimal' },
-  });
-  if (!res.ok) throw new Error(`Supabase delete ${table} failed (${res.status}): ${await res.text()}`);
-}
-
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -74,13 +65,13 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Supabase production secrets not configured' }, { status: 500 });
     }
 
+    // Deletes are intentionally NOT propagated to Supabase — only update/upsert.
+    if (eventType === 'delete') {
+      return Response.json({ success: true, skipped: 'delete not propagated', entity, id: entityId });
+    }
+
     const table = tableName(entity);
     try { await ensureTable(SUPABASE_URL, SUPABASE_SECRET_KEY, table); } catch (_e) { /* table likely exists */ }
-
-    if (eventType === 'delete') {
-      await deleteRow(SUPABASE_URL, SUPABASE_SECRET_KEY, table, entityId);
-      return Response.json({ success: true, action: 'delete', entity, id: entityId });
-    }
 
     // Re-read the record fresh (payload may be omitted when too large) to push the
     // truly-persisted value.
@@ -89,9 +80,8 @@ Deno.serve(async (req) => {
       record = await base44.asServiceRole.entities[entity].get(entityId).catch(() => null);
     }
     if (!record) {
-      // Record vanished between trigger and run — treat as a delete.
-      await deleteRow(SUPABASE_URL, SUPABASE_SECRET_KEY, table, entityId);
-      return Response.json({ success: true, action: 'delete', entity, id: entityId, note: 'record not found' });
+      // Record vanished between trigger and run — nothing to upsert (deletes are not propagated).
+      return Response.json({ success: true, skipped: 'record not found', entity, id: entityId });
     }
 
     // Never push editor-preview data to production Supabase.
