@@ -583,10 +583,26 @@ Deno.serve(async (req) => {
       const meta = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, { headers: { Authorization: `Bearer ${apiKey}` } });
       const metaText = await meta.text();
       let tables = null;
-      try { tables = (JSON.parse(metaText).tables || []).map(t => ({ name: t.name, id: t.id })); } catch (_e) { /* keep raw */ }
+      let jobTitleField = null;
+      let liveRecordValue = null;
+      try {
+        const parsed = JSON.parse(metaText);
+        tables = (parsed.tables || []).map(t => ({ name: t.name, id: t.id }));
+        const table = (parsed.tables || []).find(t => t.name === tableName);
+        const jt = (table?.fields || []).find(f => f.name === 'Job Title');
+        if (jt) jobTitleField = { name: jt.name, type: jt.type, choices: jt.options?.choices?.map(c => c.name) || null };
+      } catch (_e) { /* keep raw */ }
+      // Optionally read one live record straight from Airtable to compare with the mirror.
+      if (body.recordId) {
+        const r = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${body.recordId}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+        const rj = await r.json();
+        liveRecordValue = { status: r.status, job_title: rj?.fields?.['Job Title'] };
+      }
       return Response.json({
         configured: { baseId_prefix: String(baseId || '').slice(0, 4), baseId_length: String(baseId || '').length, tableName },
         meta_status: meta.status,
+        jobTitleField,
+        liveRecordValue,
         tables: tables || metaText.slice(0, 300),
       });
     }
