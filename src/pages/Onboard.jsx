@@ -22,7 +22,7 @@ const SECTIONS = [
       { key: 'Educational background', label: 'Educational background', required: true },
       { key: 'Birthday', label: 'Birthday', type: 'date', required: true, hint: 'Date format: mm/dd/yyyy' },
       { key: 'Gender', label: 'Gender', type: 'select', required: true, options: ['MALE', 'FEMALE'] },
-      { key: 'Status', label: 'Status', type: 'select', required: true, options: ['ACTIVE', 'PROBATIONARY', 'TRAINEE', 'RESIGNED'] },
+      { key: 'Citizen Status', label: 'Civil Status', type: 'select', required: true, options: ['Single', 'Married', 'Widowed', 'Separated', 'Divorced'] },
     ],
   },
   {
