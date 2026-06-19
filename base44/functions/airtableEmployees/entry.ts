@@ -76,7 +76,8 @@ Deno.serve(async (req) => {
 
     // Backend-only actions can run unattended (e.g. the consolidation orchestrator via
     // service role). All other actions require an authenticated user.
-    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus']);
+    // publicOnboard is reachable without login (new-hire self-service form link).
+    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus', 'publicOnboard']);
     let user = null;
     try { user = await base44.auth.me(); } catch (_e) { user = null; }
     if (!user && !BACKEND_ACTIONS.has(action)) {
@@ -773,6 +774,30 @@ Deno.serve(async (req) => {
       if (existing.length) await base44.asServiceRole.entities.EmployeeAccount.update(existing[0].id, account);
       else await base44.asServiceRole.entities.EmployeeAccount.create(account);
     };
+
+    if (action === 'publicOnboard') {
+      // Public new-hire self-service form. Accepts only a fixed whitelist of basic
+      // Identity / Contact / Government ID fields — never org, salary, or status fields.
+      const incoming = body.fields || {};
+      const ALLOWED = new Set([
+        'First Name', 'Middle Name', 'Last Name', 'Gender', 'Birthday', 'Citizen Status',
+        'Email', 'Business email', 'Mobile Number', 'Address',
+        'Emergency Contact Name', 'Emergency Contact Number', 'Emergency Contact Relationship',
+        'SSS Number', 'PhilHealth Number', 'Pag-IBIG Number', 'TIN',
+      ]);
+      const fields = {};
+      for (const [key, value] of Object.entries(incoming)) {
+        if (ALLOWED.has(key) && clean(value)) fields[key] = clean(value);
+      }
+      if (!fields['First Name'] || !fields['Last Name']) {
+        return Response.json({ error: 'First Name and Last Name are required.' }, { status: 400 });
+      }
+      const orgFields = await getOrgFields();
+      const airtableId = await createInAirtable(fields);
+      const mirrorData = buildStandaloneMirror(fields, orgFields, airtableId);
+      await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      return Response.json({ ok: true });
+    }
 
     if (action === 'create') {
       const { fields } = body;

@@ -44,6 +44,7 @@ import UserManagement from './pages/UserManagement';
 import Permissions from './pages/Permissions';
 import RoleHierarchy from './pages/RoleHierarchy';
 import PayrollApprovalHierarchy from './pages/PayrollApprovalHierarchy';
+import Onboard from './pages/Onboard';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -70,6 +71,7 @@ const AuthenticatedApp = () => {
 
   return (
     <Routes>
+      <Route path="/onboard" element={<Onboard />} />
       <Route path="/schedule/:scope/:value" element={
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="max-w-[120rem] mx-auto"><ApprovedSchedule readOnly /></div>
