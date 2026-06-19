@@ -14,7 +14,7 @@ import AddColumnDialog from '@/components/airtable/AddColumnDialog';
 import ColumnVisibilityMenu from '@/components/airtable/ColumnVisibilityMenu';
 import ColumnSortFilter from '@/components/airtable/ColumnSortFilter';
 import EmployeeFilesCell from '@/components/airtable/EmployeeFilesCell';
-import ExtractFilesButton from '@/components/airtable/ExtractFilesButton';
+import OnboardingLinkButton from '@/components/airtable/OnboardingLinkButton';
 import { isPreview } from '@/lib/appEnv';
 
 // In the editor preview, employee records are read-only (they're a single shared roster
@@ -338,7 +338,7 @@ export default function AirtableEmployees() {
           <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
-        {!READ_ONLY_ENV && <ExtractFilesButton onDone={handleRefresh} />}
+        <OnboardingLinkButton />
         <div className="ml-auto flex items-center gap-2">
           <ColumnVisibilityMenu
             columns={columns}
