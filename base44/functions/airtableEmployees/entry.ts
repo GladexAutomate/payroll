@@ -308,81 +308,15 @@ Deno.serve(async (req) => {
     // Pull the latest changes from Airtable into the Base44 mirror, then refresh
     // employee accounts. Existing re-hosted file attachments are preserved (Airtable
     // returns its own attachment URLs which we don't want to overwrite the hosted files with).
+    // Airtable is no longer the source of truth — the backend employee mirror is.
+    // This used to pull Airtable → mirror; now it's a no-op that only refreshes
+    // EmployeeAccount rows from the mirror, so the existing automation stays valid
+    // without ever overwriting in-app edits.
     const syncFromAirtable = async (dryRun = false) => {
-      const orgFields = await getOrgFields();
-      const remote = await fetchAirtableRecords();
       const existing = await listMirrorRecords(5000);
-      const existingByAirtableId = new Map(existing.map((r) => [r.airtable_record_id, r]));
-      const seen = new Set();
-
-      let created = 0;
-      let updated = 0;
-      const toCreate = [];
-
-      // Don't let a background Airtable pull overwrite an edit made in the app moments ago.
-      // Airtable can take a few seconds to index a new single-select option, so a pull that
-      // races a fresh save would read back the OLD value and "revert" it. Skip mirror records
-      // updated within the last 3 minutes so the freshly saved value is left untouched.
-      const RECENT_EDIT_MS = 3 * 60 * 1000;
-      const now = Date.now();
-      const editedRecently = (record) => {
-        const t = record?.updated_date ? new Date(record.updated_date).getTime() : 0;
-        return t && (now - t) < RECENT_EDIT_MS;
-      };
-
-      // Field keys that hold re-hosted file attachments — keep the mirror's value.
-      const fileKeys = (record) => Object.entries(record.fields || {})
-        .filter(([, v]) => Array.isArray(v) && v.some((item) => item && typeof item === 'object' && item.file_uri))
-        .map(([k]) => k);
-
-      for (const rec of remote) {
-        seen.add(rec.id);
-        const current = existingByAirtableId.get(rec.id);
-        // Preserve any re-hosted file fields already on the mirror record.
-        const mergedFields = { ...(rec.fields || {}) };
-        if (current) {
-          for (const k of fileKeys(current)) mergedFields[k] = current.fields[k];
-        }
-        const mirrorData = buildStandaloneMirror(mergedFields, orgFields, rec.id);
-        if (!current) {
-          toCreate.push(mirrorData);
-        } else {
-          // Only write when field values actually changed (skips ~unchanged rows,
-          // which is what keeps a large pull under the write rate limit). Compare the
-          // already-sanitized stored fields against the freshly-sanitized merged fields
-          // with sorted keys so unchanged records round-trip identically and skip.
-          const sortedJson = (o) => JSON.stringify(Object.keys(o || {}).sort().reduce((a, k) => { a[k] = o[k]; return a; }, {}));
-          const changed = sortedJson(current.fields) !== sortedJson(mirrorData.fields);
-          if (changed && !editedRecently(current)) {
-            updated += 1;
-            if (!dryRun) {
-              await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(current.id, mirrorData));
-              await wait(150);
-            }
-          }
-        }
-      }
-
-      if (!dryRun) {
-        for (let i = 0; i < toCreate.length; i += 50) {
-          await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].bulkCreate(toCreate.slice(i, i + 50)));
-          await wait(250);
-        }
-      }
-      created = toCreate.length;
-
-      // Remove mirror records that no longer exist in Airtable.
-      let removed = 0;
-      for (const r of existing) {
-        if (!seen.has(r.airtable_record_id)) {
-          removed += 1;
-          if (!dryRun) { await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].delete(r.id)); await wait(120); }
-        }
-      }
-
-      if (dryRun) return { synced: remote.length, created, updated, removed, dryRun: true };
+      if (dryRun) return { synced: existing.length, created: 0, updated: 0, removed: 0, dryRun: true, source: 'backend' };
       await syncEmployeeAccounts();
-      return { synced: remote.length, created, updated, pending_updates: 0, removed };
+      return { synced: existing.length, created: 0, updated: 0, pending_updates: 0, removed: 0, source: 'backend' };
     };
 
     const buildHierarchy = async () => {
@@ -793,18 +727,17 @@ Deno.serve(async (req) => {
         return Response.json({ error: 'First Name and Last Name are required.' }, { status: 400 });
       }
       const orgFields = await getOrgFields();
-      const airtableId = await createInAirtable(fields);
-      const mirrorData = buildStandaloneMirror(fields, orgFields, airtableId);
-      await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      const mirrorData = buildStandaloneMirror(fields, orgFields);
+      const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ ok: true });
     }
 
     if (action === 'create') {
       const { fields } = body;
       const orgFields = await getOrgFields();
-      // Create in Airtable first so the mirror stores the real Airtable record id.
-      const airtableId = await createInAirtable(fields);
-      const mirrorData = buildStandaloneMirror(fields, orgFields, airtableId);
+      // Backend mirror is the source of truth — create directly with a backend id (no Airtable push).
+      const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
       await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ record: { id: created.airtable_record_id, fields: created.fields, backend_id: created.id } });
@@ -817,12 +750,8 @@ Deno.serve(async (req) => {
       const existing = await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1));
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...fields };
-      // Push only the changed fields back to the real Airtable record.
-      if (String(recordId).startsWith('rec')) await updateInAirtable(recordId, fields);
+      // Backend mirror is the source of truth — update it directly (no Airtable push).
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
-      // Wrap the mirror update in retry: Airtable already accepted the change above,
-      // so a transient 429 here must NOT abort the request (that would make the saved
-      // value appear to "revert" in the grid).
       const updated = await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData));
       await upsertAccountForRecord(updated).catch(() => {});
       return Response.json({ record: { id: updated.airtable_record_id, fields: updated.fields, backend_id: updated.id } });
@@ -851,7 +780,6 @@ Deno.serve(async (req) => {
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...updates };
-      if (String(recordId).startsWith('rec')) await updateInAirtable(recordId, updates);
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
       return Response.json({ record: { id: mirrored.airtable_record_id, fields: mirrored.fields, backend_id: mirrored.id } });
@@ -872,10 +800,6 @@ Deno.serve(async (req) => {
 
       for (const record of matching) {
         const mergedFields = { ...(record.fields || {}), [orgFields.company]: cleanCompany };
-        if (String(record.airtable_record_id).startsWith('rec')) {
-          await updateInAirtable(record.airtable_record_id, { [orgFields.company]: cleanCompany }).catch(() => {});
-          await wait(150);
-        }
         const mirrorData = buildStandaloneMirror(mergedFields, orgFields, record.airtable_record_id);
         await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
       }
@@ -929,8 +853,7 @@ Deno.serve(async (req) => {
     if (action === 'delete') {
       const { recordId } = body;
       if (!recordId) return Response.json({ error: 'recordId required' }, { status: 400 });
-      // Delete the real Airtable record too (skip app-only records never pushed to Airtable).
-      if (String(recordId).startsWith('rec')) await deleteInAirtable(recordId).catch(() => {});
+      // Backend mirror is the source of truth — delete it directly (no Airtable call).
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 10);
       for (const record of existing) await base44.asServiceRole.entities[MIRROR_ENTITY].delete(record.id);
       return Response.json({ deleted: true, id: recordId });
