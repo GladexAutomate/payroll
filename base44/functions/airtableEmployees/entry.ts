@@ -318,6 +318,17 @@ Deno.serve(async (req) => {
       let updated = 0;
       const toCreate = [];
 
+      // Don't let a background Airtable pull overwrite an edit made in the app moments ago.
+      // Airtable can take a few seconds to index a new single-select option, so a pull that
+      // races a fresh save would read back the OLD value and "revert" it. Skip mirror records
+      // updated within the last 3 minutes so the freshly saved value is left untouched.
+      const RECENT_EDIT_MS = 3 * 60 * 1000;
+      const now = Date.now();
+      const editedRecently = (record) => {
+        const t = record?.updated_date ? new Date(record.updated_date).getTime() : 0;
+        return t && (now - t) < RECENT_EDIT_MS;
+      };
+
       // Field keys that hold re-hosted file attachments — keep the mirror's value.
       const fileKeys = (record) => Object.entries(record.fields || {})
         .filter(([, v]) => Array.isArray(v) && v.some((item) => item && typeof item === 'object' && item.file_uri))
@@ -341,7 +352,7 @@ Deno.serve(async (req) => {
           // with sorted keys so unchanged records round-trip identically and skip.
           const sortedJson = (o) => JSON.stringify(Object.keys(o || {}).sort().reduce((a, k) => { a[k] = o[k]; return a; }, {}));
           const changed = sortedJson(current.fields) !== sortedJson(mirrorData.fields);
-          if (changed) {
+          if (changed && !editedRecently(current)) {
             updated += 1;
             if (!dryRun) {
               await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(current.id, mirrorData));
