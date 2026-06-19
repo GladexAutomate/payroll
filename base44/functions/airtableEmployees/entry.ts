@@ -714,7 +714,8 @@ Deno.serve(async (req) => {
       // Identity / Contact / Government ID fields — never org, salary, or status fields.
       const incoming = body.fields || {};
       const ALLOWED = new Set([
-        'First Name', 'Middle Name', 'Last Name', 'Gender', 'Birthday', 'Citizen Status',
+        'First Name', 'Middle Name', 'Last Name', 'Position', 'Job Title', 'Gender', 'Birthday', 'Citizen Status',
+        'Department', 'Branch', 'Date Hired', 'Educational background', 'Status',
         'Email', 'Business email', 'Mobile Number', 'Address',
         'Emergency Contact Name', 'Emergency Contact Number', 'Emergency Contact Relationship',
         'SSS Number', 'PhilHealth Number', 'Pag-IBIG Number', 'TIN',
@@ -723,6 +724,8 @@ Deno.serve(async (req) => {
       for (const [key, value] of Object.entries(incoming)) {
         if (ALLOWED.has(key) && clean(value)) fields[key] = clean(value);
       }
+      // "Position" maps to the Job Title column used everywhere else in the app.
+      if (fields['Position'] && !fields['Job Title']) { fields['Job Title'] = fields['Position']; delete fields['Position']; }
       if (!fields['First Name'] || !fields['Last Name']) {
         return Response.json({ error: 'First Name and Last Name are required.' }, { status: 400 });
       }

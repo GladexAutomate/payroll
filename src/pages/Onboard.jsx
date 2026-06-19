@@ -3,38 +3,47 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { Loader2, CheckCircle2, UserPlus } from 'lucide-react';
 
 const SECTIONS = [
   {
     title: 'Identity',
     fields: [
+      { key: 'Last Name', label: 'Last Name', required: true },
       { key: 'First Name', label: 'First Name', required: true },
       { key: 'Middle Name', label: 'Middle Name' },
-      { key: 'Last Name', label: 'Last Name', required: true },
-      { key: 'Gender', label: 'Gender' },
-      { key: 'Birthday', label: 'Birthday', type: 'date' },
-      { key: 'Citizen Status', label: 'Civil Status' },
+      { key: 'Position', label: 'Position', required: true },
+      { key: 'Department', label: 'Department', required: true },
+      { key: 'Branch', label: 'Branch', required: true },
+      { key: 'Date Hired', label: 'Date Hired', type: 'date', required: true, hint: 'Date format: mm/dd/yyyy' },
+      { key: 'Educational background', label: 'Educational background', required: true },
+      { key: 'Birthday', label: 'Birthday', type: 'date', required: true, hint: 'Date format: mm/dd/yyyy' },
+      { key: 'Gender', label: 'Gender', type: 'select', required: true, options: ['MALE', 'FEMALE'] },
+      { key: 'Status', label: 'Status', type: 'select', required: true, options: ['ACTIVE', 'PROBATIONARY', 'TRAINEE', 'RESIGNED'] },
     ],
   },
   {
     title: 'Contact',
     fields: [
-      { key: 'Email', label: 'Email', type: 'email' },
-      { key: 'Mobile Number', label: 'Mobile Number', type: 'tel' },
-      { key: 'Address', label: 'Address', full: true },
-      { key: 'Emergency Contact Name', label: 'Emergency Contact Name' },
-      { key: 'Emergency Contact Number', label: 'Emergency Contact Number', type: 'tel' },
-      { key: 'Emergency Contact Relationship', label: 'Emergency Contact Relationship' },
+      { key: 'Email', label: 'Email', type: 'email', required: true },
+      { key: 'Business email', label: 'Business email', type: 'email' },
+      { key: 'Mobile Number', label: 'Mobile Number', type: 'number', required: true, hint: 'Format: Integer' },
+      { key: 'Address', label: 'Address', full: true, required: true },
+      { key: 'Emergency Contact Name', label: 'Emergency Contact Name', required: true },
+      { key: 'Emergency Contact Relationship', label: 'Emergency Contact Relationship', required: true },
+      { key: 'Emergency Contact Number', label: 'Emergency Contact Number', type: 'tel', required: true },
     ],
   },
   {
     title: 'Government IDs',
     fields: [
-      { key: 'SSS Number', label: 'SSS Number' },
-      { key: 'PhilHealth Number', label: 'PhilHealth Number' },
-      { key: 'Pag-IBIG Number', label: 'Pag-IBIG Number' },
-      { key: 'TIN', label: 'TIN' },
+      { key: 'TIN', label: 'TIN', hint: 'Example 000-123-456-001' },
+      { key: 'SSS Number', label: 'SSS Number', hint: 'Example 35-0783205-3' },
+      { key: 'Pag-IBIG Number', label: 'Pag-IBIG Number', hint: 'Example 1234-5678-9101' },
+      { key: 'PhilHealth Number', label: 'PhilHealth Number', hint: 'Example 11-201534404-7' },
     ],
   },
 ];
@@ -85,7 +94,7 @@ export default function Onboard() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">New Employee Form</h1>
-            <p className="text-sm text-muted-foreground">Please fill out your basic details below.</p>
+            <p className="text-sm text-muted-foreground">Please fill out your details below.</p>
           </div>
         </div>
 
@@ -101,13 +110,27 @@ export default function Onboard() {
                     <Label className="text-xs font-medium">
                       {f.label}{f.required && <span className="text-destructive"> *</span>}
                     </Label>
-                    <Input
-                      type={f.type || 'text'}
-                      value={values[f.key] || ''}
-                      onChange={e => setField(f.key, e.target.value)}
-                      required={f.required}
-                      className="mt-1"
-                    />
+                    {f.type === 'select' ? (
+                      <Select value={values[f.key] || ''} onValueChange={val => setField(f.key, val)}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {f.options.map(opt => (
+                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type={f.type || 'text'}
+                        value={values[f.key] || ''}
+                        onChange={e => setField(f.key, e.target.value)}
+                        required={f.required}
+                        className="mt-1"
+                      />
+                    )}
+                    {f.hint && <p className="text-[11px] text-muted-foreground mt-1">{f.hint}</p>}
                   </div>
                 ))}
               </div>
