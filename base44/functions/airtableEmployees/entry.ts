@@ -757,13 +757,16 @@ Deno.serve(async (req) => {
       const { recordId, fields } = body;
       if (!recordId) return Response.json({ error: 'recordId required' }, { status: 400 });
       const orgFields = await getOrgFields();
-      const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1);
+      const existing = await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 1));
       if (!existing.length) return Response.json({ error: 'Record not found' }, { status: 404 });
       const mergedFields = { ...(existing[0].fields || {}), ...fields };
       // Push only the changed fields back to the real Airtable record.
       if (String(recordId).startsWith('rec')) await updateInAirtable(recordId, fields);
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
-      const updated = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
+      // Wrap the mirror update in retry: Airtable already accepted the change above,
+      // so a transient 429 here must NOT abort the request (that would make the saved
+      // value appear to "revert" in the grid).
+      const updated = await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData));
       await upsertAccountForRecord(updated).catch(() => {});
       return Response.json({ record: { id: updated.airtable_record_id, fields: updated.fields, backend_id: updated.id } });
     }
