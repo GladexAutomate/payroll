@@ -294,6 +294,15 @@ export default function AirtableEmployees() {
     return parts.join(' ');
   };
 
+  // Build Full Name from First + Middle + Last with proper spacing,
+  // falling back to the stored Full Name field when name parts are missing.
+  const fullNameFrom = (fields = {}) => {
+    const parts = [fields['First Name'], fields['Middle Name'], fields['Last Name']]
+      .map(p => valueText(p).trim())
+      .filter(Boolean);
+    return parts.length ? parts.join(' ') : valueText(fields['Full Name']).trim();
+  };
+
   const renderCell = (value) => {
     if (value == null || value === '') return <span className="text-muted-foreground/40">—</span>;
     if (Array.isArray(value)) {
@@ -424,7 +433,9 @@ export default function AirtableEmployees() {
                         ? <EmployeeFilesCell files={rec.fields?.[col]} />
                         : col === 'Years of Service'
                           ? (formatYearsOfService(rec.fields?.['Date Hired']) ?? renderCell(rec.fields?.[col]))
-                          : renderCell(rec.fields?.[col])}
+                          : col.toLowerCase() === 'full name'
+                            ? renderCell(fullNameFrom(rec.fields))
+                            : renderCell(rec.fields?.[col])}
                     </td>
                   ))}
                 </tr>
