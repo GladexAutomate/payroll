@@ -415,36 +415,6 @@ export default function AirtableEmployees() {
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button
-                            className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
-                            title="Delete"
-                            disabled={deletingId === rec.id}
-                          >
-                            {deletingId === rec.id
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              : <Trash2 className="w-3.5 h-3.5" />}
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete this record?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will permanently delete <strong>{rec.fields?.['Full Name'] || rec.fields?.['Employee Code ID'] || rec.id}</strong> from Airtable. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              onClick={() => handleDelete(rec.id)}
-                            >
-                              Delete Permanently
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
                     </div>
                     )}
                   </td>
