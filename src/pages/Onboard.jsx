@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import AirtableSelectField from '@/components/airtable/AirtableSelectField';
 import { Loader2, CheckCircle2, UserPlus } from 'lucide-react';
 
 const SECTIONS = [
@@ -15,9 +16,9 @@ const SECTIONS = [
       { key: 'Last Name', label: 'Last Name', required: true },
       { key: 'First Name', label: 'First Name', required: true },
       { key: 'Middle Name', label: 'Middle Name' },
-      { key: 'Position', label: 'Position', required: true },
-      { key: 'Department', label: 'Department', required: true },
-      { key: 'Branch', label: 'Branch', required: true },
+      { key: 'Position', label: 'Position', type: 'combo', required: true },
+      { key: 'Department', label: 'Department', type: 'combo', required: true },
+      { key: 'Branch', label: 'Branch', type: 'combo', required: true },
       { key: 'Date Hired', label: 'Date Hired', type: 'date', required: true, hint: 'Date format: mm/dd/yyyy' },
       { key: 'Educational background', label: 'Educational background', required: true },
       { key: 'Birthday', label: 'Birthday', type: 'date', required: true, hint: 'Date format: mm/dd/yyyy' },
@@ -53,8 +54,19 @@ export default function Onboard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
+  const [choices, setChoices] = useState({ Position: [], Department: [], Branch: [] });
 
   const setField = (key, val) => setValues(prev => ({ ...prev, [key]: val }));
+
+  useEffect(() => {
+    base44.functions.invoke('airtableEmployees', { action: 'onboardChoices' })
+      .then(res => setChoices({
+        Position: res.data?.Position || [],
+        Department: res.data?.Department || [],
+        Branch: res.data?.Branch || [],
+      }))
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,7 +122,13 @@ export default function Onboard() {
                     <Label className="text-xs font-medium">
                       {f.label}{f.required && <span className="text-destructive"> *</span>}
                     </Label>
-                    {f.type === 'select' ? (
+                    {f.type === 'combo' ? (
+                      <AirtableSelectField
+                        value={values[f.key] || ''}
+                        onChange={val => setField(f.key, val)}
+                        choices={choices[f.key] || []}
+                      />
+                    ) : f.type === 'select' ? (
                       <Select value={values[f.key] || ''} onValueChange={val => setField(f.key, val)}>
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select..." />

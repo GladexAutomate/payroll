@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     // Backend-only actions can run unattended (e.g. the consolidation orchestrator via
     // service role). All other actions require an authenticated user.
     // publicOnboard is reachable without login (new-hire self-service form link).
-    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus', 'publicOnboard']);
+    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus', 'publicOnboard', 'onboardChoices']);
     let user = null;
     try { user = await base44.auth.me(); } catch (_e) { user = null; }
     if (!user && !BACKEND_ACTIONS.has(action)) {
@@ -708,6 +708,27 @@ Deno.serve(async (req) => {
       if (existing.length) await base44.asServiceRole.entities.EmployeeAccount.update(existing[0].id, account);
       else await base44.asServiceRole.entities.EmployeeAccount.create(account);
     };
+
+    if (action === 'onboardChoices') {
+      // Public: distinct Position / Department / Branch values for the onboarding form dropdowns.
+      const orgFields = await getOrgFields();
+      const allRecords = await listMirrorRecords(5000);
+      const records = allRecords.filter(isNotResigned);
+      const positions = new Set();
+      const departments = new Set();
+      const branches = new Set();
+      for (const record of records) {
+        const fields = record.fields || {};
+        const pos = valueText(fields['Job Title'] || fields['Position']).trim();
+        const dep = valueText(fields[orgFields.department] || fields['Department']).trim();
+        const br = valueText(fields[orgFields.branch] || fields['Branch']).trim();
+        if (pos) positions.add(pos);
+        if (dep) departments.add(dep);
+        if (br) branches.add(br);
+      }
+      const sortNames = (set) => Array.from(set).sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
+      return Response.json({ Position: sortNames(positions), Department: sortNames(departments), Branch: sortNames(branches) });
+    }
 
     if (action === 'publicOnboard') {
       // Public new-hire self-service form. Accepts only a fixed whitelist of basic
