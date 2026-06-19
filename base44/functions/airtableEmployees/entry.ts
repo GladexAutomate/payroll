@@ -239,15 +239,34 @@ Deno.serve(async (req) => {
       if (!resp.ok) throw new Error(`Airtable create failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
       return (await resp.json()).id;
     };
-    // Patch an existing Airtable record by id.
+    // Patch an existing Airtable record by id, and verify the values actually landed.
+    // Single-select fields silently drop a value when the option doesn't exist and
+    // can't be auto-created (typecast) — that's what made saved edits "revert" after
+    // the next Airtable sync. We re-read the record and compare so we can surface a
+    // clear error instead of a false success.
     const updateInAirtable = async (airtableId, fields) => {
       const { apiKey, baseId, tableName } = airtableConfig();
-      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`, {
+      const writable = airtableWritableFields(fields);
+      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`;
+      const resp = await fetch(url, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: airtableWritableFields(fields), typecast: true }),
+        body: JSON.stringify({ fields: writable, typecast: true }),
       });
       if (!resp.ok) throw new Error(`Airtable update failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+      const saved = (await resp.json())?.fields || {};
+      // Detect text/select fields that Airtable silently dropped (sent a non-empty
+      // value, but the record came back without it).
+      const dropped = Object.entries(writable)
+        .filter(([key, val]) => {
+          if (val == null || val === '' || Array.isArray(val) || typeof val === 'object') return false;
+          const after = saved[key];
+          return String(after ?? '').trim() !== String(val).trim();
+        })
+        .map(([key]) => key);
+      if (dropped.length) {
+        throw new Error(`Airtable rejected new value(s) for: ${dropped.join(', ')}. This field is a single-select in Airtable and the option doesn't exist yet — add the option in Airtable first, then save again.`);
+      }
     };
     // Delete an Airtable record by id.
     const deleteInAirtable = async (airtableId) => {
