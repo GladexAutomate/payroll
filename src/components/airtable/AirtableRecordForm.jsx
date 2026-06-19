@@ -118,8 +118,20 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
     setSaving(false);
   };
 
-  // Order columns into HR sections (Identity, Job & Org, Compensation, etc.)
-  const groupedCols = useMemo(() => groupEmployeeColumns(editableCols), [editableCols]);
+  // Find the actual Status column name (case-insensitive) so it can be pinned to the top.
+  const statusCol = useMemo(
+    () => editableCols.find(c => c.toLowerCase() === 'status'),
+    [editableCols]
+  );
+
+  // Order columns into HR sections (Identity, Job & Org, Compensation, etc.),
+  // excluding Status since it's surfaced at the very top of the form.
+  const groupedCols = useMemo(
+    () => groupEmployeeColumns(editableCols.filter(c => c !== statusCol)),
+    [editableCols, statusCol]
+  );
+
+  const STATUS_OPTIONS = ['Active', 'Resigned'];
 
   const renderField = (col) => {
     const fileField = isFileField(col);
@@ -200,6 +212,22 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
                 <strong>Error:</strong> {error}
+              </div>
+            )}
+
+            {statusCol && (
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
+                <label className="text-xs font-semibold uppercase tracking-wider text-primary">{statusCol}</label>
+                <AirtableSelectField
+                  value={values[statusCol]}
+                  onChange={(v) => handleChange(statusCol, v)}
+                  choices={
+                    (fieldsMeta[statusCol]?.choices && fieldsMeta[statusCol].choices.length)
+                      ? fieldsMeta[statusCol].choices
+                      : STATUS_OPTIONS.map(name => ({ name }))
+                  }
+                  multi={false}
+                />
               </div>
             )}
 
