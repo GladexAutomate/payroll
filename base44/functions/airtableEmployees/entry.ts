@@ -17,6 +17,24 @@ const getStatus = (record) => String(record?.fields?.Status || record?.Status ||
 const isActive = (record) => getStatus(record) === 'active';
 const isNotResigned = (record) => getStatus(record) !== 'resigned';
 const clean = (value) => String(value || '').trim();
+
+// Known company → short code mappings for auto-generated employee codes.
+// Keys are normalized (lowercased, alphanumeric only) so spacing/punctuation don't matter.
+const COMPANY_CODE_MAP = {
+  'gladextravelandtourscorp': 'GDX',
+  'gladextravelandtours': 'GDX',
+  'klikktravelexpress': 'KLIKK',
+  'pinoyonlinetravelbiz': 'POTB',
+};
+const normalizeCompanyKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// Derive a company code: use the known map, else build initials from the company name.
+const companyCodeFor = (companyName) => {
+  const key = normalizeCompanyKey(companyName);
+  if (COMPANY_CODE_MAP[key]) return COMPANY_CODE_MAP[key];
+  const initials = String(companyName || '').trim().split(/\s+/)
+    .map((word) => word[0]).filter(Boolean).join('').toUpperCase();
+  return initials || 'EMP';
+};
 const digitsOnly = (value) => clean(value).replace(/[^0-9]/g, '');
 const employeeInitials = (fields) => {
   const first = clean(fields['First Name']);
@@ -139,6 +157,25 @@ Deno.serve(async (req) => {
 
     const listMirrorRecords = async (limit = 1000) => {
       return await base44.asServiceRole.entities[MIRROR_ENTITY].list('-updated_date', limit);
+    };
+
+    // Generate the next available employee code for a company, formatted as
+    // CODE + currentYear + '-' + 0000 (e.g. GDX2026-0001). Scans every mirror record
+    // for the highest existing sequence under the same prefix so codes never collide.
+    const generateEmployeeCode = async (companyName) => {
+      const code = companyCodeFor(companyName);
+      const year = new Date().getFullYear();
+      const prefix = `${code}${year}-`;
+      const allRecords = await listMirrorRecords(5000);
+      let maxSeq = 0;
+      for (const record of allRecords) {
+        const existing = clean(record.employee_code || record.fields?.['Employee Code ID'] || record.fields?.['Employee Code']);
+        if (existing.toUpperCase().startsWith(prefix.toUpperCase())) {
+          const seq = parseInt(existing.slice(prefix.length), 10);
+          if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+        }
+      }
+      return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
     };
 
     // Throttled write helper: retries on rate-limit/transient errors with backoff,
@@ -714,20 +751,23 @@ Deno.serve(async (req) => {
       const orgFields = await getOrgFields();
       const allRecords = await listMirrorRecords(5000);
       const records = allRecords.filter(isNotResigned);
+      const companies = new Set();
       const positions = new Set();
       const departments = new Set();
       const branches = new Set();
       for (const record of records) {
         const fields = record.fields || {};
+        const comp = valueText(fields[orgFields.company] || fields['Company'] || record.company).trim();
         const pos = valueText(fields['Job Title'] || fields['Position']).trim();
         const dep = valueText(fields[orgFields.department] || fields['Department']).trim();
         const br = valueText(fields[orgFields.branch] || fields['Branch']).trim();
+        if (comp) companies.add(comp);
         if (pos) positions.add(pos);
         if (dep) departments.add(dep);
         if (br) branches.add(br);
       }
       const sortNames = (set) => Array.from(set).sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
-      return Response.json({ Position: sortNames(positions), Department: sortNames(departments), Branch: sortNames(branches) });
+      return Response.json({ Company: sortNames(companies), Position: sortNames(positions), Department: sortNames(departments), Branch: sortNames(branches) });
     }
 
     if (action === 'publicOnboard') {
@@ -735,7 +775,7 @@ Deno.serve(async (req) => {
       // Identity / Contact / Government ID fields — never org, salary, or status fields.
       const incoming = body.fields || {};
       const ALLOWED = new Set([
-        'First Name', 'Middle Name', 'Last Name', 'Position', 'Job Title', 'Gender', 'Birthday', 'Citizen Status',
+        'First Name', 'Middle Name', 'Last Name', 'Company', 'Position', 'Job Title', 'Gender', 'Birthday', 'Citizen Status',
         'Department', 'Branch', 'Date Hired', 'Educational background', 'Status',
         'Email', 'Business email', 'Mobile Number', 'Address',
         'Emergency Contact Name', 'Emergency Contact Number', 'Emergency Contact Relationship',
@@ -750,6 +790,10 @@ Deno.serve(async (req) => {
       if (!fields['First Name'] || !fields['Last Name']) {
         return Response.json({ error: 'First Name and Last Name are required.' }, { status: 400 });
       }
+      // Auto-generate a unique employee code from the chosen company + current year.
+      if (fields['Company'] && !fields['Employee Code ID']) {
+        fields['Employee Code ID'] = await generateEmployeeCode(fields['Company']);
+      }
       const orgFields = await getOrgFields();
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
@@ -760,6 +804,11 @@ Deno.serve(async (req) => {
     if (action === 'create') {
       const { fields } = body;
       const orgFields = await getOrgFields();
+      // Auto-generate a unique employee code from the chosen company + current year when one isn't supplied.
+      const companyName = clean(fields?.[orgFields.company] || fields?.['Company']);
+      if (companyName && !clean(fields?.['Employee Code ID']) && !clean(fields?.['Employee Code'])) {
+        fields['Employee Code ID'] = await generateEmployeeCode(companyName);
+      }
       // Backend mirror is the source of truth — create directly with a backend id (no Airtable push).
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);

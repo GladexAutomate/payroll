@@ -16,6 +16,7 @@ const SECTIONS = [
       { key: 'Last Name', label: 'Last Name', required: true },
       { key: 'First Name', label: 'First Name', required: true },
       { key: 'Middle Name', label: 'Middle Name' },
+      { key: 'Company', label: 'Company', type: 'combo', required: true },
       { key: 'Position', label: 'Position', type: 'combo', required: true },
       { key: 'Department', label: 'Department', type: 'combo', required: true },
       { key: 'Branch', label: 'Branch', type: 'combo', required: true },
@@ -54,13 +55,14 @@ export default function Onboard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
-  const [choices, setChoices] = useState({ Position: [], Department: [], Branch: [] });
+  const [choices, setChoices] = useState({ Company: [], Position: [], Department: [], Branch: [] });
 
   const setField = (key, val) => setValues(prev => ({ ...prev, [key]: val }));
 
   useEffect(() => {
     base44.functions.invoke('airtableEmployees', { action: 'onboardChoices' })
       .then(res => setChoices({
+        Company: res.data?.Company || [],
         Position: res.data?.Position || [],
         Department: res.data?.Department || [],
         Branch: res.data?.Branch || [],
