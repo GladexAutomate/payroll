@@ -165,17 +165,21 @@ Deno.serve(async (req) => {
     const generateEmployeeCode = async (companyName) => {
       const code = companyCodeFor(companyName);
       const year = new Date().getFullYear();
-      const prefix = `${code}${year}-`;
+      // The sequence is unique per company ACROSS ALL YEARS, so match any code that
+      // starts with this company code followed by a 4-digit year and '-', regardless
+      // of which year it was issued in (e.g. GDX2025-0007 and GDX2026-0003 share one counter).
+      const seqPattern = new RegExp(`^${code}\\d{4}-(\\d+)$`, 'i');
       const allRecords = await listMirrorRecords(5000);
       let maxSeq = 0;
       for (const record of allRecords) {
         const existing = clean(record.employee_code || record.fields?.['Employee Code ID'] || record.fields?.['Employee Code']);
-        if (existing.toUpperCase().startsWith(prefix.toUpperCase())) {
-          const seq = parseInt(existing.slice(prefix.length), 10);
+        const match = existing.match(seqPattern);
+        if (match) {
+          const seq = parseInt(match[1], 10);
           if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
         }
       }
-      return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
+      return `${code}${year}-${String(maxSeq + 1).padStart(4, '0')}`;
     };
 
     // Throttled write helper: retries on rate-limit/transient errors with backoff,
