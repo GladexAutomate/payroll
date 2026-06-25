@@ -1,4 +1,4 @@
-import { ArrowDownZA, ArrowUpAZ, X } from 'lucide-react';
+import { ArrowDownZA, ArrowUpAZ, X, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import EditableColumnHeader from '@/components/airtable/EditableColumnHeader';
 
@@ -9,12 +9,23 @@ export default function ColumnSortFilter({
   onRename,
   onFilterChange,
   onSortChange,
+  onHide,
 }) {
   return (
     <div className="space-y-2 normal-case tracking-normal">
       <div className="flex items-center justify-between gap-2 uppercase tracking-wide">
         <EditableColumnHeader name={name} onRename={onRename} />
         <div className="flex items-center gap-1">
+          {onHide && (
+            <button
+              type="button"
+              onClick={() => onHide(name)}
+              className="p-1 rounded border bg-card text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+              title="Hide this column"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onSortChange(name, sortDirection === 'asc' ? null : 'asc')}

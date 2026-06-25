@@ -637,13 +637,48 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'list') {
-      const { pageSize = 50, offset = 0, search } = body;
+      const { pageSize = 50, offset = 0, search, columnFilters, sort } = body;
       // The Airtable Employee List is the full record-management table, so it shows
       // every employee including resigned ones (other actions stay active-only).
       const allRecords = await listMirrorRecords(5000);
-      const filtered = search?.trim()
+
+      // The text shown in a given column's cell, so per-column search matches what the
+      // user actually sees. "Full Name" is displayed as First + Middle + Last (falling
+      // back to the stored Full Name field), so we search that same composed value.
+      const columnText = (record, column) => {
+        const fields = record.fields || {};
+        if (String(column).trim().toLowerCase() === 'full name') {
+          const parts = [fields['First Name'], fields['Middle Name'], fields['Last Name']]
+            .map((part) => valueText(part).trim()).filter(Boolean);
+          return (parts.length ? parts.join(' ') : valueText(fields['Full Name'])).toLowerCase();
+        }
+        return valueText(fields[column]).toLowerCase();
+      };
+
+      // Global search across the whole roster (precomputed search_text).
+      let filtered = search?.trim()
         ? allRecords.filter(record => String(record.search_text || '').includes(search.trim().toLowerCase()))
         : allRecords;
+
+      // Per-column search: every active column filter must match (AND), applied across the
+      // ENTIRE dataset before pagination — so results are accurate, not just within one page.
+      const activeFilters = columnFilters && typeof columnFilters === 'object'
+        ? Object.entries(columnFilters).filter(([, value]) => String(value ?? '').trim())
+        : [];
+      if (activeFilters.length) {
+        filtered = filtered.filter(record => activeFilters.every(([column, value]) =>
+          columnText(record, column).includes(String(value).trim().toLowerCase())));
+      }
+
+      // Sort across the whole filtered dataset so ordering is consistent across pages.
+      if (sort && sort.column && (sort.direction === 'asc' || sort.direction === 'desc')) {
+        filtered = [...filtered].sort((a, b) => {
+          const comparison = columnText(a, sort.column)
+            .localeCompare(columnText(b, sort.column), undefined, { numeric: true, sensitivity: 'base' });
+          return sort.direction === 'asc' ? comparison : -comparison;
+        });
+      }
+
       const start = Number(offset) || 0;
       const records = filtered.slice(start, start + Math.min(pageSize, 100)).map(record => {
         const fields = { ...(record.fields || {}) };
@@ -655,7 +690,7 @@ Deno.serve(async (req) => {
         };
       });
       const nextOffset = start + records.length < filtered.length ? String(start + records.length) : null;
-      return Response.json({ records, offset: nextOffset, source: 'backend' });
+      return Response.json({ records, offset: nextOffset, total: filtered.length, source: 'backend' });
     }
 
     if (action === 'allActive') {

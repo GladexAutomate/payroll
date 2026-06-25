@@ -51,6 +51,7 @@ export default function AirtableEmployees() {
   const [records, setRecords] = useState([]);       // all loaded records (across fetched pages)
   const [offsetStack, setOffsetStack] = useState([null]); // history of offsets per fetched page
   const [nextOffset, setNextOffset] = useState(null);
+  const [totalCount, setTotalCount] = useState(null); // total rows matching the active search/filters
   const [pageIdx, setPageIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -81,18 +82,27 @@ export default function AirtableEmployees() {
     localStorage.setItem('airtableHiddenColumns', '[]');
   };
 
-  const loadPage = async (offset = null, searchQuery = '') => {
+  const loadPage = async (offset = null, searchQuery = search, filters = columnFilters, sort = sortConfig) => {
     setLoading(true);
     setError(null);
     try {
+      // Only send filters that actually have a value, so the server can skip the work otherwise.
+      const activeFilters = Object.fromEntries(
+        Object.entries(filters || {}).filter(([, value]) => String(value ?? '').trim())
+      );
       const res = await base44.functions.invoke('airtableEmployees', {
         action: 'list',
         pageSize: PAGE_SIZE,
         offset: offset || undefined,
         search: searchQuery || undefined,
+        // Per-column search and sort run server-side across the WHOLE roster so results
+        // are accurate, not limited to the rows on the current page.
+        columnFilters: Object.keys(activeFilters).length ? activeFilters : undefined,
+        sort: sort?.column && sort?.direction ? { column: sort.column, direction: sort.direction } : undefined,
       });
       setRecords(res.data.records || []);
       setNextOffset(res.data.offset || null);
+      setTotalCount(typeof res.data.total === 'number' ? res.data.total : null);
     } catch (err) {
       setError(err?.response?.data?.error || err.message || 'Failed to load records');
     }
@@ -157,16 +167,17 @@ export default function AirtableEmployees() {
     await loadPage(currentOffset, search);
   };
 
-  // Debounce search — when user types, reset pagination and search Airtable server-side
+  // Debounce search, per-column filters, and sort — any change resets pagination and
+  // re-queries the server so results stay accurate across the whole roster.
   useEffect(() => {
     const t = setTimeout(() => {
       setOffsetStack([null]);
       setPageIdx(0);
-      loadPage(null, search);
+      loadPage(null, search, columnFilters, sortConfig);
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, columnFilters, sortConfig]);
 
   const handleNext = async () => {
     if (!nextOffset) return;
@@ -259,23 +270,9 @@ export default function AirtableEmployees() {
     setSortConfig(direction ? { column, direction } : { column: null, direction: null });
   };
 
-  const filteredRecords = useMemo(() => {
-    const activeFilters = Object.entries(columnFilters).filter(([, value]) => value?.trim());
-    let result = records.filter(record => activeFilters.every(([column, value]) =>
-      valueText(record.fields?.[column]).toLowerCase().includes(value.trim().toLowerCase())
-    ));
-
-    if (sortConfig.column && sortConfig.direction) {
-      result = [...result].sort((a, b) => {
-        const left = valueText(a.fields?.[sortConfig.column]);
-        const right = valueText(b.fields?.[sortConfig.column]);
-        const comparison = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
-        return sortConfig.direction === 'asc' ? comparison : -comparison;
-      });
-    }
-
-    return result;
-  }, [records, columnFilters, sortConfig]);
+  // Whether any search/filter is active, used to pick the right empty-state message.
+  const hasActiveQuery = Boolean(search.trim()) ||
+    Object.values(columnFilters).some(value => String(value ?? '').trim());
 
   // Format "Years of Service" as "X years Y months" computed from Date Hired.
   const formatYearsOfService = (dateHired) => {
@@ -391,6 +388,7 @@ export default function AirtableEmployees() {
                       onRename={handleRenameColumn}
                       onFilterChange={handleColumnFilterChange}
                       onSortChange={handleColumnSortChange}
+                      onHide={toggleHiddenColumn}
                     />
                   </th>
                 ))}
@@ -404,13 +402,13 @@ export default function AirtableEmployees() {
                     Loading records from backend database...
                   </td>
                 </tr>
-              ) : filteredRecords.length === 0 ? (
+              ) : records.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">
-                    {records.length === 0 ? 'No records found.' : 'No records match your search.'}
+                    {hasActiveQuery ? 'No records match your search.' : 'No records found.'}
                   </td>
                 </tr>
-              ) : filteredRecords.map(rec => (
+              ) : records.map(rec => (
                 <tr key={rec.id} className="border-b border-border/50 hover:bg-muted/20">
                   <td className="sticky left-0 z-10 bg-card hover:bg-muted/20 py-1.5 px-3 border-r border-border">
                     {READ_ONLY_ENV ? (
@@ -444,12 +442,9 @@ export default function AirtableEmployees() {
           </table>
       </TableWithTopScrollbar>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div>
-          Page {pageIdx + 1} · {records.length} records
-          {search && ` matching "${search}"`}
-        </div>
+      {/* Pagination — centered directly below the records so the buttons are always
+          easy to find without scrolling the wide table sideways. */}
+      <div className="flex flex-col items-center gap-2 pt-1">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handlePrev} disabled={pageIdx === 0 || loading}>
             <ChevronLeft className="w-4 h-4 mr-1" /> Previous
@@ -457,6 +452,13 @@ export default function AirtableEmployees() {
           <Button variant="outline" size="sm" onClick={handleNext} disabled={!nextOffset || loading}>
             Next <ChevronRight className="w-4 h-4 ml-1" />
           </Button>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Page {pageIdx + 1}
+          {totalCount != null
+            ? ` · ${totalCount} ${totalCount === 1 ? 'record' : 'records'}`
+            : ` · ${records.length} records`}
+          {search && ` matching "${search}"`}
         </div>
       </div>
 
