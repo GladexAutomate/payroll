@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,12 +10,60 @@ import { groupEmployeeColumns } from './employeeFieldGroups';
 // 'fileAttachment' is also rendered with the upload/view/download UI.
 const KNOWN_FILE_FIELDS = new Set(['Contract Files', 'ATD Files']);
 
+// "Immediate Head" is keyed on FIRST + LAST name only (middle names/initials dropped),
+// matching how the Schedule Proposal page maps employees to their leader. Source casing
+// is preserved so the dropdown reads naturally.
+const firstLastName = (value) => {
+  const tokens = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (tokens.length <= 1) return tokens.join(' ');
+  return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+};
+
+// Normalized match key (first + last token, letters only, uppercased) used to recognize
+// a legacy Immediate Head text value as one of the canonical employee options.
+const headMatchKey = (value) => {
+  const tokens = String(value || '')
+    .toUpperCase().replace(/[^A-Z\s]/g, ' ').replace(/\s+/g, ' ').trim()
+    .split(' ').filter(Boolean);
+  if (!tokens.length) return '';
+  if (tokens.length === 1) return tokens[0];
+  return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+};
+
 /**
  * Generic Airtable record form.
  * Renders an input for each editable column. Excludes computed/formula fields.
  */
-export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], fieldChoices = {}, employeeNames = [], onCancel, onSave }) {
+export default function AirtableRecordForm({ record, allColumns, readOnlyFields, fieldsMeta = {}, companyChoices = [], fieldChoices = {}, employeeNames = [], headNames = [], onCancel, onSave }) {
   const employeeChoices = employeeNames.filter(Boolean).map(n => ({ name: String(n) }));
+
+  // "First Last" options for the Immediate Head dropdown. Prefer the dedicated headNames
+  // list (built from real First Name + Last Name fields, so compound surnames stay intact);
+  // fall back to trimming full names if it isn't available. De-duplicated by match key.
+  const headOptions = useMemo(() => {
+    const source = (headNames && headNames.length)
+      ? headNames.map(n => String(n || '').replace(/\s+/g, ' ').trim())
+      : employeeNames.map(n => firstLastName(n));
+    const byKey = new Map();
+    for (const name of source) {
+      if (!name) continue;
+      const key = headMatchKey(name);
+      if (key && !byKey.has(key)) byKey.set(key, name);
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b)).map(name => ({ name }));
+  }, [headNames, employeeNames]);
+
+  // Resolve an existing Immediate Head value to its canonical employee option (matched
+  // by first + last name). Returns the original first+last text when there's no match,
+  // so legacy values are never lost — just standardized.
+  const canonicalHead = useMemo(() => {
+    const byKey = new Map(headOptions.map(o => [headMatchKey(o.name), o.name]));
+    return (value) => {
+      const key = headMatchKey(value);
+      if (!key) return '';
+      return byKey.get(key) || firstLastName(value);
+    };
+  }, [headOptions]);
   // Match a column to its provided distinct-value choices case-insensitively
   // (e.g. "BRANCH" -> Branch, "DEPARTMENT ROLE" -> Department Role).
   const choiceKeyFor = (col) => Object.keys(fieldChoices).find((k) => k.toLowerCase() === String(col).toLowerCase());
@@ -33,6 +81,12 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
   const editableCols = useMemo(() => {
     return allColumns.filter(c => !readOnlyFields.has(c));
   }, [allColumns, readOnlyFields]);
+
+  // The Immediate Head column (case-insensitive), rendered as an employee dropdown.
+  const immediateHeadCol = useMemo(
+    () => editableCols.find(c => c.toLowerCase() === 'immediate head') || null,
+    [editableCols]
+  );
 
   const [values, setValues] = useState(() => {
     const v = {};
@@ -55,6 +109,17 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
   const [error, setError] = useState(null);
   // Fields auto-detected as computed during this session — stripped from payload
   const [skipFields, setSkipFields] = useState(new Set());
+
+  // Once the employee list is available, snap the existing Immediate Head value to its
+  // canonical first+last option so legacy text values map onto the dropdown (and persist
+  // standardized on save). Unmatched values are kept as-is.
+  useEffect(() => {
+    if (!immediateHeadCol) return;
+    setValues(prev => {
+      const mapped = canonicalHead(prev[immediateHeadCol]);
+      return mapped === prev[immediateHeadCol] ? prev : { ...prev, [immediateHeadCol]: mapped };
+    });
+  }, [immediateHeadCol, canonicalHead]);
 
   const handleChange = (col, val) => {
     setValues(prev => ({ ...prev, [col]: val }));
@@ -175,6 +240,13 @@ export default function AirtableRecordForm({ record, allColumns, readOnlyFields,
             onChange={(v) => handleChange(col, v)}
             choices={(meta.choices && meta.choices.length) ? meta.choices : employeeChoices}
             multi={isMultiSelect}
+          />
+        ) : (immediateHeadCol && col === immediateHeadCol) ? (
+          <AirtableSelectField
+            value={values[col]}
+            onChange={(v) => handleChange(col, v)}
+            choices={headOptions}
+            multi={false}
           />
         ) : (
           <Input

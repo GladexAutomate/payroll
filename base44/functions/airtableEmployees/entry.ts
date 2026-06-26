@@ -708,13 +708,20 @@ Deno.serve(async (req) => {
 
     if (action === 'employeeNames') {
       // Every full name across the entire active employee list, for "from employee list" dropdowns.
+      // headNames is the First Name + Last Name only (compound surnames preserved), used for
+      // the Immediate Head dropdown so a head can be picked instead of free-typed.
       const allRecords = await listMirrorRecords(5000);
       const names = new Set();
+      const headNames = new Set();
       for (const record of allRecords.filter(isNotResigned)) {
-        const name = clean(record.full_name || record.fields?.['Full Name'] || record.fields?.['Employee Code ID']);
+        const fields = record.fields || {};
+        const name = clean(record.full_name || fields['Full Name'] || fields['Employee Code ID']);
         if (name) names.add(name);
+        const firstLast = [clean(fields['First Name']), clean(fields['Last Name'])].filter(Boolean).join(' ');
+        if (firstLast) headNames.add(firstLast);
       }
-      return Response.json({ names: Array.from(names).sort((a, b) => a.localeCompare(b)) });
+      const sortNames = (set) => Array.from(set).sort((a, b) => a.localeCompare(b));
+      return Response.json({ names: sortNames(names), headNames: sortNames(headNames) });
     }
 
     if (action === 'organizationHierarchy') {

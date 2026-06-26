@@ -68,6 +68,7 @@ export default function AirtableEmployees() {
     try { return JSON.parse(localStorage.getItem('airtableHiddenColumns') || '[]'); } catch { return []; }
   });
   const [employeeNames, setEmployeeNames] = useState([]); // all full names across the entire employee list
+  const [headNames, setHeadNames] = useState([]); // First + Last names, for the Immediate Head dropdown
   const [fieldChoices, setFieldChoices] = useState({}); // distinct dropdown values per org/HR column
 
   const toggleHiddenColumn = (col) => {
@@ -130,6 +131,7 @@ export default function AirtableEmployees() {
   const loadEmployeeNames = async () => {
     const res = await base44.functions.invoke('airtableEmployees', { action: 'employeeNames' });
     setEmployeeNames(res.data?.names || []);
+    setHeadNames(res.data?.headNames || []);
   };
 
   const loadFieldChoices = async () => {
@@ -472,6 +474,7 @@ export default function AirtableEmployees() {
           companyChoices={companyChoices}
           fieldChoices={fieldChoices}
           employeeNames={employeeNames}
+          headNames={headNames}
           onCancel={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
         />

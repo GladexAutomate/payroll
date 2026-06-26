@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { addDays, format } from 'date-fns';
+import { format } from 'date-fns';
 import { CalendarDays, Send, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { ADMIN_USER, hasAdminAccess } from '@/lib/adminAccess';
 import ScheduleGrid from '@/components/schedule/ScheduleGrid';
 import ScheduleAnalytics from '@/components/schedule/ScheduleAnalytics';
 import ScheduleLegend from '@/components/schedule/ScheduleLegend';
@@ -13,9 +13,32 @@ import LeaveNotices from '@/components/schedule/LeaveNotices';
 import { buildScheduleSummary, getEmployeeName, getEmployeeSalary, getScheduleDays } from '@/components/schedule/scheduleUtils';
 import { buildLeaveOverlay } from '@/components/schedule/leaveOverlay';
 import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
-import ProposalWizard from '@/components/schedule/ProposalWizard';
 
 const cell = (v) => String(v || '').trim().toLowerCase();
+
+// Read a record field by name, ignoring case (Airtable column casing varies, e.g.
+// "Immediate Head" vs "IMMEDIATE HEAD").
+const getField = (fields, name) => {
+  const target = String(name).toLowerCase();
+  const key = Object.keys(fields || {}).find(k => k.toLowerCase() === target);
+  return key != null ? fields[key] : undefined;
+};
+
+// Identity key for matching an employee to their leader: FIRST + LAST name only
+// (middle names/initials are ignored), normalized to uppercase letters so that
+// "Russel Laluces", "RUSSEL LALUCES" and "Russel D. Laluces" all match.
+const nameKey = (value) => {
+  const tokens = String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  if (tokens.length === 0) return '';
+  if (tokens.length === 1) return tokens[0];
+  return `${tokens[0]} ${tokens[tokens.length - 1]}`;
+};
 
 export default function ScheduleProposal() {
   const defaultStart = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
@@ -24,7 +47,6 @@ export default function ScheduleProposal() {
     team_name: '', company_name: '', branch_name: '', department_name: '', department_role: '',
     leader_name: '', leader_email: '', period_start: defaultStart, period_end: defaultEnd, notes: '',
   });
-  const [hierarchy, setHierarchy] = useState({ companies: [], branches: [], departments: [], departmentRoles: [] });
   const [records, setRecords] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [assignments, setAssignments] = useState({});
@@ -32,6 +54,8 @@ export default function ScheduleProposal() {
   const [leaves, setLeaves] = useState([]);
   const [localEmployees, setLocalEmployees] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [myName, setMyName] = useState('');   // the logged-in leader's name (for matching + display)
+  const [identified, setIdentified] = useState(false); // whether we resolved the current user at all
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -39,62 +63,49 @@ export default function ScheduleProposal() {
 
   const loadEmployees = async () => {
     setLoading(true);
-    const [res, shifts, leaveReqs, locals, org, teamData] = await Promise.all([
+
+    // Resolve the current user, then their own employee record for an accurate name
+    // (and org context for HR review) before loading the roster.
+    const me = hasAdminAccess() ? ADMIN_USER : await base44.auth.me().catch(() => null);
+    let leaderName = me?.full_name || '';
+    let leaderEmail = me?.email || '';
+    let leaderOrg = { company_name: '', branch_name: '', department_name: '', department_role: '' };
+    const recId = me?.employee_airtable_record_id;
+    if (recId) {
+      const recs = await base44.entities.AirtableEmployeeRecord
+        .filter({ airtable_record_id: recId }, '-updated_date', 1)
+        .catch(() => []);
+      if (recs.length) {
+        const f = recs[0].fields || {};
+        leaderName = recs[0].full_name
+          || [getField(f, 'first name'), getField(f, 'last name')].filter(Boolean).join(' ')
+          || leaderName;
+        leaderEmail = leaderEmail || getField(f, 'business email') || getField(f, 'email') || '';
+        leaderOrg = {
+          company_name: recs[0].company || getField(f, 'company') || '',
+          branch_name: recs[0].branch || getField(f, 'branch') || '',
+          department_name: recs[0].department || getField(f, 'department') || '',
+          department_role: recs[0].department_role || getField(f, 'department role') || '',
+        };
+      }
+    }
+    setMyName(leaderName);
+    setIdentified(!!me);
+    setForm(prev => ({ ...prev, leader_name: leaderName, leader_email: leaderEmail, ...leaderOrg }));
+
+    const [res, shifts, leaveReqs, locals, teamData] = await Promise.all([
       base44.functions.invoke('airtableEmployees', { action: 'allActive' }),
       base44.entities.ShiftTemplate.list('sort_order'),
       base44.entities.LeaveRequest.filter({ status: { $in: ['approved', 'pending'] } }, '-created_date', 500),
       base44.entities.Employee.list('-created_date', 2000),
-      base44.functions.invoke('airtableEmployees', { action: 'organizationHierarchy' }),
       base44.entities.Team.list('name', 1000),
     ]);
     setRecords(res.data.records || []);
-    setHierarchy(org.data || { companies: [], branches: [], departments: [], departmentRoles: [] });
     setShiftTemplates(shifts || []);
     setLeaves(leaveReqs || []);
     setLocalEmployees(locals || []);
     setTeams(teamData || []);
     setLoading(false);
-  };
-
-  // Resolve the selected org names to their ids so we can scope teams under them.
-  const selectedOrgIds = useMemo(() => {
-    const company = hierarchy.companies.find(c => c.name === form.company_name);
-    const branch = hierarchy.branches.find(b => b.name === form.branch_name);
-    const department = hierarchy.departments.find(d => d.name === form.department_name);
-    const role = hierarchy.departmentRoles.find(r => r.name === form.department_role);
-    return {
-      company_id: company?.id || '',
-      branch_id: branch?.id || '',
-      department_id: department?.id || '',
-      sub_department_id: role?.id || '',
-    };
-  }, [hierarchy, form.company_name, form.branch_name, form.department_name, form.department_role]);
-
-  // Only show teams registered under the chosen company/branch/department/role.
-  const teamOptions = useMemo(() => teams.filter(t => {
-    if (selectedOrgIds.company_id && t.company_id && t.company_id !== selectedOrgIds.company_id) return false;
-    if (selectedOrgIds.branch_id && t.branch_id && t.branch_id !== selectedOrgIds.branch_id) return false;
-    if (selectedOrgIds.department_id && t.department_id && t.department_id !== selectedOrgIds.department_id) return false;
-    if (selectedOrgIds.sub_department_id && t.sub_department_id && t.sub_department_id !== selectedOrgIds.sub_department_id) return false;
-    return true;
-  }), [teams, selectedOrgIds]);
-
-  // Create a new team registered under the currently selected org path, then select it.
-  // Pre-select members of any previously-saved team with the same name for easier scheduling.
-  const createTeam = async (teamName) => {
-    const existingSameName = teams.find(t => cell(t.name) === cell(teamName));
-    const created = await base44.entities.Team.create({
-      name: teamName,
-      ...selectedOrgIds,
-      department_name: form.department_name,
-      leader_name: form.leader_name,
-      leader_email: form.leader_email,
-      member_record_ids: existingSameName?.member_record_ids || [],
-      status: 'active',
-    });
-    const fresh = await base44.entities.Team.list('name', 1000);
-    setTeams(fresh || []);
-    setForm(prev => ({ ...prev, team_name: created?.name || teamName }));
   };
 
   const allEmployees = useMemo(() => records.map(record => ({
@@ -103,44 +114,25 @@ export default function ScheduleProposal() {
     airtable_record_id: record.airtable_record_id || record.fields?.['RECORD ID'] || record.id,
     name: getEmployeeName(record),
     monthly_salary: getEmployeeSalary(record),
-    company: record.fields?.Company || record.fields?.COMPANY || '',
-    branch: record.fields?.Branch || record.fields?.BRANCH || '',
-    department: record.fields?.Department || '',
-    department_role: record.fields?.['Department Role'] || '',
-    team: record.fields?.Team || record.fields?.TEAM || '',
+    immediate_head: getField(record.fields, 'immediate head') || '',
     email: record.fields?.Email || record.fields?.['Business email'] || '',
   })), [records]);
 
-  // Form must be complete before employees show; then only show those under the chosen org path.
-  const formComplete = !!(form.leader_name && form.company_name && form.branch_name && form.department_name && form.department_role && form.team_name);
+  // The leader's identity key. Everyone (including admins) is scoped to the employees
+  // who list them as their Immediate Head.
+  const myKey = useMemo(() => nameKey(myName), [myName]);
 
+  // Direct reports: active employees whose Immediate Head matches the logged-in user
+  // by first + last name.
   const employees = useMemo(() => {
-    if (!formComplete) return [];
-    return allEmployees.filter(emp =>
-      cell(emp.company) === cell(form.company_name) &&
-      cell(emp.branch) === cell(form.branch_name) &&
-      cell(emp.department) === cell(form.department_name) &&
-      cell(emp.department_role) === cell(form.department_role)
-    );
-  }, [allEmployees, formComplete, form.company_name, form.branch_name, form.department_name, form.department_role]);
+    if (!myKey) return [];
+    return allEmployees.filter(emp => emp.immediate_head && nameKey(emp.immediate_head) === myKey);
+  }, [allEmployees, myKey]);
 
-  // When a team is picked, pre-select its previously-saved members (matched against the
-  // employees available under the chosen org path). User can still add/remove manually.
+  // Pre-select all direct reports by default; the leader can still deselect any.
   useEffect(() => {
-    if (!form.team_name || employees.length === 0) return;
-    const team = teams.find(t => cell(t.name) === cell(form.team_name));
-    const memberIds = new Set((team?.member_record_ids || []).map(String));
-    const preselected = employees
-      .filter(emp =>
-        memberIds.has(String(emp.id)) ||
-        memberIds.has(String(emp.airtable_record_id)) ||
-        memberIds.has(String(emp.backend_id)) ||
-        cell(emp.team) === cell(form.team_name)
-      )
-      .map(emp => emp.id);
-    if (preselected.length === 0) return;
-    setSelectedIds(preselected);
-  }, [form.team_name, employees, teams]);
+    setSelectedIds(employees.map(emp => emp.id));
+  }, [employees]);
 
   const selectedEmployees = useMemo(() => employees.filter(emp => selectedIds.includes(emp.id)), [employees, selectedIds]);
 
@@ -164,10 +156,6 @@ export default function ScheduleProposal() {
     periodEnd: form.period_end,
     shiftTemplates,
   }), [selectedEmployees, effectiveAssignments, form.period_start, form.period_end, shiftTemplates]);
-
-  const branchOptions = useMemo(() => hierarchy.branches.filter(b => !form.company_name || b.company_name === form.company_name), [hierarchy, form.company_name]);
-  const departmentOptions = useMemo(() => hierarchy.departments.filter(d => (!form.company_name || d.company_name === form.company_name) && (!form.branch_name || d.branch_name === form.branch_name)), [hierarchy, form.company_name, form.branch_name]);
-  const roleOptions = useMemo(() => hierarchy.departmentRoles.filter(r => (!form.company_name || r.company_name === form.company_name) && (!form.branch_name || r.branch_name === form.branch_name) && (!form.department_name || r.department_name === form.department_name)), [hierarchy, form.company_name, form.branch_name, form.department_name]);
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const toggleEmployee = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -226,43 +214,38 @@ export default function ScheduleProposal() {
   const submitProposal = async (e) => {
     e.preventDefault();
     setSaving(true);
+    // Team name is derived from the leader so the proposal/Teams page stay populated
+    // without the old org checklist.
+    const team_name = myName ? `${myName}'s Team` : 'My Team';
     await base44.entities.AttendanceProposal.create({
       ...form,
+      team_name,
       status: 'pending_hr_review',
       employees: selectedEmployees,
       assignments: effectiveAssignments,
       summary,
     });
 
-    // Save the chosen employees as the team's members so they appear on the Teams page.
+    // Keep the leader's team membership current so it shows on the Teams page.
     const memberIds = selectedEmployees.map(emp => String(emp.airtable_record_id || emp.id));
-    const existingTeam = teams.find(t => cell(t.name) === cell(form.team_name));
+    const existingTeam = teams.find(t => cell(t.name) === cell(team_name));
+    const teamData = {
+      leader_name: form.leader_name,
+      leader_email: form.leader_email,
+      department_name: form.department_name,
+      member_record_ids: memberIds,
+    };
     if (existingTeam) {
-      await base44.entities.Team.update(existingTeam.id, {
-        member_record_ids: memberIds,
-        ...selectedOrgIds,
-        department_name: form.department_name,
-        leader_name: form.leader_name,
-        leader_email: form.leader_email,
-      });
-    } else if (form.team_name) {
-      await base44.entities.Team.create({
-        name: form.team_name,
-        ...selectedOrgIds,
-        department_name: form.department_name,
-        leader_name: form.leader_name,
-        leader_email: form.leader_email,
-        member_record_ids: memberIds,
-        status: 'active',
-      });
+      await base44.entities.Team.update(existingTeam.id, teamData);
+    } else {
+      await base44.entities.Team.create({ name: team_name, status: 'active', ...teamData });
     }
-    const refreshedTeams = await base44.entities.Team.list('name', 1000);
+    const refreshedTeams = await base44.entities.Team.list('name', 1000).catch(() => []);
     setTeams(refreshedTeams || []);
 
     setSaving(false);
-    setSelectedIds([]);
     setAssignments({});
-    setForm(prev => ({ ...prev, team_name: '', notes: '' }));
+    setForm(prev => ({ ...prev, notes: '' }));
   };
 
   return (
@@ -272,31 +255,42 @@ export default function ScheduleProposal() {
           <CalendarDays className="w-5 h-5 text-primary" />
           <div>
             <h2 className="font-semibold">Schedule Proposal</h2>
-            <p className="text-xs text-muted-foreground">Create the team schedule request for HR review.</p>
+            <p className="text-xs text-muted-foreground">Create a schedule request for your team — only employees who report to you are shown.</p>
           </div>
         </div>
-        <ProposalWizard
-          form={form}
-          setForm={setForm}
-          hierarchy={hierarchy}
-          branchOptions={branchOptions}
-          departmentOptions={departmentOptions}
-          roleOptions={roleOptions}
-          teamOptions={teamOptions}
-          onCreateTeam={createTeam}
-          complete={formComplete}
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label className="text-sm font-semibold">Leader</Label>
+            <p className="text-sm text-muted-foreground mt-1.5">{myName || (loading ? 'Loading…' : 'Unknown user')}</p>
+          </div>
+          <div>
+            <Label className="text-sm font-semibold">Schedule Period</Label>
+            <div className="mt-1.5">
+              <PayPeriodPicker
+                periodStart={form.period_start}
+                periodEnd={form.period_end}
+                onChange={(start, end) => setForm(prev => ({ ...prev, period_start: start, period_end: end }))}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="mt-3">
+          <Label className="text-xs">Notes</Label>
+          <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} className="mt-1" />
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Select Employees</h3></div>
-          <span className="text-xs text-muted-foreground">{selectedEmployees.length} selected</span>
+          <div className="flex items-center gap-2"><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm">Your Team</h3></div>
+          <span className="text-xs text-muted-foreground">{selectedEmployees.length} of {employees.length} selected</span>
         </div>
-        {!formComplete ? (
-          <div className="text-sm text-muted-foreground py-6 text-center">Complete the schedule details above to load employees.</div>
-        ) : loading ? <div className="text-sm text-muted-foreground py-6">Loading Airtable employees...</div> : employees.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-6 text-center">No employees found under the selected company, branch, department and role.</div>
+        {loading ? (
+          <div className="text-sm text-muted-foreground py-6">Loading your team...</div>
+        ) : !identified || !myName ? (
+          <div className="text-sm text-muted-foreground py-6 text-center">We couldn't identify your account, so your team couldn't be loaded.</div>
+        ) : employees.length === 0 ? (
+          <div className="text-sm text-muted-foreground py-6 text-center">No employees list <strong>{myName}</strong> as their Immediate Head, so there's no one to schedule.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-auto pr-1">
             {employees.map(emp => (
