@@ -26,6 +26,13 @@
     },
     "employee_password_last_verified_at": {
       "type": "string"
+    },
+    "airtable_hidden_columns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Per-user hidden columns for the Airtable Employee List table"
     }
   }
 }

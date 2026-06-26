@@ -71,17 +71,47 @@ export default function AirtableEmployees() {
   const [headNames, setHeadNames] = useState([]); // First + Last names, for the Immediate Head dropdown
   const [fieldChoices, setFieldChoices] = useState({}); // distinct dropdown values per org/HR column
 
+  // Persist hidden columns both instantly (localStorage cache) and per-user on the server,
+  // so the preference survives browser storage being cleared and follows the user across
+  // devices/sessions. The server write is debounced; localStorage updates immediately.
+  const persistTimer = useRef(null);
+  const hiddenColumnsTouched = useRef(false);
+  const persistHiddenColumns = (next) => {
+    hiddenColumnsTouched.current = true;
+    try { localStorage.setItem('airtableHiddenColumns', JSON.stringify(next)); } catch { /* ignore */ }
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
+      base44.functions.invoke('airtableEmployees', { action: 'saveHiddenColumns', columns: next }).catch(() => {});
+    }, 600);
+  };
+
   const toggleHiddenColumn = (col) => {
     setHiddenColumns(prev => {
       const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
-      localStorage.setItem('airtableHiddenColumns', JSON.stringify(next));
+      persistHiddenColumns(next);
       return next;
     });
   };
   const showAllColumns = () => {
     setHiddenColumns([]);
-    localStorage.setItem('airtableHiddenColumns', '[]');
+    persistHiddenColumns([]);
   };
+
+  // Load the user's saved hidden-column preference (the source of truth) once on mount,
+  // so columns stay hidden even if the browser cache was cleared. Falls back to the
+  // localStorage value when not logged in (e.g. local admin / preview). We skip applying
+  // the server value if the user already toggled something, to avoid clobbering a fresh change.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await base44.auth.me();
+        if (!hiddenColumnsTouched.current && Array.isArray(me?.airtable_hidden_columns)) {
+          setHiddenColumns(me.airtable_hidden_columns);
+          try { localStorage.setItem('airtableHiddenColumns', JSON.stringify(me.airtable_hidden_columns)); } catch { /* ignore */ }
+        }
+      } catch { /* not logged in / preview — keep the localStorage value */ }
+    })();
+  }, []);
 
   const loadPage = async (offset = null, searchQuery = search, filters = columnFilters, sort = sortConfig) => {
     setLoading(true);

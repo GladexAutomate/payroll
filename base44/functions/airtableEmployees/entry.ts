@@ -553,6 +553,15 @@ Deno.serve(async (req) => {
       return Response.json({ allowed: true });
     }
 
+    if (action === 'saveHiddenColumns') {
+      // Persist the user's hidden-column preference for the Airtable Employee List on
+      // their own user record, so it survives the browser cache being cleared and follows
+      // them across devices/sessions.
+      const columns = Array.isArray(body.columns) ? body.columns.map((c) => String(c)) : [];
+      await base44.auth.updateMe({ airtable_hidden_columns: columns });
+      return Response.json({ ok: true, columns });
+    }
+
     if (action === 'schema') {
       // Derive a lightweight schema from existing mirror records (standalone, no Airtable).
       const sample = await listMirrorRecords(500);
