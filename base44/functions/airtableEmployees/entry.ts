@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     // Backend-only actions can run unattended (e.g. the consolidation orchestrator via
     // service role). All other actions require an authenticated user.
     // publicOnboard is reachable without login (new-hire self-service form link).
-    const BACKEND_ACTIONS = new Set(['syncFromAirtable', 'syncStatus', 'publicOnboard', 'onboardChoices']);
+    const BACKEND_ACTIONS = new Set(['syncStatus', 'publicOnboard', 'onboardChoices']);
     let user = null;
     try { user = await base44.auth.me(); } catch (_e) { user = null; }
     if (!user && !BACKEND_ACTIONS.has(action)) {
@@ -246,118 +246,10 @@ Deno.serve(async (req) => {
       }
     };
 
-    // Airtable write helpers. Only push fields that are real Airtable columns and not
-    // computed/read-only (Airtable rejects writes to formula/auto fields with a 422).
-    const AIRTABLE_READONLY = new Set([
-      'RECORD ID', 'Calculated Employment Status', 'Tenure(Months)', 'New Formula Column',
-      'Employee Code', 'Full Name', 'Employee #', 'Birth Month', 'Age', 'Years of Service',
-      'Tenure', 'Year',
-    ]);
-    const airtableWritableFields = (fields) => {
-      const out = {};
-      for (const [key, value] of Object.entries(fields || {})) {
-        if (AIRTABLE_READONLY.has(key)) continue;
-        // Skip re-hosted file attachments (Base44 file_uri objects, not Airtable attachments).
-        if (Array.isArray(value) && value.some((v) => v && typeof v === 'object' && v.file_uri)) continue;
-        out[key] = value;
-      }
-      return out;
-    };
-    const airtableConfig = () => {
-      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
-      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
-      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
-      if (!apiKey || !baseId || !tableName) throw new Error('Airtable is not configured.');
-      return { apiKey, baseId, tableName };
-    };
-    // Create a new Airtable record; returns the new Airtable record id.
-    const createInAirtable = async (fields) => {
-      const { apiKey, baseId, tableName } = airtableConfig();
-      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: airtableWritableFields(fields), typecast: true }),
-      });
-      if (!resp.ok) throw new Error(`Airtable create failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-      return (await resp.json()).id;
-    };
-    // Patch an existing Airtable record by id, and verify the values actually landed.
-    // Single-select fields silently drop a value when the option doesn't exist and
-    // can't be auto-created (typecast) — that's what made saved edits "revert" after
-    // the next Airtable sync. We re-read the record and compare so we can surface a
-    // clear error instead of a false success.
-    const updateInAirtable = async (airtableId, fields) => {
-      const { apiKey, baseId, tableName } = airtableConfig();
-      const writable = airtableWritableFields(fields);
-      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`;
-      const resp = await fetch(url, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: writable, typecast: true }),
-      });
-      if (!resp.ok) throw new Error(`Airtable update failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-      const saved = (await resp.json())?.fields || {};
-      // Detect text/select fields that Airtable silently dropped (sent a non-empty
-      // value, but the record came back without it).
-      const dropped = Object.entries(writable)
-        .filter(([key, val]) => {
-          if (val == null || val === '' || Array.isArray(val) || typeof val === 'object') return false;
-          const after = saved[key];
-          return String(after ?? '').trim() !== String(val).trim();
-        })
-        .map(([key]) => key);
-      if (dropped.length) {
-        throw new Error(`Airtable rejected new value(s) for: ${dropped.join(', ')}. This field is a single-select in Airtable and the option doesn't exist yet — add the option in Airtable first, then save again.`);
-      }
-    };
-    // Delete an Airtable record by id.
-    const deleteInAirtable = async (airtableId) => {
-      const { apiKey, baseId, tableName } = airtableConfig();
-      const resp = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${airtableId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!resp.ok) throw new Error(`Airtable delete failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-    };
-
-    // Fetch every record from the configured Airtable table (handles pagination).
-    const fetchAirtableRecords = async () => {
-      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
-      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
-      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
-      if (!apiKey || !baseId || !tableName) {
-        throw new Error('Airtable is not configured. Set AIRTABLE_API_KEY, AIRTABLE_BASE_ID and AIRTABLE_TABLE_NAME.');
-      }
-      const records = [];
-      let offset = null;
-      do {
-        const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
-        url.searchParams.set('pageSize', '100');
-        if (offset) url.searchParams.set('offset', offset);
-        const resp = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey}` } });
-        if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`Airtable API error ${resp.status}: ${text.slice(0, 200)}`);
-        }
-        const data = await resp.json();
-        records.push(...(data.records || []));
-        offset = data.offset || null;
-      } while (offset);
-      return records;
-    };
-
-    // Pull the latest changes from Airtable into the Base44 mirror, then refresh
-    // employee accounts. Existing re-hosted file attachments are preserved (Airtable
-    // returns its own attachment URLs which we don't want to overwrite the hosted files with).
-    // Airtable is no longer the source of truth — the backend employee mirror is.
-    // This used to pull Airtable → mirror; now it's a no-op that only refreshes
-    // EmployeeAccount rows from the mirror, so the existing automation stays valid
-    // without ever overwriting in-app edits.
-    const syncFromAirtable = async (dryRun = false) => {
-      const existing = await listMirrorRecords(5000);
-      if (dryRun) return { synced: existing.length, created: 0, updated: 0, removed: 0, dryRun: true, source: 'backend' };
+    // Refresh the EmployeeAccount rows from the Base44 employee mirror (the source of
+    // truth). Airtable is no longer involved anywhere in this app.
+    const refreshEmployeeAccounts = async () => {
       await syncEmployeeAccounts();
-      return { synced: existing.length, created: 0, updated: 0, pending_updates: 0, removed: 0, source: 'backend' };
     };
 
     const buildHierarchy = async () => {
@@ -468,7 +360,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'autoMatchBiometrics') {
-      await syncFromAirtable();
+      await refreshEmployeeAccounts();
       const employees = await base44.asServiceRole.entities.Employee.list('-updated_date', 5000);
       const matches = await base44.asServiceRole.entities.EmployeeAirtableMatch.list('-updated_date', 5000);
       const matchedEmployeeIds = new Set(matches.map(match => match.employee_record_id));
@@ -506,8 +398,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'employeeAccounts') {
-      // Read stored accounts (no recompute). Pass refresh:true to re-sync from Airtable first.
-      if (body.refresh) await syncFromAirtable();
+      // Read stored accounts (no recompute). Pass refresh:true to rebuild them from the mirror first.
+      if (body.refresh) await refreshEmployeeAccounts();
       const accounts = await base44.asServiceRole.entities.EmployeeAccount.list('full_name', 5000);
       return Response.json({ accounts });
     }
@@ -587,49 +479,6 @@ Deno.serve(async (req) => {
         if (!fieldsMeta[key]) fieldsMeta[key] = { type };
       }
       return Response.json({ computedFields: [], fieldsMeta });
-    }
-
-    // Diagnostic: list the tables Airtable actually sees for the configured base,
-    // so a 404 (wrong base id / table name) can be pinpointed quickly.
-    if (action === 'airtableDiagnostics') {
-      const apiKey = Deno.env.get('AIRTABLE_API_KEY');
-      const baseId = Deno.env.get('AIRTABLE_BASE_ID');
-      const tableName = Deno.env.get('AIRTABLE_TABLE_NAME');
-      const meta = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, { headers: { Authorization: `Bearer ${apiKey}` } });
-      const metaText = await meta.text();
-      let tables = null;
-      try {
-        tables = (JSON.parse(metaText).tables || []).map(t => ({ name: t.name, id: t.id }));
-      } catch (_e) { /* keep raw */ }
-      return Response.json({
-        configured: { baseId_prefix: String(baseId || '').slice(0, 4), baseId_length: String(baseId || '').length, tableName },
-        meta_status: meta.status,
-        tables: tables || metaText.slice(0, 300),
-      });
-    }
-
-    if (action === 'syncFromAirtable') {
-      const startedAt = new Date();
-      try {
-        const result = await syncFromAirtable(body.dryRun === true);
-        if (body.dryRun === true) return Response.json(result);
-        const finishedAt = new Date();
-        await base44.asServiceRole.entities.SyncLog.create({
-          kind: 'airtable', status: 'success',
-          started_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(),
-          duration_ms: finishedAt - startedAt, total_synced: result.synced || 0, error_count: 0,
-          summary: result, message: 'Airtable → Base44',
-        }).catch(() => {});
-        return Response.json(result);
-      } catch (error) {
-        const finishedAt = new Date();
-        await base44.asServiceRole.entities.SyncLog.create({
-          kind: 'airtable', status: 'error',
-          started_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(),
-          duration_ms: finishedAt - startedAt, message: error.message,
-        }).catch(() => {});
-        return Response.json({ error: error.message }, { status: 500 });
-      }
     }
 
     if (action === 'matchCandidates') {

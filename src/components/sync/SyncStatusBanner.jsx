@@ -35,8 +35,8 @@ export default function SyncStatusBanner() {
 
   const runNow = async () => {
     setRunning(true);
-    // Airtable first, then Supabase — keeps downstream data fresh.
-    await base44.functions.invoke('airtableEmployees', { action: 'syncFromAirtable' }).catch(() => {});
+    // Push the Base44 database (the source of truth) to Supabase. Changes already sync
+    // in real time on every edit; this is a manual full sweep.
     await base44.functions.invoke('syncToSupabase', { env: getAppEnv() }).catch(() => {});
     setRunning(false);
     load();

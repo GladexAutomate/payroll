@@ -1,60 +1,10 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
-const MIRROR_ENTITY = 'AirtableEmployeeRecord';
-const AIRTABLE_BASE_ID = 'appNRjLCu4uxT395V';
-const AIRTABLE_TABLE_ID = 'tblAOjFrCv9R6fFKq';
-
-// Airtable attachment columns we extract, and the mirror fields we store them on.
-const ATTACHMENT_MAP = [
-  { airtableField: 'CONTRACT', mirrorField: 'Contract Files' },
-  { airtableField: 'ATD DOCUMENTS', mirrorField: 'ATD Files' },
-];
-
-// How many Airtable records to process per polling request. Each record can have
-// several files to download + re-host, so we keep the batch small to stay fast.
-const BATCH_SIZE = 3;
-
-const clean = (value) => String(value || '').trim();
-
-// Pull one page of Airtable records (just the two attachment fields + Employee Code).
-async function fetchAirtablePage(apiKey, offset) {
-  const params = new URLSearchParams();
-  params.set('pageSize', '100');
-  params.append('fields[]', 'Employee Code');
-  params.append('fields[]', 'CONTRACT');
-  params.append('fields[]', 'ATD DOCUMENTS');
-  if (offset) params.set('offset', offset);
-
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_ID}?${params.toString()}`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Airtable error ${resp.status}: ${text.slice(0, 300)}`);
-  }
-  return await resp.json();
-}
-
-// Load every Airtable record into a flat list once (paginated). Returns an array
-// of { employeeCode, attachments: { 'Contract Files': [...], 'ATD Files': [...] } }.
-async function loadAllAirtableRecords(apiKey) {
-  const out = [];
-  let offset = null;
-  do {
-    const page = await fetchAirtablePage(apiKey, offset);
-    for (const rec of page.records || []) {
-      const employeeCode = clean(rec.fields?.['Employee Code']);
-      if (!employeeCode) continue;
-      const attachments = {};
-      for (const { airtableField, mirrorField } of ATTACHMENT_MAP) {
-        const arr = Array.isArray(rec.fields?.[airtableField]) ? rec.fields[airtableField] : [];
-        attachments[mirrorField] = arr.map((a) => ({ filename: a.filename, url: a.url, type: a.type, size: a.size }));
-      }
-      out.push({ employeeCode, attachments });
-    }
-    offset = page.offset || null;
-  } while (offset);
-  return out;
-}
+// File handling for employee records: sign download links for stored private files,
+// and re-host files uploaded from the edit form into Base44 private storage.
+//
+// NOTE: Airtable file extraction has been removed. The Base44 database is the sole
+// source of truth — files now only ever come from in-app uploads.
 
 // Best-effort MIME type so PDFs are stored + served correctly (viewable inline).
 function resolveType(file, blobType) {
@@ -68,19 +18,6 @@ function resolveType(file, blobType) {
   return blobType || 'application/octet-stream';
 }
 
-// Download a file from Airtable's (temporary) URL and re-host it permanently in Base44.
-async function rehostFile(base44, apiKey, file) {
-  const resp = await fetch(file.url, { headers: { Authorization: `Bearer ${apiKey}` } });
-  if (!resp.ok) throw new Error(`download failed (${resp.status})`);
-  const blob = await resp.blob();
-  const type = resolveType(file, blob.type);
-  const named = new File([blob], file.filename || 'document', { type });
-  const uploaded = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: named });
-  const fileUri = uploaded?.file_uri || uploaded?.data?.file_uri;
-  if (!fileUri) throw new Error('upload returned no file_uri');
-  return { filename: file.filename || 'document', file_uri: fileUri, type };
-}
-
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -91,7 +28,6 @@ Deno.serve(async (req) => {
     const { action } = body;
 
     // ── SIGN URL: create a temporary download link for a stored private file ────
-    // Any authenticated user can fetch a download link for an already-stored file.
     if (action === 'signUrl') {
       const { fileUri } = body;
       if (!fileUri) return Response.json({ error: 'fileUri required' }, { status: 400 });
@@ -103,7 +39,7 @@ Deno.serve(async (req) => {
     // ── UPLOAD FILES: re-host files dragged/uploaded from the edit form ─────────
     // Receives an array of { filename, type, dataUrl(base64) }, stores each in
     // private storage, and returns [{ filename, file_uri, type }] to merge into
-    // the record's file field. Any authenticated user may upload.
+    // the record's file field.
     if (action === 'uploadFiles') {
       const incoming = Array.isArray(body.files) ? body.files : [];
       if (incoming.length === 0) return Response.json({ error: 'No files provided' }, { status: 400 });
@@ -121,92 +57,6 @@ Deno.serve(async (req) => {
         if (fileUri) stored.push({ filename: name, file_uri: fileUri, type });
       }
       return Response.json({ files: stored });
-    }
-
-    // Extraction (prepare / processBatch) writes data and is admin-only.
-    if (user.role !== 'admin') return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
-
-    const apiKey = Deno.env.get('AIRTABLE_API_KEY');
-    if (!apiKey) return Response.json({ error: 'AIRTABLE_API_KEY not set' }, { status: 500 });
-
-    // ── PREPARE: count how many Airtable records have files to extract ──────────
-    if (action === 'prepare') {
-      const records = await loadAllAirtableRecords(apiKey);
-      const withFiles = records.filter((r) =>
-        ATTACHMENT_MAP.some(({ mirrorField }) => (r.attachments[mirrorField] || []).length > 0)
-      );
-      return Response.json({ total: withFiles.length, totalRecords: records.length });
-    }
-
-    // ── PROCESS BATCH: re-host files for one slice of records, save to mirror ───
-    if (action === 'processBatch') {
-      const offset = body.offset || 0;
-
-      const records = await loadAllAirtableRecords(apiKey);
-      const withFiles = records.filter((r) =>
-        ATTACHMENT_MAP.some(({ mirrorField }) => (r.attachments[mirrorField] || []).length > 0)
-      );
-      const total = withFiles.length;
-      const batch = withFiles.slice(offset, offset + BATCH_SIZE);
-
-      if (batch.length === 0) {
-        return Response.json({ done: true, processed: total, total });
-      }
-
-      // Map Employee Code -> mirror record (one lookup for the whole batch).
-      const codes = batch.map((r) => r.employeeCode);
-      const mirrorRecords = await base44.asServiceRole.entities[MIRROR_ENTITY].filter(
-        { employee_code: { $in: codes } }, '', 1000
-      );
-      const mirrorByCode = {};
-      for (const m of mirrorRecords) mirrorByCode[clean(m.employee_code)] = m;
-
-      let processed = 0;
-      let filesStored = 0;
-      let skipped = 0;
-      let alreadyDone = 0;
-
-      for (const rec of batch) {
-        const mirror = mirrorByCode[rec.employeeCode];
-        if (!mirror) { skipped += 1; continue; }
-
-        const existing = mirror.fields || {};
-        const newFields = { ...existing };
-        let changed = false;
-
-        for (const { mirrorField } of ATTACHMENT_MAP) {
-          const files = rec.attachments[mirrorField] || [];
-          if (files.length === 0) continue;
-
-          // Skip if this field is already fully re-hosted (same file count, all on Base44).
-          const stored = Array.isArray(existing[mirrorField]) ? existing[mirrorField] : [];
-          const allRehosted = stored.length === files.length && stored.every((s) => s.file_uri);
-          if (allRehosted) continue;
-
-          const rehosted = [];
-          for (const f of files) {
-            try {
-              rehosted.push(await rehostFile(base44, apiKey, f));
-              filesStored += 1;
-            } catch (_e) { /* skip a single bad file, keep going */ }
-          }
-          if (rehosted.length) { newFields[mirrorField] = rehosted; changed = true; }
-        }
-
-        if (changed) {
-          await base44.asServiceRole.entities[MIRROR_ENTITY].update(mirror.id, { fields: newFields });
-          processed += 1;
-        } else {
-          alreadyDone += 1; // nothing new to do — already extracted on a prior run
-        }
-      }
-
-      const newProcessed = Math.min(offset + batch.length, total);
-      const done = newProcessed >= total;
-      return Response.json({
-        done, nextOffset: newProcessed, processed: newProcessed, total,
-        batchStored: filesStored, batchSkipped: skipped, alreadyDone,
-      });
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 });
