@@ -3,6 +3,7 @@ import { Link2, Building2, Users, Search } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Input } from '@/components/ui/input';
 import ScheduleLinkRow from '@/components/schedule/ScheduleLinkRow';
+import PayPeriodPicker from '@/components/schedule/PayPeriodPicker';
 
 function LinkSection({ icon: Icon, title, count, children }) {
   return (
@@ -47,16 +48,17 @@ export default function ScheduleLinks() {
   const [plottedSourceIds, setPlottedSourceIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [periodStart, setPeriodStart] = useState(() => getCurrentPayPeriod().start);
+  const [periodEnd, setPeriodEnd] = useState(() => getCurrentPayPeriod().end);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [periodStart, periodEnd]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const period = getCurrentPayPeriod();
       const [proposalData, plottedData] = await Promise.all([
         base44.entities.AttendanceProposal.list('-created_date', 1000),
-        base44.entities.ApprovedSchedule.filter({ date: { $gte: period.start, $lte: period.end } }, '-date', 5000),
+        base44.entities.ApprovedSchedule.filter({ date: { $gte: periodStart, $lte: periodEnd } }, '-date', 5000),
       ]);
       setApprovedProposals(proposalData || []);
       setPlottedSourceIds(new Set((plottedData || []).map(row => row.source_proposal_id).filter(Boolean).map(String)));
@@ -104,10 +106,14 @@ export default function ScheduleLinks() {
 
   const teams = useMemo(() => uniqueRows(
     scheduleProposals,
-    proposal => pathKey(proposal.team_name),
+    // Name each team link after its leader/creator (the immediate-head flow is
+    // leader-scoped). Group by leader, falling back to team_name then the proposal id so
+    // a proposal with neither is still listed — uniqueRows drops empty keys, and the link
+    // itself is keyed by proposal id so it opens correctly regardless of the name.
+    proposal => pathKey(proposal.leader_name) || pathKey(proposal.team_name) || pathKey(proposal.id),
     proposal => ({
       id: proposal.id,
-      name: proposal.team_name || 'Team',
+      name: proposal.leader_name ? `${proposal.leader_name}'s Team` : (proposal.team_name || 'Team'),
       value: pathValue(proposal.team_name, proposal.id),
     })
   ), [scheduleProposals]);
@@ -126,10 +132,17 @@ export default function ScheduleLinks() {
           <Link2 className="w-5 h-5 text-primary" />
           <div>
             <h2 className="font-semibold">Approved Schedule Links</h2>
-            <p className="text-xs text-muted-foreground">Each link opens an approved plotted schedule filtered to that group.</p>
+            <p className="text-xs text-muted-foreground">Each link opens an approved plotted schedule filtered to that group. Only schedules plotted in the selected pay period are listed.</p>
           </div>
         </div>
-        <div className="relative mt-4">
+        <div className="mt-4">
+          <PayPeriodPicker
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            onChange={(start, end) => { setPeriodStart(start); setPeriodEnd(end); }}
+          />
+        </div>
+        <div className="relative mt-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search branch, department, role, or team..." className="pl-9" />
         </div>
@@ -141,28 +154,28 @@ export default function ScheduleLinks() {
         <>
           <LinkSection icon={Building2} title="Per Branch" count={filteredBranches.length}>
             {filteredBranches.map(branch => (
-              <ScheduleLinkRow key={branch.id} label={branch.label} scope="branch" value={branch.value} />
+              <ScheduleLinkRow key={branch.id} label={branch.label} scope="branch" value={branch.value} periodStart={periodStart} periodEnd={periodEnd} />
             ))}
             {filteredBranches.length === 0 && <p className="text-xs text-muted-foreground">No matching branch schedules found.</p>}
           </LinkSection>
 
           <LinkSection icon={Building2} title="Per Department" count={filteredDepartments.length}>
             {filteredDepartments.map(department => (
-              <ScheduleLinkRow key={department.id} label={department.label} scope="department" value={department.value} />
+              <ScheduleLinkRow key={department.id} label={department.label} scope="department" value={department.value} periodStart={periodStart} periodEnd={periodEnd} />
             ))}
             {filteredDepartments.length === 0 && <p className="text-xs text-muted-foreground">No matching department schedules found.</p>}
           </LinkSection>
 
           <LinkSection icon={Building2} title="Per Department Role" count={filteredRoles.length}>
             {filteredRoles.map(role => (
-              <ScheduleLinkRow key={role.id} label={role.label} scope="department_role" value={role.value} />
+              <ScheduleLinkRow key={role.id} label={role.label} scope="department_role" value={role.value} periodStart={periodStart} periodEnd={periodEnd} />
             ))}
             {filteredRoles.length === 0 && <p className="text-xs text-muted-foreground">No matching role schedules found.</p>}
           </LinkSection>
 
           <LinkSection icon={Users} title="Per Team" count={filteredTeams.length}>
             {filteredTeams.map(team => (
-              <ScheduleLinkRow key={team.id} label={team.name} scope="team" value={team.value} />
+              <ScheduleLinkRow key={team.id} label={team.name} scope="team" value={team.value} periodStart={periodStart} periodEnd={periodEnd} />
             ))}
             {filteredTeams.length === 0 && <p className="text-xs text-muted-foreground">No matching team schedules found.</p>}
           </LinkSection>

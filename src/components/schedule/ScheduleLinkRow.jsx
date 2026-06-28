@@ -3,9 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Copy, Check, ExternalLink } from 'lucide-react';
 
 // One approved-schedule link entry with copy-to-clipboard and open actions.
-export default function ScheduleLinkRow({ label, scope, value }) {
+export default function ScheduleLinkRow({ label, scope, value, periodStart, periodEnd }) {
   const [copied, setCopied] = useState(false);
-  const path = `/schedule/${encodeURIComponent(scope)}/${encodeURIComponent(value)}`;
+  // Carry the pay period so the opened (read-only) schedule lands on the right dates
+  // instead of defaulting to the current period.
+  const query = periodStart && periodEnd
+    ? `?start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`
+    : '';
+  const path = `/schedule/${encodeURIComponent(scope)}/${encodeURIComponent(value)}${query}`;
   const fullUrl = `${window.location.origin}${path}`;
 
   const copy = async () => {

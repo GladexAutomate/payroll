@@ -34,9 +34,14 @@ const getCurrentPayPeriod = () => {
 };
 
 export default function ApprovedSchedule({ readOnly = false }) {
+  const [searchParams] = useSearchParams();
+  const params = useParams();
+  // Schedule-link routes carry the pay period they were generated for (?start&end), so the
+  // read-only view lands on the right period — e.g. a July schedule opened in June — instead
+  // of defaulting to the current period and showing a blank grid.
   const defaultPeriod = useMemo(() => getCurrentPayPeriod(), []);
-  const [periodStart, setPeriodStart] = useState(defaultPeriod.start);
-  const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end);
+  const [periodStart, setPeriodStart] = useState(searchParams.get('start') || defaultPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(searchParams.get('end') || defaultPeriod.end);
   const [records, setRecords] = useState([]);
   const [shiftTemplates, setShiftTemplates] = useState([]);
   const [plotted, setPlotted] = useState([]);
@@ -55,8 +60,6 @@ export default function ApprovedSchedule({ readOnly = false }) {
   const { tier, signerName, signerRole } = useCurrentTier();
   // Only HR, Managers, and Leaders/Supervisors can modify the approved schedule.
   const canEdit = ['hr', 'managers', 'leaders'].includes(tier);
-  const [searchParams] = useSearchParams();
-  const params = useParams();
   const scope = params.scope || searchParams.get('scope') || '';
   const scopeValue = params.value ? decodeURIComponent(params.value) : (searchParams.get('value') || '');
 
