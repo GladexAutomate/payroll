@@ -2,6 +2,53 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
 const MIRROR_ENTITY = 'AirtableEmployeeRecord';
 
+// --- Direct Supabase mirroring -------------------------------------------------
+// Every write made through this function (employee records AND the derived
+// EmployeeAccount rows that power User Management) is pushed straight into the
+// matching Supabase production table here, synchronously. This guarantees changes
+// reach Supabase immediately without depending on a Base44 entity automation being
+// configured, and without waiting for the 5-minute syncToSupabase sweep (which still
+// runs as a reconciling fallback). All pushes are best-effort: a Supabase hiccup is
+// logged but never blocks the employee edit — the sweep will reconcile later.
+const supabaseRestBase = (rawUrl) => {
+  let base = String(rawUrl || '').replace(/\/+$/, '');
+  if (!/\/rest\/v1$/.test(base)) base = `${base}/rest/v1`;
+  return base;
+};
+const supabaseTable = (entityName) => String(entityName || '').toLowerCase();
+
+const supabaseEnsureTable = async (baseUrl, key, table) => {
+  const sql = `create table if not exists public.${table} (id text primary key, data jsonb);`;
+  const res = await fetch(`${supabaseRestBase(baseUrl)}/rpc/exec_sql`, {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: sql }),
+  });
+  if (!res.ok) throw new Error(`ensureTable ${table} failed (${res.status}): ${await res.text()}`);
+};
+
+const supabaseUpsertRow = async (baseUrl, key, table, row) => {
+  const res = await fetch(`${supabaseRestBase(baseUrl)}/${table}?on_conflict=id`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify([row]),
+  });
+  if (!res.ok) throw new Error(`Supabase upsert ${table} failed (${res.status}): ${await res.text()}`);
+};
+
+const supabaseDeleteRow = async (baseUrl, key, table, id) => {
+  const res = await fetch(`${supabaseRestBase(baseUrl)}/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=minimal' },
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Supabase delete ${table} failed (${res.status}): ${await res.text()}`);
+};
+
 const slug = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const normalizeField = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const valueText = (value) => Array.isArray(value) ? value.join(', ') : String(value || '');
@@ -88,6 +135,29 @@ const namesMatch = (employee, record) => {
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
+
+    // Supabase production target for direct mirroring. If the secrets aren't set the
+    // pushes become no-ops and the scheduled syncToSupabase sweep remains the only path.
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_SECRET_KEY = Deno.env.get('SUPABASE_SECRET_KEY');
+    const supabaseReady = !!(SUPABASE_URL && SUPABASE_SECRET_KEY);
+
+    // Push one saved entity record into its Supabase table (table = lowercase entity
+    // name), keyed by the Base44 record id so it matches rows written by the sweep.
+    // Best-effort: never throws, so a Supabase outage can't break an employee edit.
+    const pushToSupabase = async (entityName, record) => {
+      if (!supabaseReady || !record?.id) return;
+      const table = supabaseTable(entityName);
+      try {
+        try { await supabaseEnsureTable(SUPABASE_URL, SUPABASE_SECRET_KEY, table); } catch (_e) { /* table likely exists */ }
+        await supabaseUpsertRow(SUPABASE_URL, SUPABASE_SECRET_KEY, table, { id: record.id, data: record });
+      } catch (err) { console.error(`Supabase push ${table} failed:`, err?.message || err); }
+    };
+    const removeFromSupabase = async (entityName, id) => {
+      if (!supabaseReady || !id) return;
+      try { await supabaseDeleteRow(SUPABASE_URL, SUPABASE_SECRET_KEY, supabaseTable(entityName), id); }
+      catch (err) { console.error(`Supabase delete ${supabaseTable(entityName)} failed:`, err?.message || err); }
+    };
 
     const body = await req.json();
     const { action } = body;
@@ -233,16 +303,25 @@ Deno.serve(async (req) => {
         } else {
           const changed = ['full_name', 'email', 'employee_code', 'generated_password', 'job_title', 'status']
             .some((k) => String(current[k] || '') !== String(account[k] || ''));
-          if (changed) { await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.update(current.id, account)); await wait(120); }
+          if (changed) {
+            const updated = await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.update(current.id, account));
+            await pushToSupabase('EmployeeAccount', updated);
+            await wait(120);
+          }
         }
       }
 
       for (let i = 0; i < toCreate.length; i += 50) {
-        await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.bulkCreate(toCreate.slice(i, i + 50)));
+        const created = await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.bulkCreate(toCreate.slice(i, i + 50)));
+        for (const row of (Array.isArray(created) ? created : [])) await pushToSupabase('EmployeeAccount', row);
         await wait(250);
       }
       for (const account of existing) {
-        if (!seen.has(account.airtable_record_id)) { await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.delete(account.id)); await wait(120); }
+        if (!seen.has(account.airtable_record_id)) {
+          await writeWithRetry(() => base44.asServiceRole.entities.EmployeeAccount.delete(account.id));
+          await removeFromSupabase('EmployeeAccount', account.id);
+          await wait(120);
+        }
       }
     };
 
@@ -332,6 +411,7 @@ Deno.serve(async (req) => {
       const mergedFields = { ...(existingMirror[0].fields || {}), 'Biometrics Number': String(employeeNumber) };
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, airtableRecordId);
       const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existingMirror[0].id, mirrorData);
+      await pushToSupabase(MIRROR_ENTITY, mirrored);
 
       const fields = mirrored.fields || {};
       const data = { id: mirrored.airtable_record_id, fields: mirrored.fields };
@@ -646,8 +726,10 @@ Deno.serve(async (req) => {
     const upsertAccountForRecord = async (mirrorRecord) => {
       const account = accountFromRecord({ airtable_record_id: mirrorRecord.airtable_record_id, full_name: mirrorRecord.full_name, employee_code: mirrorRecord.employee_code, fields: mirrorRecord.fields });
       const existing = await base44.asServiceRole.entities.EmployeeAccount.filter({ airtable_record_id: mirrorRecord.airtable_record_id }, '-updated_date', 1);
-      if (existing.length) await base44.asServiceRole.entities.EmployeeAccount.update(existing[0].id, account);
-      else await base44.asServiceRole.entities.EmployeeAccount.create(account);
+      const saved = existing.length
+        ? await base44.asServiceRole.entities.EmployeeAccount.update(existing[0].id, account)
+        : await base44.asServiceRole.entities.EmployeeAccount.create(account);
+      await pushToSupabase('EmployeeAccount', saved);
     };
 
     if (action === 'onboardChoices') {
@@ -701,6 +783,7 @@ Deno.serve(async (req) => {
       const orgFields = await getOrgFields();
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      await pushToSupabase(MIRROR_ENTITY, created);
       await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ ok: true });
     }
@@ -716,6 +799,7 @@ Deno.serve(async (req) => {
       // Backend mirror is the source of truth — create directly with a backend id (no Airtable push).
       const mirrorData = buildStandaloneMirror(fields, orgFields);
       const created = await base44.asServiceRole.entities[MIRROR_ENTITY].create(mirrorData);
+      await pushToSupabase(MIRROR_ENTITY, created);
       await upsertAccountForRecord(created).catch(() => {});
       return Response.json({ record: { id: created.airtable_record_id, fields: created.fields, backend_id: created.id } });
     }
@@ -730,6 +814,7 @@ Deno.serve(async (req) => {
       // Backend mirror is the source of truth — update it directly (no Airtable push).
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const updated = await writeWithRetry(() => base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData));
+      await pushToSupabase(MIRROR_ENTITY, updated);
       await upsertAccountForRecord(updated).catch(() => {});
       return Response.json({ record: { id: updated.airtable_record_id, fields: updated.fields, backend_id: updated.id } });
     }
@@ -759,6 +844,7 @@ Deno.serve(async (req) => {
       const mergedFields = { ...(existing[0].fields || {}), ...updates };
       const mirrorData = buildStandaloneMirror(mergedFields, orgFields, recordId);
       const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(existing[0].id, mirrorData);
+      await pushToSupabase(MIRROR_ENTITY, mirrored);
       return Response.json({ record: { id: mirrored.airtable_record_id, fields: mirrored.fields, backend_id: mirrored.id } });
     }
 
@@ -778,7 +864,8 @@ Deno.serve(async (req) => {
       for (const record of matching) {
         const mergedFields = { ...(record.fields || {}), [orgFields.company]: cleanCompany };
         const mirrorData = buildStandaloneMirror(mergedFields, orgFields, record.airtable_record_id);
-        await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
+        const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
+        await pushToSupabase(MIRROR_ENTITY, mirrored);
       }
 
       return Response.json({ updated: matching.length });
@@ -800,7 +887,8 @@ Deno.serve(async (req) => {
           newFields[key === oldKey ? cleanNew : key] = value;
         }
         const mirrorData = buildStandaloneMirror(newFields, orgFields, record.airtable_record_id);
-        await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
+        const mirrored = await base44.asServiceRole.entities[MIRROR_ENTITY].update(record.id, mirrorData);
+        await pushToSupabase(MIRROR_ENTITY, mirrored);
         renamed += 1;
       }
       return Response.json({ field: { name: cleanNew }, renamed });
@@ -830,9 +918,19 @@ Deno.serve(async (req) => {
     if (action === 'delete') {
       const { recordId } = body;
       if (!recordId) return Response.json({ error: 'recordId required' }, { status: 400 });
-      // Backend mirror is the source of truth — delete it directly (no Airtable call).
+      // Backend mirror is the source of truth — delete it directly (no Airtable call),
+      // and propagate the delete to Supabase so removed employees don't linger there.
       const existing = await base44.asServiceRole.entities[MIRROR_ENTITY].filter({ airtable_record_id: recordId }, '-updated_date', 10);
-      for (const record of existing) await base44.asServiceRole.entities[MIRROR_ENTITY].delete(record.id);
+      for (const record of existing) {
+        await base44.asServiceRole.entities[MIRROR_ENTITY].delete(record.id);
+        await removeFromSupabase(MIRROR_ENTITY, record.id);
+      }
+      // Remove the linked User Management account(s) too, in Base44 and in Supabase.
+      const linkedAccounts = await base44.asServiceRole.entities.EmployeeAccount.filter({ airtable_record_id: recordId }, '-updated_date', 10);
+      for (const account of linkedAccounts) {
+        await base44.asServiceRole.entities.EmployeeAccount.delete(account.id);
+        await removeFromSupabase('EmployeeAccount', account.id);
+      }
       return Response.json({ deleted: true, id: recordId });
     }
 
