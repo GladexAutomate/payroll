@@ -104,6 +104,14 @@
     "other_deductions": {
       "type": "number"
     },
+    "atd_charges_applied": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": [],
+      "description": "ATD charges applied this run: [{ deduction_id, label, amount }]. Used to advance each charge's amount_paid when the run is approved."
+    },
     "total_deductions": {
       "type": "number"
     },

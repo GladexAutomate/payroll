@@ -60,6 +60,33 @@ Deno.serve(async (req) => {
       history = await base44.asServiceRole.entities.ApprovedPayrollHistory.update(existing[0].id, snapshot);
     } else {
       history = await base44.asServiceRole.entities.ApprovedPayrollHistory.create(snapshot);
+
+      // First approval only: advance each applied ATD charge's running balance so the charge
+      // progresses toward its total and stops once fully paid. Guarded by the duplicate-history
+      // check above so re-approving the same run can't double-count.
+      const charged = {}; // deduction_id -> peso applied this run
+      for (const rec of records) {
+        for (const c of (rec.atd_charges_applied || [])) {
+          if (!c?.deduction_id) continue;
+          charged[c.deduction_id] = (charged[c.deduction_id] || 0) + (Number(c.amount) || 0);
+        }
+      }
+      for (const [deductionId, amount] of Object.entries(charged)) {
+        if (amount <= 0) continue;
+        try {
+          const rows = await base44.asServiceRole.entities.EmployeeDeduction.filter({ id: deductionId });
+          const ded = rows[0];
+          if (!ded) continue;
+          const newPaid = money((Number(ded.amount_paid) || 0) + amount);
+          const total = Number(ded.total_amount) || 0;
+          const patch = {
+            amount_paid: newPaid,
+            cutoffs_paid: (Number(ded.cutoffs_paid) || 0) + 1,
+          };
+          if (total > 0 && newPaid >= total - 0.005) patch.atd_status = 'completed';
+          await base44.asServiceRole.entities.EmployeeDeduction.update(deductionId, patch);
+        } catch (_e) { /* skip a deduction that was deleted in the meantime */ }
+      }
     }
 
     // For 13th month pay runs, flip every source saved record to 'released' so it can't

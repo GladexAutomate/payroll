@@ -78,6 +78,9 @@ const POLICY_DEFAULTS = {
   rest_day_work_requires_approval: true,
   thirteenth_month_enabled: true,
   working_days_divisor: 26,
+  // Only subtract the unpaid break when the punch span exceeds this many hours. A short
+  // duty (<= threshold) is treated as worked-as-is (likely undertime, no break taken).
+  break_threshold_hours: 5,
 };
 
 function eachDate(start, end) {
@@ -93,32 +96,45 @@ function hmToMinutes(hm) {
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
-// Count hours of a worked interval that fall within the night-diff window (handles overnight wrap)
+// Attendance punches are stored as naive Philippine wall-clock strings ("YYYY-MM-DDTHH:MM:SS",
+// no offset — see importAttendance buildISO). Parse them as a literal PH timeline so the
+// night-diff window is correct regardless of the server timezone (Date() would otherwise
+// interpret them in the host zone). Returns minutes on a continuous timeline.
+function parseWallClockMinutes(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]), hh = Number(m[4]), mm = Number(m[5]);
+  // Date.UTC is timezone-independent; we only use it to turn the date into a stable day index.
+  return Date.UTC(y, mo - 1, d) / 60000 + hh * 60 + mm;
+}
+
+// Shift a YYYY-MM-DD date by whole days, timezone-independently.
+function shiftDate(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1) + deltaDays * 86400000).toISOString().slice(0, 10);
+}
+
+// Count hours of a worked interval that fall within the night-diff window (handles overnight
+// wrap). All math is in PH wall-clock minutes, so it follows Philippine time on any host.
 function nightDiffHours(timeIn, timeOut, startHm, endHm) {
-  const inDate = new Date(timeIn);
-  const outDate = new Date(timeOut);
-  if (!(inDate < outDate)) return 0;
+  const inMin = parseWallClockMinutes(timeIn);
+  const outMin = parseWallClockMinutes(timeOut);
+  if (inMin == null || outMin == null || !(inMin < outMin)) return 0;
   const startMin = hmToMinutes(startHm); // e.g. 22:00 -> 1320
   const endMin = hmToMinutes(endHm);     // e.g. 06:00 -> 360
-  let overlapMs = 0;
-  // Walk minute-by-day windows across the shift span (cheap: shifts are < ~16h)
-  let cursor = new Date(inDate);
-  while (cursor < outDate) {
-    const dayStart = new Date(cursor); dayStart.setHours(0, 0, 0, 0);
-    // Window 1: [startMin, 24:00)
-    const winAStart = new Date(dayStart.getTime() + startMin * 60000);
-    const winAEnd = new Date(dayStart.getTime() + 24 * 60 * 60000);
-    // Window 2: [00:00, endMin)
-    const winBStart = new Date(dayStart);
-    const winBEnd = new Date(dayStart.getTime() + endMin * 60000);
-    for (const [ws, we] of [[winAStart, winAEnd], [winBStart, winBEnd]]) {
-      const s = Math.max(inDate.getTime(), ws.getTime());
-      const e = Math.min(outDate.getTime(), we.getTime());
-      if (e > s) overlapMs += e - s;
+  let overlap = 0;
+  let cursor = inMin;
+  while (cursor < outMin) {
+    const dayStart = Math.floor(cursor / 1440) * 1440;
+    // Window 1: [start, midnight)   Window 2: [midnight, end)
+    for (const [ws, we] of [[dayStart + startMin, dayStart + 1440], [dayStart, dayStart + endMin]]) {
+      const s = Math.max(inMin, ws);
+      const e = Math.min(outMin, we);
+      if (e > s) overlap += e - s;
     }
-    cursor = new Date(dayStart.getTime() + 24 * 60 * 60000);
+    cursor = dayStart + 1440;
   }
-  return overlapMs / 3600000;
+  return overlap / 60;
 }
 
 function normalizeText(value) {
@@ -245,7 +261,12 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     await wait(400);
     const hiddenUploads = await withRetry(() => base44.asServiceRole.entities.AttendanceUpload.filter({ ...envClause }, '-created_date', 200));
     await wait(400);
-    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ ...envClause, date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
+    // Pull one extra day on each side so the regular-holiday "before/after" rule can see
+    // whether the employee was present on the adjacent day even across a cutoff boundary.
+    // The pay loop still only iterates the exact period, so these pad days are never paid.
+    const logQueryStart = shiftDate(period_start, -1);
+    const logQueryEnd = shiftDate(period_end, 1);
+    const allLogs = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter({ ...envClause, date: { $gte: logQueryStart, $lte: logQueryEnd } }, 'date', 5000));
     await wait(400);
     const plotted = await withRetry(() => base44.asServiceRole.entities.ApprovedSchedule.filter({ ...envClause, date: { $gte: period_start, $lte: period_end } }, 'date', 5000));
     await wait(400);
@@ -262,9 +283,9 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     // Approved leave requests (paid leaves are paid even when not plotted on the approved schedule)
     const approvedLeaves = await withRetry(() => base44.asServiceRole.entities.LeaveRequest.filter({ ...envClause, status: 'approved' }, '-date_from', 5000));
     await wait(300);
-    // Active allowances & ATD charges
-    const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ ...envClause }, '-created_date', 5000));
-    await wait(300);
+    // NOTE: allowances & ATD charges are intentionally NOT handled here. Reconciliation only
+    // measures Approved Schedule vs Actual Attendance (+ statutory/tax). Allowances and ATD
+    // charges are applied later, when the payroll run is generated (see computePayroll).
     // Per-employee government contribution toggles (SSS / PhilHealth / Pag-IBIG)
     const govSettings = await withRetry(() => base44.asServiceRole.entities.EmployeeGovernmentSetting.filter({ ...envClause }, '-updated_date', 5000));
     const govByEmp = govSettings.reduce((m, g) => ({ ...m, [g.employee_id]: g }), {});
@@ -274,6 +295,19 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     const periodStartDay = period_start ? (Number(String(period_start).split('-')[2]) || 1) : 1;
     const isSecondCutoff = periodStartDay >= 16;
     const cutoffFactor = isSecondCutoff ? 1 : 0;
+
+    // Statutory + tax are charged once a month, on the 2nd cutoff, and are based on the
+    // employee's ACTUAL monthly earnings. Pull the already-reconciled 1st-cutoff (1–15)
+    // summaries of the same month so we can add them to this cutoff's gross.
+    let firstCutoffGrossByEmp = {};
+    if (isSecondCutoff) {
+      const ym = String(period_start).slice(0, 7); // YYYY-MM
+      const firstSummaries = await withRetry(() => base44.asServiceRole.entities.AttendancePaySummary.filter(
+        { ...envClause, period_start: `${ym}-01`, period_end: `${ym}-15` }, '-created_date', 5000,
+      ));
+      firstCutoffGrossByEmp = firstSummaries.reduce((m, r) => ({ ...m, [r.employee_id]: Number(r.gross) || 0 }), {});
+      await wait(300);
+    }
     const branchScopeNorm = normalizeText(branchScope === 'all' ? '' : branchScope);
     const periodEndTime = period_end ? new Date(period_end).getTime() : null;
 
@@ -336,37 +370,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       offsetByKey[key][o.offset_date] = (offsetByKey[key][o.offset_date] || 0) + (Number(o.offset_hours) || 0);
     });
 
-    // Allowances & active ATD charges per employee — mirrors computePayroll's targeting rules:
-    // branch match, started by period end, not fully paid, and (for charges) cap at outstanding balance.
-    // Allowances/charges only apply once the 3-step signature chain is fully_signed.
-    const appliesToRun = (row) => {
-      const rowBranch = normalizeText(row.branch);
-      if (rowBranch && branchScopeNorm && rowBranch !== branchScopeNorm) return false;
-      if (row.start_date && periodEndTime != null && new Date(row.start_date).getTime() > periodEndTime) return false;
-      if (!row.recurring && Number(row.total_cutoffs) > 0 && Number(row.cutoffs_paid || 0) >= Number(row.total_cutoffs)) return false;
-      return true;
-    };
-    const allowanceByKey = {};
-    const chargeByKey = {};
-    adjustments.forEach(a => {
-      const key = cleanText(a.employee_id);
-      if (!key) return;
-      const chainOk = !a.chain_status || a.chain_status === 'fully_signed';
-      const amount = Number(a.amount_per_cutoff) || 0;
-      if (amount <= 0 || !chainOk || !appliesToRun(a)) return;
-      if (a.kind === 'allowance') {
-        if (['cancelled', 'completed'].includes(a.atd_status)) return;
-        if (a.atd_status === 'active' || a.recurring) {
-          allowanceByKey[key] = (allowanceByKey[key] || 0) + amount;
-        }
-      } else if (a.kind === 'deduction' && a.atd_status === 'active') {
-        // Don't deduct more than the outstanding balance on a fixed-total charge.
-        const total = Number(a.total_amount) || 0;
-        const paid = (Number(a.cutoffs_paid) || 0) * amount;
-        const applied = total > 0 ? Math.min(amount, Math.max(total - paid, 0)) : amount;
-        if (applied > 0) chargeByKey[key] = (chargeByKey[key] || 0) + applied;
-      }
-    });
+    // (Allowances & ATD charges are computed at payroll generation, not here.)
 
     const localEmployeeMap = localEmployees.reduce((m, e) => ({ ...m, [e.id]: e }), {});
     const airtableByLocalId = savedMatches.reduce((m, mt) => ({ ...m, [mt.employee_record_id]: mt.airtable_record_id }), {});
@@ -396,6 +400,7 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
     const dates = eachDate(period_start, period_end);
     const STD = P.standard_work_hours || 8;
     const BREAK_H = (P.mandatory_break_minutes || 0) / 60;
+    const BREAK_THRESHOLD_H = P.break_threshold_hours != null ? Number(P.break_threshold_hours) : 5;
     const recordsToSave = [];
     const computedAt = new Date().toISOString();
 
@@ -428,6 +433,15 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         }
       });
 
+      // Presence by date (any usable punch) — used for the regular-holiday before/after rule.
+      // Spans the padded log window so adjacency works across cutoff boundaries.
+      const presentByDate = {};
+      Object.entries(logsByDate).forEach(([d, l]) => {
+        let sp = (l.time_in && l.time_out) ? (new Date(l.time_out) - new Date(l.time_in)) / 3600000 : 0;
+        if (!Number.isFinite(sp) || sp <= 0) sp = Number(l.total_hours) || 0;
+        if (sp > 0) presentByDate[d] = true;
+      });
+
       // ApprovedSchedule.employee_id holds the Airtable record id (set by plotApprovedSchedule
       // from the proposal's emp.id). Match on airtable_record_id first, with the Base44 id as
       // a fallback for any legacy rows.
@@ -438,8 +452,6 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       const restDayApprovedForEmp = new Set();
       const offsetForEmp = {};
       const leaveForEmp = {};
-      let allowanceTotal = 0;
-      let chargeTotal = 0;
       keys.forEach(k => {
         const ck = cleanText(k);
         const byDate = approvedOTByKey[ck];
@@ -450,8 +462,6 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         if (off) Object.entries(off).forEach(([d, h]) => { offsetForEmp[d] = Math.max(offsetForEmp[d] || 0, h); });
         const lv = leaveByKey[ck];
         if (lv) Object.entries(lv).forEach(([d, kind]) => { if (!leaveForEmp[d]) leaveForEmp[d] = kind; });
-        allowanceTotal = Math.max(allowanceTotal, allowanceByKey[ck] || 0);
-        chargeTotal = Math.max(chargeTotal, chargeByKey[ck] || 0);
       });
 
       // OT bank: total approved OT this period (used to validate offsets)
@@ -494,8 +504,9 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
           span = Number(log.total_hours);
         }
         const hasPunch = span > 0;
-        // Net worked hours = span - break (only deduct break when worked beyond the break length)
-        const worked = hasPunch ? Math.max(0, span - (span > BREAK_H ? BREAK_H : 0)) : 0;
+        // Net worked hours = span - break, but only subtract the break when the duty span
+        // exceeds the threshold (default 5h). A shorter span is taken as-is (no break / undertime).
+        const worked = hasPunch ? Math.max(0, span - (span > BREAK_THRESHOLD_H ? BREAK_H : 0)) : 0;
 
         const lateMin = Number(log?.late_minutes) || 0;
         const nd = (P.night_diff_enabled && hasPunch && timeIn && timeOut)
@@ -509,6 +520,20 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         }
         // 2. Unpaid leave -> no pay, not absent
         if (UNPAID_LEAVE.has(schedType)) continue;
+
+        // 2b. Holiday with NO work rendered (day-off or absent on the holiday itself).
+        if (holiday && !hasPunch) {
+          if (holiday === 'regular') {
+            // "Before or after" rule: present on the workday immediately before OR after the
+            // regular holiday earns single (100%) holiday pay even without working the day itself.
+            const presentBefore = presentByDate[shiftDate(date, -1)];
+            const presentAfter = presentByDate[shiftDate(date, 1)];
+            if (presentBefore || presentAfter) holidayPay += dailyRate;
+          }
+          // Special (non-working) holiday with no work = no-work-no-pay.
+          // Neither holiday type counts as an absence when unworked.
+          continue;
+        }
 
         // 3. Rest day (Off)
         if (REST_TYPES.has(schedType)) {
@@ -593,25 +618,36 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       const absentDeduction = daysAbsent * dailyRate;
       const earnedPay = regularPay + overtimePay + holidayPay + leavePay + nightPay;
       const thirteenth = P.thirteenth_month_enabled ? (earnedPay / 12) : 0;
-      const gross = money(earnedPay + allowanceTotal);
+      // Reconciled gross = attendance earnings only. Allowances are added at payroll generation.
+      const gross = money(earnedPay);
 
       // --- Statutory contributions + withholding tax (2nd cutoff only) ---
+      // Basis is the employee's ACTUAL monthly attendance earnings: this cutoff's gross plus the
+      // already-reconciled 1st-cutoff gross. Falls back to monthly basic salary if the
+      // 1st cutoff wasn't reconciled (so contributions aren't understated).
       const gov = govByEmp[employee.id] || {};
-      const sss = (gov.sss_enabled !== false) ? getSSSContribution(monthlySalary, P) : { employee: 0, employer: 0 };
-      const ph = (gov.philhealth_enabled !== false) ? getPhilHealthContribution(monthlySalary, P) : { employee: 0, employer: 0 };
-      const pi = (gov.pagibig_enabled !== false) ? getPagIBIGContribution(monthlySalary, P) : { employee: 0, employer: 0 };
+      const thisCutoffEarnings = earnedPay; // == gross before rounding (no allowance here)
+      const firstCutoffEarnings = firstCutoffGrossByEmp[employee.id];
+      const monthlyEarnings = isSecondCutoff
+        ? (firstCutoffEarnings != null ? firstCutoffEarnings : monthlySalary) + thisCutoffEarnings
+        : thisCutoffEarnings;
+      const statBase = monthlyEarnings > 0 ? monthlyEarnings : 0;
+      const sss = (gov.sss_enabled !== false) ? getSSSContribution(statBase, P) : { employee: 0, employer: 0 };
+      const ph = (gov.philhealth_enabled !== false) ? getPhilHealthContribution(statBase, P) : { employee: 0, employer: 0 };
+      const pi = (gov.pagibig_enabled !== false) ? getPagIBIGContribution(statBase, P) : { employee: 0, employer: 0 };
       const sssEE = sss.employee * cutoffFactor;
       const sssER = sss.employer * cutoffFactor;
       const phEE = ph.employee * cutoffFactor;
       const phER = ph.employer * cutoffFactor;
       const piEE = pi.employee * cutoffFactor;
       const piER = pi.employer * cutoffFactor;
-      const monthlyTaxable = monthlySalary - sss.employee - ph.employee - pi.employee;
+      const monthlyTaxable = statBase - sss.employee - ph.employee - pi.employee;
       const withholdingTax = computeMonthlyWithholdingTax(monthlyTaxable) * cutoffFactor;
 
-      // Total employee deductions = statutory + tax + attendance penalties + ATD charges.
+      // Total employee deductions here = statutory + tax + attendance penalties only.
+      // ATD charges are added at payroll generation (computePayroll).
       const totalEmpDeductions = sssEE + phEE + piEE + withholdingTax
-        + latesDeduction + undertimeDeduction + absentDeduction + chargeTotal;
+        + latesDeduction + undertimeDeduction + absentDeduction;
       const netPay = gross - totalEmpDeductions;
 
       const summary = {
@@ -636,8 +672,8 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
         lates_deduction: money(latesDeduction),
         undertime_deduction: money(undertimeDeduction),
         absent_deduction: money(absentDeduction),
-        allowances: money(allowanceTotal),
-        other_deductions: money(chargeTotal),
+        allowances: 0, // applied at payroll generation
+        other_deductions: 0, // ATD charges applied at payroll generation
         sss_employee: money(sssEE),
         sss_employer: money(sssER),
         philhealth_employee: money(phEE),
@@ -659,7 +695,6 @@ async function processReconciliation({ base44, run, runStartedAt, period_start, 
       };
 
       totalGross += gross;
-      totalAllowances += money(allowanceTotal);
       totalDeductions += money(totalEmpDeductions);
       totalAbsentDays += daysAbsent;
 

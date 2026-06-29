@@ -34,6 +34,25 @@
       "default": "deduction",
       "description": "allowance = recurring earning added to pay; deduction = ATD charge subtracted from pay"
     },
+    "deduction_mode": {
+      "type": "string",
+      "enum": [
+        "fixed",
+        "percent"
+      ],
+      "default": "fixed",
+      "description": "For deductions: 'fixed' uses amount_per_cutoff; 'percent' deducts percent_of_gross of the cutoff gross each cutoff."
+    },
+    "percent_of_gross": {
+      "type": "number",
+      "default": 0,
+      "description": "Percent of cutoff gross deducted each cutoff when deduction_mode = 'percent' (e.g. 10 = 10%)."
+    },
+    "amount_paid": {
+      "type": "number",
+      "default": 0,
+      "description": "Running peso total already deducted toward total_amount. Advanced when a payroll run containing this charge is finally approved."
+    },
     "label": {
       "type": "string",
       "description": "e.g. Transportation Allowance, Cash Advance, Uniform Charge"

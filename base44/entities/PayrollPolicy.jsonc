@@ -12,6 +12,11 @@
       "default": 60,
       "description": "Unpaid break deducted from the punch span before computing net worked hours"
     },
+    "break_threshold_hours": {
+      "type": "number",
+      "default": 5,
+      "description": "Only subtract the unpaid break when the punch span exceeds this many hours. A shorter duty is treated as worked-as-is (likely undertime)."
+    },
     "standard_work_hours": {
       "type": "number",
       "default": 8,

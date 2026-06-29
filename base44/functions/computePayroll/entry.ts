@@ -4,6 +4,52 @@ function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function cleanText(value) { return String(value || '').trim(); }
+function normalizeText(value) {
+  const raw = Array.isArray(value) ? value.join(' ') : value;
+  return cleanText(raw).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Allowance is added to pay once its ATD chain is fully signed and it's active (or recurring),
+// scoped to the run's branch and started by the run's period end.
+function allowanceApplies(a, branchScopeNorm, periodEndTime) {
+  if (a.kind !== 'allowance') return false;
+  if (a.chain_status && a.chain_status !== 'fully_signed') return false;
+  if (['cancelled', 'completed'].includes(a.atd_status)) return false;
+  if (!(a.atd_status === 'active' || a.recurring)) return false;
+  const rowBranch = normalizeText(a.branch);
+  if (rowBranch && branchScopeNorm && rowBranch !== branchScopeNorm) return false;
+  if (a.start_date && periodEndTime != null && new Date(a.start_date).getTime() > periodEndTime) return false;
+  return true;
+}
+
+// An ATD charge applies while active, chain-signed, started, scoped to branch, and not yet
+// fully paid (amount_paid < total_amount). Open-ended (total_amount 0) charges always apply.
+function chargeApplies(a, branchScopeNorm, periodEndTime) {
+  if (a.kind !== 'deduction') return false;
+  if (a.chain_status && a.chain_status !== 'fully_signed') return false;
+  if (a.atd_status !== 'active') return false;
+  const rowBranch = normalizeText(a.branch);
+  if (rowBranch && branchScopeNorm && rowBranch !== branchScopeNorm) return false;
+  if (a.start_date && periodEndTime != null && new Date(a.start_date).getTime() > periodEndTime) return false;
+  const total = Number(a.total_amount) || 0;
+  if (total > 0 && (Number(a.amount_paid) || 0) >= total - 0.005) return false;
+  // Also stop once the configured number of cutoffs has been paid (alternative completion bound).
+  if (Number(a.total_cutoffs) > 0 && (Number(a.cutoffs_paid) || 0) >= Number(a.total_cutoffs)) return false;
+  return true;
+}
+
+// Peso charge for this cutoff: a fixed amount_per_cutoff, or percent_of_gross of the cutoff
+// gross. Capped at the remaining balance so a fixed-total charge never over-deducts.
+function chargeForCutoff(a, cutoffGross) {
+  const base = a.deduction_mode === 'percent'
+    ? ((Number(a.percent_of_gross) || 0) / 100) * (Number(cutoffGross) || 0)
+    : (Number(a.amount_per_cutoff) || 0);
+  const total = Number(a.total_amount) || 0;
+  const remaining = total > 0 ? Math.max(total - (Number(a.amount_paid) || 0), 0) : Infinity;
+  return Math.max(0, Math.min(base, remaining));
+}
+
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -82,6 +128,19 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'No reconciled summaries for this period. Reconcile first.' }, { status: 400 });
     }
 
+    // Allowances & ATD charges are applied HERE (not in reconcile). Pull the active rows and
+    // index them by employee id so each summary can pick up its own.
+    const adjustments = await withRetry(() => base44.asServiceRole.entities.EmployeeDeduction.filter({ ...envClause }, '-created_date', 5000));
+    await wait(300);
+    const dedByEmpKey = {};
+    for (const a of adjustments) {
+      const k = cleanText(a.employee_id);
+      if (!k) continue;
+      (dedByEmpKey[k] = dedByEmpKey[k] || []).push(a);
+    }
+    const branchScopeNorm = normalizeText(run.branch_name && run.branch_name !== 'all' ? run.branch_name : '');
+    const periodEndTime = run.period_end ? new Date(run.period_end).getTime() : null;
+
     // Clear any previous records for this run before re-copying.
     const oldRecords = await withRetry(() => base44.asServiceRole.entities.PayrollRecord.filter({ payroll_run_id }, '-created_date', 5000));
     for (const record of oldRecords) {
@@ -101,9 +160,36 @@ Deno.serve(async (req) => {
     let totalNet = 0;
 
     for (const s of paySummaries) {
-      const grossWithAllowance = money(Number(s.gross) || 0);
-      const totalDed = money(Number(s.total_deductions) || 0);
-      const net = money(Number(s.net_pay) != null ? s.net_pay : grossWithAllowance - totalDed);
+      // Gather this employee's allowances & ATD charges (matched by either id form).
+      const empDeds = [];
+      const seenDed = new Set();
+      for (const k of [cleanText(s.employee_id), cleanText(s.airtable_record_id)]) {
+        for (const a of (dedByEmpKey[k] || [])) {
+          if (a.id && seenDed.has(a.id)) continue;
+          if (a.id) seenDed.add(a.id);
+          empDeds.push(a);
+        }
+      }
+
+      let allowanceTotal = 0;
+      for (const a of empDeds) {
+        if (allowanceApplies(a, branchScopeNorm, periodEndTime)) allowanceTotal += Number(a.amount_per_cutoff) || 0;
+      }
+
+      // Gross = reconciled attendance gross + allowances. ATD percent charges are taken on this gross.
+      const grossWithAllowance = money((Number(s.gross) || 0) + allowanceTotal);
+
+      const atdChargesApplied = [];
+      for (const a of empDeds) {
+        if (!chargeApplies(a, branchScopeNorm, periodEndTime)) continue;
+        const amt = money(chargeForCutoff(a, grossWithAllowance));
+        if (amt > 0) atdChargesApplied.push({ deduction_id: a.id, label: a.label || '', amount: amt });
+      }
+      const chargeTotal = money(atdChargesApplied.reduce((acc, c) => acc + c.amount, 0));
+
+      // Reconciled deductions (statutory + tax + attendance penalties) + ATD charges.
+      const totalDed = money((Number(s.total_deductions) || 0) + chargeTotal);
+      const net = money(grossWithAllowance - totalDed);
 
       recordsToCreate.push({
         payroll_run_id,
@@ -124,7 +210,7 @@ Deno.serve(async (req) => {
         overtime_hours: money(s.overtime_hours),
         overtime_pay: money(s.overtime_pay),
         holiday_pay: money(s.holiday_pay),
-        allowances: money(s.allowances),
+        allowances: money(allowanceTotal),
         gross_pay: grossWithAllowance,
         sss_employee: money(s.sss_employee),
         sss_employer: money(s.sss_employer),
@@ -135,7 +221,8 @@ Deno.serve(async (req) => {
         withholding_tax: money(s.withholding_tax),
         late_deduction: money(s.lates_deduction),
         absent_deduction: money(s.absent_deduction),
-        other_deductions: money(s.other_deductions),
+        other_deductions: chargeTotal,
+        atd_charges_applied: atdChargesApplied,
         total_deductions: totalDed,
         net_pay: net,
         status: 'computed',
