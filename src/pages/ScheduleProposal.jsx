@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { CalendarDays, Send, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -58,6 +58,11 @@ export default function ScheduleProposal() {
   const [identified, setIdentified] = useState(false); // whether we resolved the current user at all
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  // Synchronous re-entrancy guard. `saving` is React state and only disables the
+  // button on the NEXT render, so a fast double/triple-click can fire submit again
+  // before that — creating duplicate proposals. This ref blocks re-entry immediately.
+  const submittingRef = useRef(false);
 
   useEffect(() => { loadEmployees(); }, []);
 
@@ -213,39 +218,66 @@ export default function ScheduleProposal() {
 
   const submitProposal = async (e) => {
     e.preventDefault();
+    // Block re-entry instantly (before any await / re-render) so rapid multi-clicks
+    // can't each create a proposal.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
-    // Team name is derived from the leader so the proposal/Teams page stay populated
-    // without the old org checklist.
-    const team_name = myName ? `${myName}'s Team` : 'My Team';
-    await base44.entities.AttendanceProposal.create({
-      ...form,
-      team_name,
-      status: 'pending_hr_review',
-      employees: selectedEmployees,
-      assignments: effectiveAssignments,
-      summary,
-    });
+    setSubmitError(null);
+    try {
+      // Team name is derived from the leader so the proposal/Teams page stay populated
+      // without the old org checklist.
+      const team_name = myName ? `${myName}'s Team` : 'My Team';
+      const proposalData = {
+        ...form,
+        team_name,
+        status: 'pending_hr_review',
+        employees: selectedEmployees,
+        assignments: effectiveAssignments,
+        summary,
+      };
 
-    // Keep the leader's team membership current so it shows on the Teams page.
-    const memberIds = selectedEmployees.map(emp => String(emp.airtable_record_id || emp.id));
-    const existingTeam = teams.find(t => cell(t.name) === cell(team_name));
-    const teamData = {
-      leader_name: form.leader_name,
-      leader_email: form.leader_email,
-      department_name: form.department_name,
-      member_record_ids: memberIds,
-    };
-    if (existingTeam) {
-      await base44.entities.Team.update(existingTeam.id, teamData);
-    } else {
-      await base44.entities.Team.create({ name: team_name, status: 'active', ...teamData });
+      // Upsert by team + period: if this leader already has a pending proposal for the
+      // exact same period (e.g. from an earlier accidental double-submit), update that
+      // one and remove any extra duplicates instead of stacking another record.
+      const existingPending = await base44.entities.AttendanceProposal
+        .filter({ team_name, period_start: form.period_start, period_end: form.period_end, status: 'pending_hr_review' }, '-created_date', 50)
+        .catch(() => []);
+      if (existingPending.length) {
+        await base44.entities.AttendanceProposal.update(existingPending[0].id, proposalData);
+        // Clean up any older duplicates of this same pending request.
+        for (const dup of existingPending.slice(1)) {
+          await base44.entities.AttendanceProposal.delete(dup.id).catch(() => {});
+        }
+      } else {
+        await base44.entities.AttendanceProposal.create(proposalData);
+      }
+
+      // Keep the leader's team membership current so it shows on the Teams page.
+      const memberIds = selectedEmployees.map(emp => String(emp.airtable_record_id || emp.id));
+      const existingTeam = teams.find(t => cell(t.name) === cell(team_name));
+      const teamData = {
+        leader_name: form.leader_name,
+        leader_email: form.leader_email,
+        department_name: form.department_name,
+        member_record_ids: memberIds,
+      };
+      if (existingTeam) {
+        await base44.entities.Team.update(existingTeam.id, teamData);
+      } else {
+        await base44.entities.Team.create({ name: team_name, status: 'active', ...teamData });
+      }
+      const refreshedTeams = await base44.entities.Team.list('name', 1000).catch(() => []);
+      setTeams(refreshedTeams || []);
+
+      setAssignments({});
+      setForm(prev => ({ ...prev, notes: '' }));
+    } catch (err) {
+      setSubmitError(err?.response?.data?.error || err?.message || 'Failed to submit the schedule request. Please try again.');
+    } finally {
+      setSaving(false);
+      submittingRef.current = false;
     }
-    const refreshedTeams = await base44.entities.Team.list('name', 1000).catch(() => []);
-    setTeams(refreshedTeams || []);
-
-    setSaving(false);
-    setAssignments({});
-    setForm(prev => ({ ...prev, notes: '' }));
   };
 
   return (
@@ -312,6 +344,11 @@ export default function ScheduleProposal() {
             <ScheduleGrid employees={selectedEmployees} assignments={assignments} leaveOverlay={leaveOverlay} shiftTemplates={shiftTemplates} periodStart={form.period_start} periodEnd={form.period_end} editable onChange={updateSchedule} onFill={fillSchedule} onFillTo={fillScheduleTo} />
           </div>
           <ScheduleAnalytics summary={summary} />
+          {submitError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+              <strong>Error:</strong> {submitError}
+            </div>
+          )}
           <div className="flex justify-end">
             <Button type="submit" disabled={saving || selectedEmployees.length === 0}>
               <Send className="w-4 h-4 mr-1.5" /> {saving ? 'Submitting...' : 'Submit Schedule Request'}
