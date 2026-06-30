@@ -236,27 +236,47 @@ export default function AirtableEmployees() {
   };
 
   const handleSave = async (fields, recordId) => {
-    // Save first. If the backend rejects the write (e.g. Airtable drops a value),
-    // it throws and the form surfaces the error — we do NOT close or optimistically
-    // update the grid in that case.
-    await (recordId
+    // Save first. If the backend rejects the write it throws and the form surfaces the
+    // error — we do NOT close or touch the grid in that case.
+    const res = await (recordId
       ? base44.functions.invoke('airtableEmployees', { action: 'update', recordId, fields })
       : base44.functions.invoke('airtableEmployees', { action: 'create', fields }));
 
     setShowForm(false);
     setEditing(null);
-    // Re-read from the server so the grid always reflects the truly persisted value,
-    // never an optimistic guess that a later sync could appear to "revert".
-    const currentOffset = offsetStack[pageIdx];
-    await Promise.all([loadSchema(), loadCompanyChoices(), loadPage(currentOffset, search)]);
+
+    // Realtime, in-place update: patch only the affected row from the record the backend
+    // actually persisted (not an optimistic guess). The whole table never reloads or
+    // flashes the loading spinner, so editing one record no longer "refreshes the app".
+    const saved = res?.data?.record;
+    if (saved?.id) {
+      const row = { id: saved.id, fields: saved.fields || {}, backend_id: saved.backend_id };
+      setRecords(prev => {
+        const idx = prev.findIndex(r => r.id === saved.id);
+        if (idx === -1) return [row, ...prev]; // new record → show it at the top
+        const next = [...prev];
+        next[idx] = row;
+        return next;
+      });
+      if (!recordId) setTotalCount(c => (typeof c === 'number' ? c + 1 : c));
+    }
+
+    // Quietly refresh the dropdown sources in the background (these never blank the grid),
+    // so a newly-created company/option becomes selectable without a full reload.
+    loadSchema();
+    loadCompanyChoices();
   };
 
   const handleDelete = async (recordId) => {
     setDeletingId(recordId);
-    await base44.functions.invoke('airtableEmployees', { action: 'delete', recordId });
-    setDeletingId(null);
-    const currentOffset = offsetStack[pageIdx];
-    await loadPage(currentOffset, search);
+    try {
+      await base44.functions.invoke('airtableEmployees', { action: 'delete', recordId });
+      // Remove the row in place — no full-table reload.
+      setRecords(prev => prev.filter(r => r.id !== recordId));
+      setTotalCount(c => (typeof c === 'number' ? Math.max(0, c - 1) : c));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   // Show all Airtable schema columns, including empty/new columns not returned on records
