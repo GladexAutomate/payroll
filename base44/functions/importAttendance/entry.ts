@@ -3,10 +3,17 @@ import * as XLSX from 'npm:xlsx@0.18.5';
 
 const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
-// How many attendance records to process per polling request. Kept small so a
-// single batch never trips the per-app API rate limit, even when every record
-// is an update (the most expensive path — updates are one API call each).
-const BATCH_SIZE = 40;
+// Inner sub-batch size: how many records we look up + write per round. Kept modest
+// so the existing-log lookup ($in employees × dates) stays well under the row limit
+// and bulk writes never trip the per-app rate limit.
+const BATCH_SIZE = 100;
+
+// A single processBatch request keeps working through sub-batches until either the
+// import is done or this wall-clock budget is reached, then it returns so the next
+// poll can continue. This lets one request import hundreds/thousands of rows (far
+// fewer browser→server round-trips) while still finishing before the function's
+// hard time limit, so nothing is killed mid-flight.
+const SOFT_TIME_BUDGET_MS = 25000;
 
 const isRateLimit = (err) => {
   const msg = String(err?.message || err);
@@ -18,6 +25,32 @@ const isTransient = (err) => {
   const msg = String(err?.message || err).toLowerCase();
   return isRateLimit(err) || msg.includes('connection') || msg.includes('network')
     || msg.includes('timeout') || msg.includes('fetch failed') || msg.includes('econnreset');
+};
+
+// Retry a transient-failing operation with linear backoff.
+async function withRetry(op, { max = 8, base = 1500 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try { return await op(); }
+    catch (err) {
+      attempt += 1;
+      if (isTransient(err) && attempt < max) { await new Promise(r => setTimeout(r, base * attempt)); continue; }
+      throw err;
+    }
+  }
+}
+
+// "HH:mm" -> minutes since midnight (null if unparseable).
+const toMinutes = (t) => {
+  if (!t) return null;
+  const [h, m] = String(t).split(':').map(Number);
+  return (Number.isFinite(h) && Number.isFinite(m)) ? h * 60 + m : null;
+};
+// "YYYY-MM-DD" -> the next calendar day, computed in UTC to avoid timezone drift.
+const nextDateStr = (ds) => {
+  const d = new Date(`${ds}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 };
 
 // Parse the whole Excel/CSV file into attendance records (server-side).
@@ -111,15 +144,26 @@ function buildRecords(parsed, byBioId, byName, uploadId, recEnv) {
       if (allPunches.length === 0) continue;
 
       const dateStr = `${year}-${label.padStart(5, '0')}`;
-      const buildISO = (t) => t ? `${dateStr}T${t}:00` : null;
-      const timeInISO = buildISO(allPunches[0]);
-      const timeOutISO = allPunches.length > 1 ? buildISO(allPunches[allPunches.length - 1]) : null;
+      const inTime = allPunches[0];
+      const outTime = allPunches.length > 1 ? allPunches[allPunches.length - 1] : null;
+      const inMin = toMinutes(inTime);
+      // Overnight shift: any punch earlier in the clock than the first one belongs to
+      // the NEXT calendar day (e.g. 22:00 → 06:00). Roll those forward so time_out is
+      // always after time_in and worked-hours never come out negative. `date` stays the
+      // shift's start day; downstream pay code reads the in/out span from these fields.
+      const isoFor = (t) => {
+        if (!t) return null;
+        const day = (inMin != null && toMinutes(t) < inMin) ? nextDateStr(dateStr) : dateStr;
+        return `${day}T${t}:00`;
+      };
+      const timeInISO = isoFor(inTime);
+      const timeOutISO = isoFor(outTime);
       const totalHours = timeInISO && timeOutISO
         ? Math.round((new Date(timeOutISO) - new Date(timeInISO)) / 36000) / 100 : 0;
 
       records.push({
         env: recEnv, employee_id: emp.id, date: dateStr, time_in: timeInISO, time_out: timeOutISO,
-        raw_punches: allPunches.map(t => buildISO(t)), total_hours: totalHours,
+        raw_punches: allPunches.map(t => isoFor(t)), total_hours: totalHours,
         employee_name: rawName, biometric_id: code, status: 'present', upload_id: uploadId,
       });
     }
@@ -212,12 +256,15 @@ async function prepareImport(base44, uploadId) {
 // so every request stays short and nothing trips the function time limit.
 // Re-uploading a period? Delete the old upload first from Upload History.
 async function processBatch(base44, uploadId, offset) {
+  const startedAt = Date.now();
   const upload = await base44.asServiceRole.entities.AttendanceUpload.get(uploadId);
   if (!upload || !upload.file_url) throw new Error('Missing file. Please re-upload.');
   const recEnv = upload.env || 'prod';
 
+  // Parse the file, load employees, and build the full record set ONCE per request
+  // (previously this ran on every 40-row batch — re-downloading + re-parsing the whole
+  // workbook and reloading all employees hundreds of times for a single import).
   const parsed = await parseFile(upload.file_url, upload.filename);
-
   const employees = await base44.asServiceRole.entities.Employee.filter({ status: 'active' });
   const byBioId = {};
   const byName = {};
@@ -226,98 +273,69 @@ async function processBatch(base44, uploadId, offset) {
     if (emp.employee_id) byBioId[String(emp.employee_id).trim()] = emp;
     byName[`${emp.first_name} ${emp.last_name}`.toLowerCase().trim()] = emp;
   }
-
   const allRecords = buildRecords(parsed, byBioId, byName, uploadId, recEnv);
   const total = allRecords.length;
-  const batch = allRecords.slice(offset, offset + BATCH_SIZE);
 
-  if (batch.length === 0) {
-    const finalCount = upload.created_count || 0;
-    const finalUpdated = upload.updated_count || 0;
-    await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
-      status: 'success', progress: 100, processed_rows: total,
-      records_imported: finalCount + finalUpdated,
-      notes: `${finalCount} created, ${finalUpdated} updated`,
-    });
-    return { done: true, phase: 'create', processed: total, total };
-  }
-
-  // Upsert: look up existing logs for this batch's employees+dates, then
-  // update the ones that already exist and create only the new ones. Manually
-  // edited logs are left untouched so HR corrections aren't overwritten.
-  const empIds = [...new Set(batch.map(r => r.employee_id))];
-  const dates = [...new Set(batch.map(r => r.date))];
-  let existing = [];
-  {
-    let attempts = 0;
-    while (attempts < 8) {
-      try {
-        existing = await base44.asServiceRole.entities.AttendanceLog.filter(
-          { employee_id: { $in: empIds }, date: { $in: dates } }, '', 5000
-        );
-        break;
-      } catch (err) {
-        attempts++;
-        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
-        throw err;
-      }
-    }
-  }
-  const existingMap = {};
-  for (const log of existing) existingMap[`${log.employee_id}|${log.date}`] = log;
-
-  const toCreate = [];
-  const toUpdate = [];
-  for (const rec of batch) {
-    const match = existingMap[`${rec.employee_id}|${rec.date}`];
-    if (match) {
-      if (!match.is_manually_edited) toUpdate.push({ id: match.id, rec });
-    } else {
-      toCreate.push(rec);
-    }
-  }
-
+  let cursor = Math.min(offset || 0, total);
   let created = 0;
-  for (let i = 0; i < toCreate.length; i += 100) {
-    const slice = toCreate.slice(i, i + 100);
-    let attempts = 0;
-    while (attempts < 8) {
-      try { await base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice); created += slice.length; break; }
-      catch (err) {
-        attempts++;
-        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 2000 * attempts)); continue; }
-        throw err;
-      }
-    }
-  }
-
   let updated = 0;
-  for (const { id, rec } of toUpdate) {
-    let attempts = 0;
-    while (attempts < 8) {
-      try { await base44.asServiceRole.entities.AttendanceLog.update(id, rec); updated += 1; break; }
-      catch (err) {
+
+  // Keep importing sub-batches until the whole file is done or we hit the time budget,
+  // so one poll processes far more than a single 40-row slice.
+  while (cursor < total && (Date.now() - startedAt) < SOFT_TIME_BUDGET_MS) {
+    const batch = allRecords.slice(cursor, cursor + BATCH_SIZE);
+    if (batch.length === 0) break;
+
+    // Upsert: look up existing logs for this batch's employees+dates, then update the
+    // ones that already exist and create only the new ones. Manually edited logs are
+    // left untouched so HR corrections aren't overwritten.
+    const empIds = [...new Set(batch.map(r => r.employee_id))];
+    const dates = [...new Set(batch.map(r => r.date))];
+    const existing = await withRetry(() => base44.asServiceRole.entities.AttendanceLog.filter(
+      { employee_id: { $in: empIds }, date: { $in: dates } }, '', 5000
+    ));
+    const existingMap = {};
+    for (const log of existing) existingMap[`${log.employee_id}|${log.date}`] = log;
+
+    const toCreate = [];
+    const toUpdate = [];
+    for (const rec of batch) {
+      const match = existingMap[`${rec.employee_id}|${rec.date}`];
+      if (match) { if (!match.is_manually_edited) toUpdate.push({ id: match.id, rec }); }
+      else toCreate.push(rec);
+    }
+
+    for (let i = 0; i < toCreate.length; i += 100) {
+      const slice = toCreate.slice(i, i + 100);
+      await withRetry(() => base44.asServiceRole.entities.AttendanceLog.bulkCreate(slice), { base: 2000 });
+      created += slice.length;
+    }
+
+    for (const { id, rec } of toUpdate) {
+      try {
+        await withRetry(() => base44.asServiceRole.entities.AttendanceLog.update(id, rec));
+        updated += 1;
+      } catch (err) {
         // Record vanished since we read it (concurrent delete) — create it fresh instead.
         if (String(err?.message || err).toLowerCase().includes('not found')) {
           try { await base44.asServiceRole.entities.AttendanceLog.create(rec); created += 1; } catch (_e) { /* skip */ }
-          break;
+        } else {
+          throw err;
         }
-        attempts++;
-        if (isTransient(err) && attempts < 8) { await new Promise(r => setTimeout(r, 1500 * attempts)); continue; }
-        throw err;
       }
     }
-    await new Promise(r => setTimeout(r, 60)); // gentle pacing to avoid rate limits
+
+    cursor += batch.length;
   }
 
-  const newProcessed = Math.min(offset + batch.length, total);
+  const newProcessed = Math.min(cursor, total);
   const newCreated = (upload.created_count || 0) + created;
   const newUpdated = (upload.updated_count || 0) + updated;
   const done = newProcessed >= total;
 
   await base44.asServiceRole.entities.AttendanceUpload.update(uploadId, {
     processed_rows: newProcessed, created_count: newCreated, updated_count: newUpdated,
-    progress: Math.round((newProcessed / total) * 100),
+    progress: total ? Math.round((newProcessed / total) * 100) : 100,
     ...(done ? {
       status: 'success', records_imported: newCreated + newUpdated,
       notes: `${newCreated} created, ${newUpdated} updated`,

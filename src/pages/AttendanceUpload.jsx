@@ -66,6 +66,7 @@ export default function AttendanceUpload() {
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
+    if (uploading) return; // don't start a second import while one is already running
     const file = e.dataTransfer.files[0];
     if (file) processFile(file);
   };
@@ -270,7 +271,7 @@ export default function AttendanceUpload() {
                   </div>
                   <UploadTimer startedAt={uploadState?.startedAt} />
                   <p className="text-[11px] text-muted-foreground text-center">
-                    Import runs on the server — you can safely leave this page, it will keep going.
+                    You can keep using other pages in the app while this runs — just keep this browser tab open until it finishes.
                   </p>
                 </>
               ) : (
