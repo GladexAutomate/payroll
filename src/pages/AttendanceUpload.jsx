@@ -25,6 +25,16 @@ const phDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
 });
 const formatPhilippineDateTime = (dateValue) => dateValue ? phDateTimeFormatter.format(new Date(dateValue)) : '—';
 
+// Ids of imports currently being driven by a poll loop in THIS browser tab. Kept at
+// module scope so it survives the page component unmounting/remounting during in-app
+// navigation — used to guarantee at most one poll loop per import per tab.
+const activeDrives = new Set();
+
+// Don't try to resume an import that's been sitting in "processing" longer than this
+// (a genuinely abandoned/stuck record), so returning to the page can't revive an
+// ancient import unexpectedly.
+const RESUME_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
 export default function AttendanceUpload() {
   const { uploadState, startUpload, updateProgress, finishUpload, clearUpload } = useUpload();
   const uploading = uploadState?.uploading || false;
@@ -40,6 +50,35 @@ export default function AttendanceUpload() {
   const pollRef = useRef(null);
 
   useEffect(() => { loadUploads(); }, []);
+
+  // Resume an in-progress import when returning to the page (or after a reload). If a
+  // poll loop is already driving it in this tab, the context state still shows progress
+  // and we do nothing; otherwise (e.g. the tab was reloaded and the loop was lost) we
+  // re-show the progress from the server record and resume driving it from where it
+  // stopped — so navigating away never leaves the user unsure if the upload is alive.
+  useEffect(() => {
+    if (uploading) return; // a poll loop is already active in this tab
+    let cancelled = false;
+    (async () => {
+      try {
+        const active = await base44.entities.AttendanceUpload.filter({ status: 'processing' }, '-created_date', 1);
+        const rec = active?.[0];
+        if (cancelled || !rec || activeDrives.has(rec.id)) return;
+        const ageMs = Date.now() - new Date(rec.created_date).getTime();
+        if (!Number.isFinite(ageMs) || ageMs > RESUME_MAX_AGE_MS) return;
+        startUpload(rec.filename, '');
+        updateProgress({
+          current: rec.processed_rows || 0,
+          total: rec.total_rows || 0,
+          saved: rec.processed_rows || 0,
+          percent: rec.total_rows ? Math.round(((rec.processed_rows || 0) / rec.total_rows) * 100) : 0,
+        });
+        driveImport(rec.id, rec.processed_rows || 0);
+      } catch { /* nothing to resume */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear any running poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
@@ -118,40 +157,48 @@ export default function AttendanceUpload() {
   // Drive the import forward one batch at a time. Each processBatch call runs
   // inside its own live request, so nothing gets killed mid-flight. We chain
   // batches until the import reports done.
-  const driveImport = async (uploadId) => {
-    let offset = 0;
-    while (true) {
-      const res = await base44.functions.invoke('importAttendance', {
-        action: 'processBatch', uploadId, offset,
-      });
-      const data = res.data || {};
+  const driveImport = async (uploadId, startOffset = 0) => {
+    // At most one poll loop per import per tab — prevents a second loop starting when
+    // the user returns to the page (or a resume check fires) while one is still running.
+    if (activeDrives.has(uploadId)) return;
+    activeDrives.add(uploadId);
+    try {
+      let offset = startOffset;
+      while (true) {
+        const res = await base44.functions.invoke('importAttendance', {
+          action: 'processBatch', uploadId, offset,
+        });
+        const data = res.data || {};
 
-      if (data.error) {
-        finishUpload({ error: data.error });
-        loadUploads();
-        if (fileRef.current) fileRef.current.value = '';
-        return;
+        if (data.error) {
+          finishUpload({ error: data.error });
+          loadUploads();
+          if (fileRef.current) fileRef.current.value = '';
+          return;
+        }
+
+        if (data.phase === 'delete') {
+          // Still clearing old records — keep the bar moving without advancing offset.
+          updateProgress({ current: 0, total: data.total || 0, saved: 0, percent: 0, deleting: true });
+          continue;
+        }
+
+        updateProgress({
+          current: data.processed || 0,
+          total: data.total || 0,
+          saved: data.processed || 0,
+          percent: data.total ? Math.round((data.processed / data.total) * 100) : 0,
+        });
+
+        if (data.done) {
+          const rec = await base44.entities.AttendanceUpload.get(uploadId);
+          finishFromRecord(rec);
+          return;
+        }
+        offset = data.nextOffset ?? (offset + 40);
       }
-
-      if (data.phase === 'delete') {
-        // Still clearing old records — keep the bar moving without advancing offset.
-        updateProgress({ current: 0, total: data.total || 0, saved: 0, percent: 0, deleting: true });
-        continue;
-      }
-
-      updateProgress({
-        current: data.processed || 0,
-        total: data.total || 0,
-        saved: data.processed || 0,
-        percent: data.total ? Math.round((data.processed / data.total) * 100) : 0,
-      });
-
-      if (data.done) {
-        const rec = await base44.entities.AttendanceUpload.get(uploadId);
-        finishFromRecord(rec);
-        return;
-      }
-      offset = data.nextOffset ?? (offset + 40);
+    } finally {
+      activeDrives.delete(uploadId);
     }
   };
 
