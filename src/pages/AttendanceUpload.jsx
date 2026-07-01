@@ -83,8 +83,8 @@ export default function AttendanceUpload() {
 
     // Validate file type upfront
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['xlsx', 'csv'].includes(ext)) {
-      finishUpload({ error: `Unsupported file type: .${ext}. Please save your file as .xlsx (Excel Workbook) or .csv and try again.` });
+    if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+      finishUpload({ error: `Unsupported file type: .${ext}. Please upload a .xlsx, .xls, or .csv file and try again.` });
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
@@ -229,7 +229,7 @@ export default function AttendanceUpload() {
       <div className="bg-card border border-border rounded-xl p-6">
         <h2 className="font-semibold text-base mb-1">Upload Attendance Excel</h2>
         <p className="text-sm text-muted-foreground mb-5">
-          Upload the monthly punch record Excel exported from your biometric software (ZKBioTime / Yunatt). Accepts .xlsx or .csv files.
+          Upload the monthly punch record Excel exported from your biometric software (ZKBioTime / Yunatt). Accepts .xlsx, .xls, or .csv files.
         </p>
 
         <div
@@ -239,7 +239,7 @@ export default function AttendanceUpload() {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
           {uploading ? (
             <div className="flex flex-col items-center gap-4 w-full max-w-sm">
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -289,7 +289,7 @@ export default function AttendanceUpload() {
               </div>
               <div>
                 <p className="font-medium text-sm">{dragOver ? 'Drop to upload' : 'Drag & drop or click to select file'}</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports ZKBioTime / Yunatt monthly attendance export (.xlsx, .csv)</p>
+                <p className="text-xs text-muted-foreground mt-1">Supports ZKBioTime / Yunatt monthly attendance export (.xlsx, .xls, .csv)</p>
               </div>
               <Button size="sm" variant="outline">
                 <Upload className="w-4 h-4 mr-1.5" /> Browse File
@@ -339,8 +339,8 @@ export default function AttendanceUpload() {
           <p className="text-xs text-blue-700">
             The file should have columns for: <strong>Person Code</strong>, <strong>Name</strong>, and dates as columns (e.g. 05-01, 05-02...) with time pairs (IN/OUT) in each cell. This matches the standard ZKBioTime / Yunatt monthly export format.
           </p>
-          <p className="text-xs text-orange-700 mt-2 font-medium">
-            ⚠️ Only <strong>.xlsx</strong> and <strong>.csv</strong> are supported. If your file is <strong>.xls</strong>, open it in Excel and save as <em>Excel Workbook (.xlsx)</em> first.
+          <p className="text-xs text-blue-700 mt-2 font-medium">
+            Supported formats: <strong>.xlsx</strong>, <strong>.xls</strong>, and <strong>.csv</strong>.
           </p>
         </div>
       </div>
